@@ -9,6 +9,15 @@ import type {
 
 // Generates 3 harmony voice lines from a chord progression and vocal range.
 // The bottom 2/3 of the range is used for harmony; melody lives in the top 1/3.
+//
+// Strategy: soprano-led drop-2 voicings.
+//   1. The top harmony voice (soprano) is placed near the top of the harmony
+//      range and moves to the nearest chord tone on each chord change.
+//   2. A closed-position voicing is built downward from the soprano (two more
+//      chord tones within one octave below, stacked in thirds).
+//   3. Drop-2 is applied: the second-highest voice drops an octave, opening
+//      the voicing into the characteristic spread sound used in jazz/choral
+//      a cappella arrangements.
 export function generateHarmony(
   chords: Chord[],
   range: VocalRange,
@@ -21,212 +30,123 @@ export function generateHarmony(
   }
 
   const rangeSpan = range.high - range.low;
-  // Bottom 2/3 for harmony
   const harmonyTop = range.low + Math.round((rangeSpan * 2) / 3);
   const harmonyRange: VocalRange = { low: range.low, high: harmonyTop };
 
   const lines: [HarmonyLine, HarmonyLine, HarmonyLine] = [[], [], []];
-  let prevVoices: [MidiNote, MidiNote, MidiNote] | null = null;
+  let prevSoprano: MidiNote | null = null;
 
   for (const chord of chords) {
-    const voices = voiceChord(chord, harmonyRange, prevVoices);
+    const voices = voiceChord(chord, harmonyRange, prevSoprano);
     lines[0].push(voices[0]);
     lines[1].push(voices[1]);
     lines[2].push(voices[2]);
-    prevVoices = voices;
+    prevSoprano = voices[2];
   }
 
   return { lines, harmonyTop };
 }
 
-// Voice a single chord within the harmony range, using the previous voices
-// for smooth voice leading.
 function voiceChord(
   chord: Chord,
   range: VocalRange,
-  prev: [MidiNote, MidiNote, MidiNote] | null,
+  prevSoprano: MidiNote | null,
 ): [MidiNote, MidiNote, MidiNote] {
-  const tones = getAllTriadTones(chord, range);
+  const classes = triadClasses(chord);
 
-  if (prev == null) {
-    return initialVoicing(tones, range);
+  // Soprano targets the previous soprano for smooth voice leading, or the top
+  // of the harmony range on the first chord.
+  const sopranoTarget = prevSoprano ?? range.high;
+  const soprano = nearestChordTone(classes, sopranoTarget, range.low, range.high);
+
+  // Build closed voicing from soprano downward, then apply drop-2.
+  const closed = buildClosedVoicing(soprano, classes);
+  const dropped = applyDrop2(closed);
+
+  if (dropped[0] >= range.low) {
+    return dropped;
   }
 
-  return smoothVoicing(tones, prev, range);
+  // Drop-2 pushed the lowest voice below the range. Try the soprano an octave
+  // higher — this raises the whole stack and may keep everything in range.
+  const sopranoUp = soprano + 12;
+  if (sopranoUp <= range.high) {
+    const closedUp = buildClosedVoicing(sopranoUp, classes);
+    const droppedUp = applyDrop2(closedUp);
+    if (droppedUp[0] >= range.low) {
+      return droppedUp;
+    }
+  }
+
+  // Fallback: use the closed voicing without drop-2 (still sounds fine, just
+  // tighter spacing).
+  return closed;
 }
 
-// Get all MIDI notes that are triad tones within the given range
-function getAllTriadTones(chord: Chord, range: VocalRange): MidiNote[] {
+// Returns the 3 pitch classes (0–11) for a chord's triad.
+function triadClasses(chord: Chord): Set<number> {
   const [r, t, f] = triadSemitones(chord.root, chord.quality);
-  const result: MidiNote[] = [];
-
-  // Check every MIDI note in range
-  for (let midi = range.low; midi <= range.high; midi++) {
-    const semitone = ((midi % 12) + 12) % 12;
-    if (semitone === r % 12 || semitone === t % 12 || semitone === f % 12) {
-      result.push(midi);
-    }
-  }
-
-  return result;
+  return new Set([r % 12, t % 12, f % 12]);
 }
 
-// Pick the initial voicing: lowest available tone for low, spread upward
-function initialVoicing(
-  tones: MidiNote[],
-  range: VocalRange,
-): [MidiNote, MidiNote, MidiNote] {
-  if (tones.length === 0) {
-    // Fallback: use the range boundaries
-    const span = range.high - range.low;
-    return [range.low, range.low + Math.floor(span / 3), range.low + Math.floor((span * 2) / 3)];
-  }
-
-  // Divide the harmony range into 3 bands and pick the best tone in each
-  const span = range.high - range.low;
-  const bandSize = span / 3;
-
-  const lowBandTop = range.low + bandSize;
-  const midBandTop = range.low + bandSize * 2;
-
-  const low = bestToneInBand(tones, range.low, lowBandTop);
-  const mid = bestToneInBand(tones, lowBandTop, midBandTop);
-  const high = bestToneInBand(tones, midBandTop, range.high);
-
-  return enforceOrdering([low, mid, high], tones, range);
-}
-
-function bestToneInBand(
-  tones: MidiNote[],
-  bandLow: number,
-  bandHigh: number,
+// Finds the chord tone nearest to `target` within [low, high], searching
+// outward from target so that ties prefer the upward direction (keeps the
+// soprano from drifting low).
+function nearestChordTone(
+  classes: Set<number>,
+  target: MidiNote,
+  low: MidiNote,
+  high: MidiNote,
 ): MidiNote {
-  // First try to find a tone within the band
-  const inBand = tones.filter((t) => t >= bandLow && t <= bandHigh);
-  if (inBand.length > 0) {
-    // Pick the one closest to the middle of the band
-    const mid = (bandLow + bandHigh) / 2;
-    return inBand.reduce((best, t) =>
-      Math.abs(t - mid) < Math.abs(best - mid) ? t : best,
-    );
+  for (let delta = 0; delta <= high - low; delta++) {
+    if (target + delta <= high) {
+      if (classes.has(((target + delta) % 12 + 12) % 12)) {
+        return target + delta;
+      }
+    }
+    if (delta > 0 && target - delta >= low) {
+      if (classes.has((((target - delta) % 12) + 12) % 12)) {
+        return target - delta;
+      }
+    }
   }
-
-  // Fall back to the nearest tone outside the band
-  const center = (bandLow + bandHigh) / 2;
-  return tones.reduce((best, t) =>
-    Math.abs(t - center) < Math.abs(best - center) ? t : best,
-  );
+  return Math.max(low, Math.min(high, target));
 }
 
-// Voice leading: move each voice to the nearest chord tone, preserving
-// common tones and avoiding voice crossing.
-function smoothVoicing(
-  tones: MidiNote[],
-  prev: [MidiNote, MidiNote, MidiNote],
-  range: VocalRange,
+// Builds a closed-position voicing [low, mid, high] starting from soprano
+// and filling in the two nearest chord tones below it (each a distinct pitch
+// class), within a maximum of 12 semitones below the previous voice.
+function buildClosedVoicing(
+  soprano: MidiNote,
+  classes: Set<number>,
 ): [MidiNote, MidiNote, MidiNote] {
-  if (tones.length === 0) {
-    return prev;
-  }
+  const usedClasses = new Set([((soprano % 12) + 12) % 12]);
+  const voices: MidiNote[] = [soprano];
+  let below = soprano;
 
-  // Try to keep common tones, move others to nearest chord tone
-  const voices: [MidiNote, MidiNote, MidiNote] = [0, 0, 0];
-
-  for (let i = 0; i < 3; i++) {
-    const prevNote = prev[i]!;
-    // Check if prev note is a chord tone (same pitch class)
-    const prevClass = ((prevNote % 12) + 12) % 12;
-    const isCommonTone = tones.some(
-      (t) => ((t % 12) + 12) % 12 === prevClass,
-    );
-
-    if (isCommonTone) {
-      // Keep the same note
-      voices[i] = prevNote;
-    } else {
-      // Move to nearest chord tone in range
-      voices[i] = nearestTone(tones, prevNote);
+  for (let slot = 0; slot < 2; slot++) {
+    for (let delta = 1; delta <= 12; delta++) {
+      const candidate = below - delta;
+      const cls = ((candidate % 12) + 12) % 12;
+      if (classes.has(cls) && !usedClasses.has(cls)) {
+        voices.push(candidate);
+        usedClasses.add(cls);
+        below = candidate;
+        break;
+      }
     }
   }
 
-  return enforceOrdering(voices, tones, range);
+  voices.sort((a, b) => a - b);
+  return [voices[0]!, voices[1]!, voices[2]!];
 }
 
-function nearestTone(tones: MidiNote[], target: MidiNote): MidiNote {
-  return tones.reduce((best, t) =>
-    Math.abs(t - target) < Math.abs(best - target) ? t : best,
-  );
-}
-
-// Ensure low < mid < high, reassigning chord tones as needed
-function enforceOrdering(
+// Drop-2: drops the second-highest voice (index 1 in the sorted triple) down
+// an octave, opening up the closed voicing.
+function applyDrop2(
   voices: [MidiNote, MidiNote, MidiNote],
-  tones: MidiNote[],
-  range: VocalRange,
 ): [MidiNote, MidiNote, MidiNote] {
-  let [low, mid, high] = voices;
-
-  if (low == null || mid == null || high == null || tones.length === 0) {
-    return voices;
-  }
-
-  // Sort the 3 voices
-  const sorted = [low, mid, high].sort((a, b) => a - b) as [
-    MidiNote,
-    MidiNote,
-    MidiNote,
-  ];
-
-  [low, mid, high] = sorted;
-
-  // Ensure they're not all the same — if so, spread them out
-  if (low === mid || mid === high) {
-    // Try to find 3 distinct tones
-    const distinct = deduplicateVoices(sorted, tones, range);
-    return distinct;
-  }
-
-  return [low, mid, high];
-}
-
-// Try to assign 3 distinct pitch classes to the 3 voices
-function deduplicateVoices(
-  voices: [MidiNote, MidiNote, MidiNote],
-  tones: MidiNote[],
-  range: VocalRange,
-): [MidiNote, MidiNote, MidiNote] {
-  if (tones.length < 2) return voices;
-
-  // Get all unique pitch classes available in tones
-  const classes = new Set(tones.map((t) => ((t % 12) + 12) % 12));
-
-  if (classes.size < 2) return voices;
-
-  // Greedily assign: for each voice target, pick the nearest tone with a
-  // different pitch class than already assigned, sorted low to high
-  const span = range.high - range.low;
-  const targets = [
-    range.low + Math.floor(span / 6),
-    range.low + Math.floor(span / 2),
-    range.low + Math.floor((span * 5) / 6),
-  ];
-
-  const usedClasses = new Set<number>();
-  const result: MidiNote[] = [];
-
-  for (const target of targets) {
-    // Prefer tones with unused pitch class
-    const unused = tones.filter(
-      (t) => !usedClasses.has(((t % 12) + 12) % 12),
-    );
-    const pool = unused.length > 0 ? unused : tones;
-    const chosen = pool.reduce((best, t) =>
-      Math.abs(t - target) < Math.abs(best - target) ? t : best,
-    );
-    result.push(chosen);
-    usedClasses.add(((chosen % 12) + 12) % 12);
-  }
-
-  const sorted = result.sort((a, b) => a - b);
-  return [sorted[0]!, sorted[1]!, sorted[2]!];
+  const result = [voices[0], voices[1] - 12, voices[2]];
+  result.sort((a, b) => a - b);
+  return [result[0]!, result[1]!, result[2]!];
 }

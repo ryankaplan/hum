@@ -77,19 +77,18 @@ export async function recordTake(opts: RecordingOpts): Promise<RecordingResult> 
     };
   });
 
-  // 3. Start the MediaRecorder and immediately note the AudioContext time.
-  //    startRecordingPlayback will schedule everything to begin at
-  //    ctx.currentTime + 0.1, so we compute the difference to get the
-  //    exact trim offset.
+  // 3. Start the MediaRecorder and note the AudioContext time at that instant.
   const ctx = Tone.getContext().rawContext as AudioContext;
   mediaRecorder.start(100); // collect data every 100ms
   const recorderStartCtxTime = ctx.currentTime;
   callbacks?.onRecordingStart?.();
 
   // 4. Start playback (guide tones + click + monitoring).
-  //    startRecordingPlayback computes startTime = ctx.currentTime + 0.1
-  //    and passes it to both the MonitorPlayer and the Tone transport, so
-  //    all audio begins at the same sample-accurate AudioContext time.
+  //    startRecordingPlayback reads ctx.currentTime internally and computes
+  //    startTime = ctx.currentTime + 0.1 at that point. Because JS execution
+  //    has advanced since recorderStartCtxTime was captured, the real offset
+  //    is slightly more than 0.1 s. We use the actual startTime returned by
+  //    startRecordingPlayback so the trim offset is exact.
   const playback: PlaybackSession = startRecordingPlayback({
     chords,
     harmonyLine,
@@ -100,11 +99,7 @@ export async function recordTake(opts: RecordingOpts): Promise<RecordingResult> 
     onChordChange: callbacks?.onChordChange,
   });
 
-  // The transport start time is ctx.currentTime + 0.1 (matching the value
-  // computed inside startRecordingPlayback). We re-derive it here using the
-  // same formula rather than plumbing it back out.
-  const transportStartCtxTime = recorderStartCtxTime + 0.1;
-  const trimOffsetSec = transportStartCtxTime - recorderStartCtxTime;
+  const trimOffsetSec = playback.startTime - recorderStartCtxTime;
 
   // 5. Auto-stop after the full progression + a small buffer
   const durationMs =

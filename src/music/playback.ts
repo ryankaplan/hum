@@ -33,6 +33,10 @@ function getClickSynth(): Tone.MembraneSynth {
 }
 
 export type PlaybackSession = {
+  // The AudioContext time at which the transport (and all monitor tracks) began.
+  // Callers that need a precise trim offset should use this rather than
+  // re-deriving ctx.currentTime + 0.1, which would read a slightly later clock.
+  startTime: number;
   stop: () => void;
 };
 
@@ -159,6 +163,7 @@ export function startRecordingPlayback(
   Tone.getTransport().start(startTime);
 
   return {
+    startTime,
     stop() {
       Tone.getTransport().stop();
       Tone.getTransport().cancel();
@@ -237,9 +242,12 @@ export function playHarmonyPreview(
     }
   }
 
+  const previewCtx = Tone.getContext().rawContext as AudioContext;
+  const previewStartTime = previewCtx.currentTime;
   Tone.getTransport().start();
 
   return {
+    startTime: previewStartTime,
     stop() {
       Tone.getTransport().stop();
       Tone.getTransport().cancel();

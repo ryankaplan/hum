@@ -174,3 +174,61 @@ export function playNotePreview(midi: MidiNote, durationSec = 1.2): void {
   const synth = getGuideSynth();
   synth.triggerAttackRelease(midiToNoteName(midi), durationSec);
 }
+
+// Play all 3 harmony lines simultaneously over the chord progression.
+// Used by the setup screen "Preview Harmony" button.
+export function playHarmonyPreview(
+  chords: Chord[],
+  harmonyLines: [HarmonyLine, HarmonyLine, HarmonyLine],
+  beatsPerBar: number,
+  tempo: number,
+): PlaybackSession {
+  Tone.getTransport().stop();
+  Tone.getTransport().cancel();
+  Tone.getTransport().bpm.value = tempo;
+
+  const click = getClickSynth();
+  const guide = getGuideSynth();
+  const totalB = totalBeats(chords);
+  const secPerBeat = 60 / tempo;
+
+  // Click track
+  for (let beat = 0; beat < totalB; beat++) {
+    const offsetSec = beat * secPerBeat;
+    Tone.getTransport().schedule((t) => {
+      click.triggerAttackRelease(
+        beat % beatsPerBar === 0 ? "C2" : "C1",
+        "16n",
+        t,
+      );
+    }, `+${offsetSec}`);
+  }
+
+  // All 3 harmony lines
+  for (const line of harmonyLines) {
+    let beatOffset = 0;
+    for (let i = 0; i < chords.length; i++) {
+      const chord = chords[i]!;
+      const midi: MidiNote | undefined = line[i];
+      if (midi != null) {
+        const noteName = midiToNoteName(midi);
+        const startSec = beatOffset * secPerBeat;
+        const durationSec = chord.beats * secPerBeat * 0.95;
+        Tone.getTransport().schedule((t) => {
+          guide.triggerAttackRelease(noteName, durationSec, t);
+        }, `+${startSec}`);
+      }
+      beatOffset += chord.beats;
+    }
+  }
+
+  Tone.getTransport().start();
+
+  return {
+    stop() {
+      Tone.getTransport().stop();
+      Tone.getTransport().cancel();
+      guide.releaseAll();
+    },
+  };
+}

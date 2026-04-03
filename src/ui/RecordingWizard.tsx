@@ -78,7 +78,8 @@ export function RecordingWizard() {
   const [countInBeat, setCountInBeat] = useState(0);
   const [currentAbsoluteBeat, setCurrentAbsoluteBeat] = useState(-1);
   const [reviewUrl, setReviewUrl] = useState<string | null>(null);
-  const [monitoringEnabled, setMonitoringEnabled] = useState(true);
+  const [guideToneEnabled, setGuideToneEnabled] = useState(true);
+  const [priorTakesEnabled, setPriorTakesEnabled] = useState(true);
 
   const reviewVideoRef = useRef<HTMLVideoElement>(null);
   const monitorRefs = useRef<HTMLAudioElement[]>([]);
@@ -139,10 +140,10 @@ export function RecordingWizard() {
 
     const session = startRecordingPlayback({
       chords,
-      harmonyLine,
+      harmonyLine: guideToneEnabled ? harmonyLine : null,
       beatsPerBar,
       tempo,
-      monitorElements: monitoringEnabled ? monitorRefs.current : [],
+      monitorElements: priorTakesEnabled ? monitorRefs.current : [],
       onBeat: (beat) => {
         setCurrentAbsoluteBeat(beat);
         let remaining = beat;
@@ -200,10 +201,10 @@ export function RecordingWizard() {
       const result = await recordTake({
         stream,
         chords,
-        harmonyLine,
+        harmonyLine: guideToneEnabled ? harmonyLine : null,
         beatsPerBar,
         tempo,
-        monitorElements: monitoringEnabled ? monitorRefs.current : [],
+        monitorElements: priorTakesEnabled ? monitorRefs.current : [],
         callbacks: {
           onCountInBeat: (beat) => setCountInBeat(beat + 1),
           onRecordingStart: () => {
@@ -421,18 +422,29 @@ export function RecordingWizard() {
                   Record
                 </Button>
               </Grid>
-              {/* Monitoring toggle — only meaningful when there are prior takes */}
-              {partIndex > 0 && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  color={monitoringEnabled ? "brand.300" : "gray.600"}
-                  onClick={() => setMonitoringEnabled((v) => !v)}
-                  disabled={busy}
-                >
-                  {monitoringEnabled ? "⏸ Monitor: on" : "⏸ Monitor: off"}
-                </Button>
-              )}
+              {/* Per-source monitoring toggles */}
+              <Flex gap={2} justify="center">
+                {!isMelodyPart && (
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    color={guideToneEnabled ? "brand.300" : "gray.600"}
+                    onClick={() => setGuideToneEnabled((v) => !v)}
+                  >
+                    Guide tones: {guideToneEnabled ? "on" : "off"}
+                  </Button>
+                )}
+                {partIndex > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    color={priorTakesEnabled ? "brand.300" : "gray.600"}
+                    onClick={() => setPriorTakesEnabled((v) => !v)}
+                  >
+                    Prior takes: {priorTakesEnabled ? "on" : "off"}
+                  </Button>
+                )}
+              </Flex>
             </Stack>
           )}
 

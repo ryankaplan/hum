@@ -10,6 +10,7 @@ import {
   Stack,
   Text,
 } from "@chakra-ui/react";
+import { useRef, useState } from "react";
 import { useObservable } from "../observable";
 import { acquirePermissionsAndStart } from "../recording/permissions";
 import {
@@ -23,6 +24,13 @@ import {
   vocalRangeLow,
 } from "../state/appState";
 import type { Meter } from "../music/types";
+import {
+  playHarmonyPreview,
+  progressionDurationSec,
+  stopAllPlayback,
+} from "../music/playback";
+import type { PlaybackSession } from "../music/playback";
+import * as Tone from "tone";
 
 const NOTE_OPTIONS = [
   "C2", "D2", "E2", "F2", "G2", "A2", "B2",
@@ -48,6 +56,31 @@ export function SetupScreen() {
   const error = useObservable(permissionError);
 
   const isValid = parsed.length > 0 && voicing != null;
+
+  const [previewing, setPreviewing] = useState(false);
+  const previewSessionRef = useRef<PlaybackSession | null>(null);
+
+  async function handlePreview() {
+    if (voicing == null || parsed.length === 0) return;
+    await Tone.start();
+    setPreviewing(true);
+    const session = playHarmonyPreview(parsed, voicing.lines, meter[0], tempo);
+    previewSessionRef.current = session;
+    const durationMs = progressionDurationSec(parsed, tempo) * 1000 + 400;
+    setTimeout(() => {
+      if (previewSessionRef.current === session) {
+        session.stop();
+        previewSessionRef.current = null;
+        setPreviewing(false);
+      }
+    }, durationMs);
+  }
+
+  function handleStopPreview() {
+    stopAllPlayback();
+    previewSessionRef.current = null;
+    setPreviewing(false);
+  }
 
   function handleMeterChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const found = METER_OPTIONS.find((o) => o.label === e.target.value);
@@ -218,6 +251,19 @@ export function SetupScreen() {
                 ))}
               </Flex>
             </Box>
+          )}
+
+          {isValid && (
+            <Button
+              variant="outline"
+              size="md"
+              borderColor={previewing ? "brand.600" : "gray.600"}
+              color={previewing ? "brand.300" : "gray.300"}
+              onClick={previewing ? handleStopPreview : handlePreview}
+              w="100%"
+            >
+              {previewing ? "Stop Preview" : "Preview Harmony"}
+            </Button>
           )}
 
           {error != null && (

@@ -44,9 +44,14 @@ export type PlaybackSession = {
 // individual events at "+offset" computed Tone.now() before transport.start(),
 // which could leave the +0 event in the past when the transport finally ran,
 // causing it to be silently skipped and the promise to never resolve.
+//
+// onBeat fires from inside the Tone scheduler at the same moment each click is
+// scheduled — this keeps visual beat indicators locked to the audio rather than
+// relying on a separate setInterval that would drift and skip the last beat.
 export async function playCountIn(
   beatsPerBar: number,
   tempo: number,
+  onBeat?: (beat: number, totalBeats: number) => void,
 ): Promise<void> {
   Tone.getTransport().stop();
   Tone.getTransport().cancel();
@@ -60,6 +65,7 @@ export async function playCountIn(
     Tone.getTransport().scheduleRepeat((t) => {
       if (beatsFired >= beatsPerBar) return;
       synth.triggerAttackRelease(beatsFired === 0 ? "C2" : "C1", "16n", t);
+      onBeat?.(beatsFired, beatsPerBar);
       beatsFired++;
       if (beatsFired >= beatsPerBar) {
         // Resolve slightly after the last click so the audio has played

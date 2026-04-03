@@ -50,22 +50,10 @@ export async function recordTake(opts: RecordingOpts): Promise<RecordingResult> 
   } = opts;
 
   // 1. Count-in
-  const countTotal = beatsPerBar;
-  let countBeat = 0;
-
-  const countInPromise = playCountIn(beatsPerBar, tempo);
-
-  // Emit count-in beat events by polling
-  const countInterval = setInterval(() => {
-    callbacks?.onCountInBeat?.(countBeat, countTotal);
-    countBeat++;
-    if (countBeat >= countTotal) {
-      clearInterval(countInterval);
-    }
-  }, (60 / tempo) * 1000);
-
-  await countInPromise;
-  clearInterval(countInterval);
+  // Pass onCountInBeat directly into playCountIn so it fires from the Tone.js
+  // scheduler at the same moment each click is scheduled. This keeps the visual
+  // beat indicator in sync with the audio instead of using a drifting setInterval.
+  await playCountIn(beatsPerBar, tempo, callbacks?.onCountInBeat);
 
   // 2. Set up MediaRecorder (but don't start it yet)
   const mimeType = getSupportedMimeType();

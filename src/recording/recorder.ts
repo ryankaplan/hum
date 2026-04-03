@@ -7,7 +7,6 @@ import {
 } from "../music/playback";
 import type { PlaybackSession } from "../music/playback";
 import type { MonitorPlayer } from "../audio/monitorPlayer";
-import * as Tone from "tone";
 
 export type RecordingResult = {
   blob: Blob;
@@ -26,6 +25,7 @@ export type RecordingCallbacks = {
 };
 
 export type RecordingOpts = {
+  ctx: AudioContext;
   stream: MediaStream;
   chords: Chord[];
   // null for melody (no guide tones during recording)
@@ -40,6 +40,7 @@ export type RecordingOpts = {
 // after the count-in + full chord progression has played.
 export async function recordTake(opts: RecordingOpts): Promise<RecordingResult> {
   const {
+    ctx,
     stream,
     chords,
     harmonyLine,
@@ -50,12 +51,20 @@ export async function recordTake(opts: RecordingOpts): Promise<RecordingResult> 
   } = opts;
 
   // 1. Count-in
-  // Pass onCountInBeat directly into playCountIn so it fires from the Tone.js
-  // scheduler at the same moment each click is scheduled. This keeps the visual
-  // beat indicator in sync with the audio instead of using a drifting setInterval.
-  await playCountIn(beatsPerBar, tempo, callbacks?.onCountInBeat);
+  // playCountIn schedules all clicks on the AudioContext clock and returns
+  // recordingStartTime — the exact beat-grid-aligned time where beat 1 falls.
+  // The promise resolves ~half a beat before that time, giving us ample lead
+  // time to start the MediaRecorder without any setTimeout-based handoff.
+  const { promise: countInPromise, recordingStartTime } = playCountIn(
+    ctx,
+    beatsPerBar,
+    tempo,
+    callbacks?.onCountInBeat,
+  );
 
-  // 2. Set up MediaRecorder (but don't start it yet)
+  await countInPromise;
+
+  // 2. Set up MediaRecorder
   const mimeType = getSupportedMimeType();
   const mediaRecorder = new MediaRecorder(stream, {
     mimeType,
@@ -78,32 +87,31 @@ export async function recordTake(opts: RecordingOpts): Promise<RecordingResult> 
   });
 
   // 3. Start the MediaRecorder and note the AudioContext time at that instant.
-  const ctx = Tone.getContext().rawContext as AudioContext;
-  mediaRecorder.start(100); // collect data every 100ms
+  //    trimOffsetSec is the gap between when we started recording and when
+  //    beat 1 of the recording falls (recordingStartTime). This is exact
+  //    because both values come from the same AudioContext clock.
+  mediaRecorder.start(100);
   const recorderStartCtxTime = ctx.currentTime;
   callbacks?.onRecordingStart?.();
+  const trimOffsetSec = recordingStartTime - recorderStartCtxTime;
 
-  // 4. Start playback (guide tones + click + monitoring).
-  //    startRecordingPlayback reads ctx.currentTime internally and computes
-  //    startTime = ctx.currentTime + 0.1 at that point. Because JS execution
-  //    has advanced since recorderStartCtxTime was captured, the real offset
-  //    is slightly more than 0.1 s. We use the actual startTime returned by
-  //    startRecordingPlayback so the trim offset is exact.
+  // 4. Start playback passing the count-in's grid-aligned recordingStartTime.
+  //    This means the recording transport is continuous with the count-in —
+  //    no transport teardown/restart gap that would cause half-beat drift.
   const playback: PlaybackSession = startRecordingPlayback({
+    ctx,
     chords,
     harmonyLine,
     beatsPerBar,
     tempo,
+    startTime: recordingStartTime,
     monitorPlayer,
     onBeat: callbacks?.onBeat,
     onChordChange: callbacks?.onChordChange,
   });
 
-  const trimOffsetSec = playback.startTime - recorderStartCtxTime;
-
   // 5. Auto-stop after the full progression + a small buffer
-  const durationMs =
-    progressionDurationSec(chords, tempo) * 1000 + 600;
+  const durationMs = progressionDurationSec(chords, tempo) * 1000 + 600;
 
   await new Promise<void>((resolve) => setTimeout(resolve, durationMs));
 

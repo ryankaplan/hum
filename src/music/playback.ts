@@ -1,181 +1,199 @@
-import * as Tone from "tone";
 import type { Chord, HarmonyLine, MidiNote } from "./types";
-import { midiToNoteName } from "./types";
 import { totalBeats } from "./parse";
 import type { MonitorPlayer } from "../audio/monitorPlayer";
+import { playClick, playGuideTone, stopAllSynths } from "../audio/synths";
 
-// A single Tone.js synth for guide tones
-let guideSynth: Tone.PolySynth | null = null;
-// A separate synth for the metronome click
-let clickSynth: Tone.MembraneSynth | null = null;
-
-function getGuideSynth(): Tone.PolySynth {
-  if (guideSynth == null) {
-    guideSynth = new Tone.PolySynth(Tone.Synth, {
-      oscillator: { type: "triangle" },
-      envelope: { attack: 0.02, decay: 0.1, sustain: 0.8, release: 0.3 },
-      volume: -6,
-    }).toDestination();
-  }
-  return guideSynth;
+function midiToFrequency(midi: MidiNote): number {
+  return 440 * Math.pow(2, (midi - 69) / 12);
 }
 
-function getClickSynth(): Tone.MembraneSynth {
-  if (clickSynth == null) {
-    clickSynth = new Tone.MembraneSynth({
-      pitchDecay: 0.03,
-      octaves: 3,
-      envelope: { attack: 0.001, decay: 0.1, sustain: 0, release: 0.1 },
-      volume: -3,
-    }).toDestination();
-  }
-  return clickSynth;
+// Polls ctx.currentTime at ~60 fps and fires onBeat for each beat time that
+// has been passed. Returns a stop function to cancel the interval.
+function createBeatTracker(
+  ctx: AudioContext,
+  beatTimes: number[],
+  onBeat: (index: number) => void,
+): { stop: () => void } {
+  let lastFired = -1;
+  const id = setInterval(() => {
+    const now = ctx.currentTime;
+    for (let i = lastFired + 1; i < beatTimes.length; i++) {
+      const t = beatTimes[i];
+      if (t != null && now >= t) {
+        lastFired = i;
+        onBeat(i);
+      } else {
+        break;
+      }
+    }
+  }, 16);
+  return { stop: () => clearInterval(id) };
 }
+
+// Module-level set of all active beat-tracker stop functions so that
+// stopAllPlayback() can clear them without needing a session reference.
+const activeTrackers = new Set<{ stop: () => void }>();
 
 export type PlaybackSession = {
-  // The AudioContext time at which the transport (and all monitor tracks) began.
-  // Callers that need a precise trim offset should use this rather than
-  // re-deriving ctx.currentTime + 0.1, which would read a slightly later clock.
+  // The AudioContext time at which beat 1 of the session starts.
   startTime: number;
   stop: () => void;
 };
 
-// Play just a click track (count-in).
-// Returns a promise that resolves when the count-in is complete.
-//
-// Uses scheduleRepeat("4n") so the first beat fires at transport position 0
-// (i.e. immediately when the transport starts). The old approach of scheduling
-// individual events at "+offset" computed Tone.now() before transport.start(),
-// which could leave the +0 event in the past when the transport finally ran,
-// causing it to be silently skipped and the promise to never resolve.
-//
-// onBeat fires from inside the Tone scheduler at the same moment each click is
-// scheduled — this keeps visual beat indicators locked to the audio rather than
-// relying on a separate setInterval that would drift and skip the last beat.
-export async function playCountIn(
+// ─── Count-in ────────────────────────────────────────────────────────────────
+
+export type CountInResult = {
+  // The AudioContext time at which beat 1 of the RECORDING will fall.
+  // Derived from a single ctx.currentTime read plus the count-in duration,
+  // so it is grid-continuous with the count-in clicks.
+  recordingStartTime: number;
+  // Resolves when the count-in is complete and the caller should begin
+  // setting up the MediaRecorder. Resolves ~half a beat before
+  // recordingStartTime so there is ample lead time.
+  promise: Promise<void>;
+};
+
+// Schedule count-in clicks and return a CountInResult.
+// onBeat fires via polling so the visual indicator stays in sync with the audio.
+export function playCountIn(
+  ctx: AudioContext,
   beatsPerBar: number,
   tempo: number,
   onBeat?: (beat: number, totalBeats: number) => void,
-): Promise<void> {
-  Tone.getTransport().stop();
-  Tone.getTransport().cancel();
-  Tone.getTransport().bpm.value = tempo;
+): CountInResult {
+  const secPerBeat = 60 / tempo;
+  const startTime = ctx.currentTime + 0.05;
+  const recordingStartTime = startTime + beatsPerBar * secPerBeat;
 
-  const synth = getClickSynth();
+  // Schedule all count-in clicks on the AudioContext clock
+  for (let i = 0; i < beatsPerBar; i++) {
+    playClick(ctx, startTime + i * secPerBeat, i === 0);
+  }
 
-  return new Promise<void>((resolve) => {
-    let beatsFired = 0;
+  // Beat callbacks via polling
+  if (onBeat != null) {
+    const beatTimes = Array.from({ length: beatsPerBar }, (_, i) => startTime + i * secPerBeat);
+    const tracker = createBeatTracker(ctx, beatTimes, (i) => onBeat(i, beatsPerBar));
+    activeTrackers.add(tracker);
+    // Auto-remove after count-in is fully over
+    setTimeout(() => {
+      tracker.stop();
+      activeTrackers.delete(tracker);
+    }, (recordingStartTime - ctx.currentTime + 0.3) * 1000);
+  }
 
-    Tone.getTransport().scheduleRepeat((t) => {
-      if (beatsFired >= beatsPerBar) return;
-      synth.triggerAttackRelease(beatsFired === 0 ? "C2" : "C1", "16n", t);
-      onBeat?.(beatsFired, beatsPerBar);
-      beatsFired++;
-      if (beatsFired >= beatsPerBar) {
-        // Resolve slightly after the last click so the audio has played
-        setTimeout(resolve, (60 / tempo) * 1000 * 1.05);
-      }
-    }, "4n");
-
-    Tone.getTransport().start();
+  // Resolve half a beat before recordingStartTime — enough lead time for the
+  // caller to create a MediaRecorder and call start() before the beat lands.
+  const resolveDelayMs = (recordingStartTime - 0.5 * secPerBeat - ctx.currentTime) * 1000;
+  const promise = new Promise<void>((resolve) => {
+    setTimeout(resolve, Math.max(0, resolveDelayMs));
   });
+
+  return { recordingStartTime, promise };
 }
 
+// ─── Recording playback ───────────────────────────────────────────────────────
+
 export type RecordingPlaybackOpts = {
+  ctx: AudioContext;
   chords: Chord[];
-  harmonyLine: HarmonyLine | null; // null for melody (no guide tones)
+  harmonyLine: HarmonyLine | null; // null = melody (no guide tones)
   beatsPerBar: number;
   tempo: number;
-  // Sample-accurate monitor player for previously kept takes.
-  // When provided, start(when) is called with the same AudioContext time as
-  // the Tone transport so all audio is aligned to the sample.
+  // Pass the count-in's recordingStartTime for a grid-continuous timeline.
+  // If omitted, defaults to ctx.currentTime + 0.05.
+  startTime?: number;
   monitorPlayer?: MonitorPlayer | null;
   onBeat?: (beatIndex: number) => void;
   onChordChange?: (chordIndex: number) => void;
 };
 
 // Schedules click track + optional guide tones for the full progression.
-// All audio — including any prior-take monitor playback — is started at the
-// same AudioContext.currentTime value so everything is sample-accurate.
-// Call stop() to tear everything down.
+// All audio and monitor playback starts at the same AudioContext time.
 export function startRecordingPlayback(
   opts: RecordingPlaybackOpts,
 ): PlaybackSession {
-  Tone.getTransport().stop();
-  Tone.getTransport().cancel();
-  Tone.getTransport().bpm.value = opts.tempo;
-
-  const click = getClickSynth();
-  const guide = opts.harmonyLine != null ? getGuideSynth() : null;
-
-  const totalB = totalBeats(opts.chords);
+  const { ctx } = opts;
   const secPerBeat = 60 / opts.tempo;
+  const startTime = opts.startTime ?? ctx.currentTime + 0.05;
+  const totalB = totalBeats(opts.chords);
 
-  // Schedule click on every beat.
-  // Passing offsetSec as a number uses transport-position time, so beat 0
-  // fires at position 0 (= when transport starts) rather than at a wall-clock
-  // time that may already be in the past.
+  // Schedule clicks
+  const beatTimes: number[] = [];
   for (let beat = 0; beat < totalB; beat++) {
-    const offsetSec = beat * secPerBeat;
-    Tone.getTransport().schedule((t) => {
-      click.triggerAttackRelease(
-        beat % opts.beatsPerBar === 0 ? "C2" : "C1",
-        "16n",
-        t,
-      );
-      opts.onBeat?.(beat);
-    }, offsetSec);
+    const beatTime = startTime + beat * secPerBeat;
+    beatTimes.push(beatTime);
+    playClick(ctx, beatTime, beat % opts.beatsPerBar === 0);
   }
 
-  // Schedule guide tones: one sustained note per chord
-  if (guide != null && opts.harmonyLine != null) {
+  // Schedule guide tones
+  const guideStops: Array<() => void> = [];
+  if (opts.harmonyLine != null) {
     let beatOffset = 0;
     for (let i = 0; i < opts.chords.length; i++) {
       const chord = opts.chords[i]!;
       const midi: MidiNote | undefined = opts.harmonyLine[i];
-      if (midi == null) {
-        beatOffset += chord.beats;
-        continue;
+      if (midi != null) {
+        const noteStartTime = startTime + beatOffset * secPerBeat;
+        const durationSec = chord.beats * secPerBeat * 0.95;
+        guideStops.push(playGuideTone(ctx, midiToFrequency(midi), noteStartTime, durationSec));
       }
-      const noteName = midiToNoteName(midi);
-      const startSec = beatOffset * secPerBeat;
-      const durationSec = chord.beats * secPerBeat * 0.95; // slight gap
-      const localI = i;
-      Tone.getTransport().schedule((t) => {
-        guide.triggerAttackRelease(noteName, durationSec, t);
-        opts.onChordChange?.(localI);
-      }, startSec);
       beatOffset += chord.beats;
     }
   }
 
-  // Compute the shared start time. Adding a small lookahead guarantees the
-  // scheduled AudioBufferSourceNode starts and the transport start both land
-  // in the future, even accounting for JS event-loop jitter.
-  const ctx = Tone.getContext().rawContext as AudioContext;
-  const startTime = ctx.currentTime + 0.1;
+  // Beat tracker for UI callbacks
+  let beatTracker: { stop: () => void } | null = null;
+  if (opts.onBeat != null || opts.onChordChange != null) {
+    const trackers: Array<{ stop: () => void }> = [];
 
-  // Start prior-take monitors at the exact same AudioContext time as the
-  // transport. AudioBufferSourceNode.start(when) and Transport.start(when)
-  // share the same clock, so this is sample-accurate.
+    if (opts.onBeat != null) {
+      const t = createBeatTracker(ctx, beatTimes, opts.onBeat);
+      trackers.push(t);
+      activeTrackers.add(t);
+    }
+
+    if (opts.onChordChange != null) {
+      // Fire onChordChange at the first beat of each chord
+      const chordChangeTimes: number[] = [];
+      let beatOffset = 0;
+      for (let i = 0; i < opts.chords.length; i++) {
+        chordChangeTimes.push(startTime + beatOffset * secPerBeat);
+        beatOffset += opts.chords[i]!.beats;
+      }
+      const cb = opts.onChordChange;
+      const t = createBeatTracker(ctx, chordChangeTimes, (i) => cb(i));
+      trackers.push(t);
+      activeTrackers.add(t);
+    }
+
+    beatTracker = {
+      stop() {
+        for (const t of trackers) {
+          t.stop();
+          activeTrackers.delete(t);
+        }
+      },
+    };
+  }
+
   opts.monitorPlayer?.start(startTime);
-
-  Tone.getTransport().start(startTime);
 
   return {
     startTime,
     stop() {
-      Tone.getTransport().stop();
-      Tone.getTransport().cancel();
-      if (guide != null) {
-        guide.releaseAll();
+      beatTracker?.stop();
+      for (const stop of guideStops) {
+        stop();
       }
       opts.monitorPlayer?.stop();
     },
   };
 }
 
-// Total duration in seconds of one full pass of the progression
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+// Total duration in seconds of one full pass of the progression.
 export function progressionDurationSec(
   chords: Chord[],
   tempo: number,
@@ -183,75 +201,62 @@ export function progressionDurationSec(
   return (totalBeats(chords) * 60) / tempo;
 }
 
+// Stop all active synth nodes and beat trackers.
 export function stopAllPlayback(): void {
-  Tone.getTransport().stop();
-  Tone.getTransport().cancel();
-  guideSynth?.releaseAll();
+  stopAllSynths();
+  for (const tracker of activeTrackers) {
+    tracker.stop();
+  }
+  activeTrackers.clear();
 }
 
 // Play a single note immediately — used when the user taps a note chip.
-export function playNotePreview(midi: MidiNote, durationSec = 1.2): void {
-  const synth = getGuideSynth();
-  synth.triggerAttackRelease(midiToNoteName(midi), durationSec);
+export function playNotePreview(ctx: AudioContext, midi: MidiNote, durationSec = 1.2): void {
+  playGuideTone(ctx, midiToFrequency(midi), ctx.currentTime + 0.01, durationSec);
 }
+
+// ─── Harmony preview ─────────────────────────────────────────────────────────
 
 // Play all 3 harmony lines simultaneously over the chord progression.
 // Used by the setup screen "Preview Harmony" button.
 export function playHarmonyPreview(
+  ctx: AudioContext,
   chords: Chord[],
   harmonyLines: [HarmonyLine, HarmonyLine, HarmonyLine],
   beatsPerBar: number,
   tempo: number,
 ): PlaybackSession {
-  Tone.getTransport().stop();
-  Tone.getTransport().cancel();
-  Tone.getTransport().bpm.value = tempo;
-
-  const click = getClickSynth();
-  const guide = getGuideSynth();
-  const totalB = totalBeats(chords);
   const secPerBeat = 60 / tempo;
+  const startTime = ctx.currentTime + 0.05;
+  const totalB = totalBeats(chords);
 
-  // Click track — numeric transport-position time, same fix as startRecordingPlayback
+  // Click track
   for (let beat = 0; beat < totalB; beat++) {
-    const offsetSec = beat * secPerBeat;
-    Tone.getTransport().schedule((t) => {
-      click.triggerAttackRelease(
-        beat % beatsPerBar === 0 ? "C2" : "C1",
-        "16n",
-        t,
-      );
-    }, offsetSec);
+    playClick(ctx, startTime + beat * secPerBeat, beat % beatsPerBar === 0);
   }
 
   // All 3 harmony lines
+  const guideStops: Array<() => void> = [];
   for (const line of harmonyLines) {
     let beatOffset = 0;
     for (let i = 0; i < chords.length; i++) {
       const chord = chords[i]!;
       const midi: MidiNote | undefined = line[i];
       if (midi != null) {
-        const noteName = midiToNoteName(midi);
-        const startSec = beatOffset * secPerBeat;
+        const noteStartTime = startTime + beatOffset * secPerBeat;
         const durationSec = chord.beats * secPerBeat * 0.95;
-        Tone.getTransport().schedule((t) => {
-          guide.triggerAttackRelease(noteName, durationSec, t);
-        }, startSec);
+        guideStops.push(playGuideTone(ctx, midiToFrequency(midi), noteStartTime, durationSec));
       }
       beatOffset += chord.beats;
     }
   }
 
-  const previewCtx = Tone.getContext().rawContext as AudioContext;
-  const previewStartTime = previewCtx.currentTime;
-  Tone.getTransport().start();
-
   return {
-    startTime: previewStartTime,
+    startTime,
     stop() {
-      Tone.getTransport().stop();
-      Tone.getTransport().cancel();
-      guide.releaseAll();
+      for (const stop of guideStops) {
+        stop();
+      }
     },
   };
 }

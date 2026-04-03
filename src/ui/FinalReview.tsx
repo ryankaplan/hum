@@ -305,7 +305,7 @@ export function FinalReview() {
                     fontSize="xs"
                     w="24"
                     flexShrink={0}
-                    noOfLines={1}
+                    lineClamp={1}
                   >
                     {PART_LABELS[i as PartIndex]}
                   </Text>

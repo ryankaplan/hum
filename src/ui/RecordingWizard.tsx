@@ -436,7 +436,9 @@ export function RecordingWizard() {
     setActiveChordIndex(0);
     setCurrentAbsoluteBeat(0);
 
+    if (ctx == null) return;
     const session = startRecordingPlayback({
+      ctx,
       chords,
       harmonyLine: guideToneEnabled ? harmonyLine : null,
       beatsPerBar,
@@ -496,8 +498,11 @@ export function RecordingWizard() {
     setActiveChordIndex(0);
     setCountInBeat(0);
 
+    if (ctx == null) return;
+
     try {
       const result = await recordTake({
+        ctx,
         stream,
         chords,
         harmonyLine: guideToneEnabled ? harmonyLine : null,
@@ -655,8 +660,9 @@ export function RecordingWizard() {
           />
 
           {/* Note display */}
-          {phase !== "review" && (
+          {phase !== "review" && ctx != null && (
             <NoteDisplay
+              ctx={ctx}
               chords={chords}
               harmonyLine={harmonyLine}
               activeChordIndex={activeChordIndex}

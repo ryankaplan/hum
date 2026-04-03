@@ -30,7 +30,7 @@ import {
   stopAllPlayback,
 } from "../music/playback";
 import type { PlaybackSession } from "../music/playback";
-import * as Tone from "tone";
+import { audioContext } from "../state/appState";
 
 const NOTE_OPTIONS = [
   "C2", "D2", "E2", "F2", "G2", "A2", "B2",
@@ -62,9 +62,17 @@ export function SetupScreen() {
 
   async function handlePreview() {
     if (voicing == null || parsed.length === 0) return;
-    await Tone.start();
+    // Create or resume the AudioContext — a user gesture is in scope here.
+    let ctx = audioContext.get();
+    if (ctx == null) {
+      ctx = new AudioContext();
+      audioContext.set(ctx);
+    }
+    if (ctx.state === "suspended") {
+      await ctx.resume();
+    }
     setPreviewing(true);
-    const session = playHarmonyPreview(parsed, voicing.lines, meter[0], tempo);
+    const session = playHarmonyPreview(ctx, parsed, voicing.lines, meter[0], tempo);
     previewSessionRef.current = session;
     const durationMs = progressionDurationSec(parsed, tempo) * 1000 + 400;
     setTimeout(() => {

@@ -1,4 +1,3 @@
-import * as Tone from "tone";
 import {
   appScreen,
   audioContext,
@@ -42,10 +41,16 @@ export async function acquirePermissionsAndStart(): Promise<void> {
 
   mediaStream.set(stream);
 
-  // Create (or resume) the AudioContext. We let Tone.js own it so all timing
-  // goes through the same context.
-  await Tone.start();
-  audioContext.set(Tone.getContext().rawContext as AudioContext);
+  // Create (or resume) the AudioContext. A user gesture is in scope here
+  // (the button click that triggered this function), so browsers allow it.
+  let ctx = audioContext.get();
+  if (ctx == null) {
+    ctx = new AudioContext();
+  }
+  if (ctx.state === "suspended") {
+    await ctx.resume();
+  }
+  audioContext.set(ctx);
 
   resetSession();
   appScreen.set("recording");

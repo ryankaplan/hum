@@ -4,12 +4,13 @@ import type { Chord, HarmonyLine, MidiNote } from "../music/types";
 import { playNotePreview } from "../music/playback";
 
 type Props = {
+  ctx: AudioContext;
   chords: Chord[];
   harmonyLine: HarmonyLine | null; // null for melody part
   activeChordIndex: number;
 };
 
-export function NoteDisplay({ chords, harmonyLine, activeChordIndex }: Props) {
+export function NoteDisplay({ ctx, chords, harmonyLine, activeChordIndex }: Props) {
   if (harmonyLine == null) {
     return (
       <Box bg="gray.800" borderRadius="xl" p={4}>
@@ -22,7 +23,7 @@ export function NoteDisplay({ chords, harmonyLine, activeChordIndex }: Props) {
 
   function handleNoteClick(midi: MidiNote | undefined) {
     if (midi == null) return;
-    playNotePreview(midi);
+    playNotePreview(ctx, midi);
   }
 
   return (

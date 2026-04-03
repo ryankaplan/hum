@@ -37,6 +37,12 @@ export type PlaybackSession = {
 
 // Play just a click track (count-in).
 // Returns a promise that resolves when the count-in is complete.
+//
+// Uses scheduleRepeat("4n") so the first beat fires at transport position 0
+// (i.e. immediately when the transport starts). The old approach of scheduling
+// individual events at "+offset" computed Tone.now() before transport.start(),
+// which could leave the +0 event in the past when the transport finally ran,
+// causing it to be silently skipped and the promise to never resolve.
 export async function playCountIn(
   beatsPerBar: number,
   tempo: number,
@@ -50,17 +56,15 @@ export async function playCountIn(
   return new Promise<void>((resolve) => {
     let beatsFired = 0;
 
-    for (let beat = 0; beat < beatsPerBar; beat++) {
-      const time = `${beat}i`;
-      Tone.getTransport().schedule((t) => {
-        synth.triggerAttackRelease(beat === 0 ? "C2" : "C1", "16n", t);
-        beatsFired++;
-        if (beatsFired >= beatsPerBar) {
-          // Resolve slightly after the last click fires
-          setTimeout(resolve, (60 / tempo) * 1000 * 1.05);
-        }
-      }, `+${(beat * 60) / tempo}`);
-    }
+    Tone.getTransport().scheduleRepeat((t) => {
+      if (beatsFired >= beatsPerBar) return;
+      synth.triggerAttackRelease(beatsFired === 0 ? "C2" : "C1", "16n", t);
+      beatsFired++;
+      if (beatsFired >= beatsPerBar) {
+        // Resolve slightly after the last click so the audio has played
+        setTimeout(resolve, (60 / tempo) * 1000 * 1.05);
+      }
+    }, "4n");
 
     Tone.getTransport().start();
   });
@@ -92,7 +96,10 @@ export function startRecordingPlayback(
   const totalB = totalBeats(opts.chords);
   const secPerBeat = 60 / opts.tempo;
 
-  // Schedule click on every beat
+  // Schedule click on every beat.
+  // Passing offsetSec as a number uses transport-position time, so beat 0
+  // fires at position 0 (= when transport starts) rather than at a wall-clock
+  // time that may already be in the past.
   for (let beat = 0; beat < totalB; beat++) {
     const offsetSec = beat * secPerBeat;
     Tone.getTransport().schedule((t) => {
@@ -102,7 +109,7 @@ export function startRecordingPlayback(
         t,
       );
       opts.onBeat?.(beat);
-    }, `+${offsetSec}`);
+    }, offsetSec);
   }
 
   // Schedule guide tones: one sustained note per chord
@@ -122,7 +129,7 @@ export function startRecordingPlayback(
       Tone.getTransport().schedule((t) => {
         guide.triggerAttackRelease(noteName, durationSec, t);
         opts.onChordChange?.(localI);
-      }, `+${startSec}`);
+      }, startSec);
       beatOffset += chord.beats;
     }
   }
@@ -192,7 +199,7 @@ export function playHarmonyPreview(
   const totalB = totalBeats(chords);
   const secPerBeat = 60 / tempo;
 
-  // Click track
+  // Click track — numeric transport-position time, same fix as startRecordingPlayback
   for (let beat = 0; beat < totalB; beat++) {
     const offsetSec = beat * secPerBeat;
     Tone.getTransport().schedule((t) => {
@@ -201,7 +208,7 @@ export function playHarmonyPreview(
         "16n",
         t,
       );
-    }, `+${offsetSec}`);
+    }, offsetSec);
   }
 
   // All 3 harmony lines
@@ -216,7 +223,7 @@ export function playHarmonyPreview(
         const durationSec = chord.beats * secPerBeat * 0.95;
         Tone.getTransport().schedule((t) => {
           guide.triggerAttackRelease(noteName, durationSec, t);
-        }, `+${startSec}`);
+        }, startSec);
       }
       beatOffset += chord.beats;
     }

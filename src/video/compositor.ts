@@ -4,12 +4,17 @@ export type CompositorHandle = {
   stop: () => void;
 };
 
+export type CompositorOpts = {
+  isVideoActive?: (index: number) => boolean;
+};
+
 const CANVAS_WIDTH = 540;
 const CANVAS_HEIGHT = 960;
 
 export function startCompositor(
   canvas: HTMLCanvasElement,
   videos: HTMLVideoElement[],
+  opts?: CompositorOpts,
 ): CompositorHandle {
   canvas.width = CANVAS_WIDTH;
   canvas.height = CANVAS_HEIGHT;
@@ -37,7 +42,8 @@ export function startCompositor(
     for (let i = 0; i < videos.length && i < 4; i++) {
       const video = videos[i]!;
       const pos = positions[i]!;
-      if (video.readyState >= 2) {
+      const active = opts?.isVideoActive?.(i) ?? true;
+      if (active && video.readyState >= 2) {
         // Cover-fit: center-crop the video into the cell
         drawCoverFit(ctx, video, pos[0], pos[1], cellW, cellH);
       } else {

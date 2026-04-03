@@ -19,9 +19,11 @@ export type MonitorTrack = {
 
 export type MonitorPlayer = {
   // Schedule all tracks to start at AudioContext time `when`.
-  // Can only be called once per MonitorPlayer instance; create a new one for
-  // each record/listen session.
+  // Safe to call multiple times; stops any previously running sources first.
   start(when: number): void;
+  // Start all tracks looping from their trim offset for idle preview.
+  // Uses the same gain nodes as start(), so mute state is respected.
+  startLooping(): void;
   stop(): void;
   setMuted(trackIndex: number, muted: boolean): void;
   dispose(): void;
@@ -71,9 +73,20 @@ export function createMonitorPlayer(
   // Active source nodes — created fresh each time start() is called
   let activeSources: (AudioBufferSourceNode | null)[] = [];
 
+  function stopActiveSources() {
+    for (const source of activeSources) {
+      try {
+        source?.stop();
+      } catch {
+        // stop() throws if node was never started or already stopped; safe to ignore
+      }
+    }
+    activeSources = [];
+  }
+
   return {
     start(when: number) {
-      activeSources = [];
+      stopActiveSources();
       for (let i = 0; i < tracks.length; i++) {
         const track = tracks[i];
         const gain = gainNodes[i];
@@ -92,15 +105,28 @@ export function createMonitorPlayer(
       }
     },
 
-    stop() {
-      for (const source of activeSources) {
-        try {
-          source?.stop();
-        } catch {
-          // stop() throws if already stopped; safe to ignore
+    startLooping() {
+      stopActiveSources();
+      for (let i = 0; i < tracks.length; i++) {
+        const track = tracks[i];
+        const gain = gainNodes[i];
+        if (track == null || gain == null) {
+          activeSources.push(null);
+          continue;
         }
+        const source = ctx.createBufferSource();
+        source.buffer = track.buffer;
+        source.loop = true;
+        source.loopStart = Math.max(0, track.trimOffsetSec);
+        source.loopEnd = track.buffer.duration;
+        source.connect(gain);
+        source.start(ctx.currentTime + 0.05, Math.max(0, track.trimOffsetSec));
+        activeSources.push(source);
       }
-      activeSources = [];
+    },
+
+    stop() {
+      stopActiveSources();
     },
 
     setMuted(trackIndex: number, isMuted: boolean) {
@@ -112,14 +138,7 @@ export function createMonitorPlayer(
     },
 
     dispose() {
-      for (const source of activeSources) {
-        try {
-          source?.stop();
-        } catch {
-          // safe to ignore
-        }
-      }
-      activeSources = [];
+      stopActiveSources();
       for (const gain of gainNodes) {
         gain?.disconnect();
       }

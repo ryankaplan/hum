@@ -26,10 +26,7 @@ import type { PartState } from "../state/appState";
 import type { PartIndex } from "../music/types";
 import { PART_LABELS } from "../music/types";
 import { recordTake } from "../recording/recorder";
-import {
-  startRecordingPlayback,
-  stopAllPlayback,
-} from "../music/playback";
+import { startRecordingPlayback, stopAllPlayback } from "../music/playback";
 import type { PlaybackSession } from "../music/playback";
 import {
   createMonitorPlayer,
@@ -42,7 +39,12 @@ import { NoteDisplay } from "./NoteDisplay";
 const TOTAL_PARTS = 4;
 
 // "listening" = playing guide tones without recording (pre-roll practice)
-type RecordPhase = "pre-roll" | "listening" | "counting-in" | "recording" | "review";
+type RecordPhase =
+  | "pre-roll"
+  | "listening"
+  | "counting-in"
+  | "recording"
+  | "review";
 
 type BeatDotsProps = {
   beatsPerBar: number;
@@ -60,11 +62,17 @@ function BeatDots({ beatsPerBar, activeBeat }: BeatDotsProps) {
           <Box
             key={i}
             borderRadius="full"
-            bg={isActive ? (isDownbeat ? "brand.400" : "brand.300") : "gray.700"}
+            bg={
+              isActive ? (isDownbeat ? "brand.400" : "brand.300") : "gray.700"
+            }
             w={isDownbeat ? 4 : 3}
             h={isDownbeat ? 4 : 3}
             transition="background 0.06s"
-            style={isActive ? { boxShadow: "0 0 8px var(--chakra-colors-brand-400)" } : undefined}
+            style={
+              isActive
+                ? { boxShadow: "0 0 8px var(--chakra-colors-brand-400)" }
+                : undefined
+            }
           />
         );
       })}
@@ -122,7 +130,7 @@ function RecordingGrid({
         templateRows="1fr 1fr"
         w="100%"
         h="100%"
-        gap="2px"
+        gap="0"
         bg="gray.800"
       >
         {Array.from({ length: TOTAL_PARTS }).map((_, i) => {
@@ -254,7 +262,12 @@ export function RecordingWizard() {
   const [currentAbsoluteBeat, setCurrentAbsoluteBeat] = useState(-1);
   const [reviewUrl, setReviewUrl] = useState<string | null>(null);
   const [guideToneEnabled, setGuideToneEnabled] = useState(true);
-  const [mutedParts, setMutedParts] = useState<boolean[]>([false, false, false, false]);
+  const [mutedParts, setMutedParts] = useState<boolean[]>([
+    false,
+    false,
+    false,
+    false,
+  ]);
   const [micDevices, setMicDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedMicId, setSelectedMicId] = useState("");
 
@@ -263,6 +276,9 @@ export function RecordingWizard() {
   const currentBlobRef = useRef<Blob | null>(null);
   const currentTrimOffsetRef = useRef<number>(0);
   const listenSessionRef = useRef<PlaybackSession | null>(null);
+  // Incremented each time a new MonitorPlayer finishes decoding so the looping
+  // effect can fire even though monitorPlayerRef is a ref (not state).
+  const [monitorPlayerKey, setMonitorPlayerKey] = useState(0);
 
   const isLastPart = partIndex === TOTAL_PARTS - 1;
   const isMelodyPart = partIndex === 3;
@@ -311,6 +327,7 @@ export function RecordingWizard() {
         }
       }
       monitorPlayerRef.current = player;
+      setMonitorPlayerKey((k) => k + 1);
     });
 
     return () => {
@@ -332,8 +349,26 @@ export function RecordingWizard() {
     }
   }, [mutedParts, partIndex, states]);
 
+  // Auto-play looping audio preview during pre-roll so kept parts are audible
+  // while the user decides whether to listen or record. Fires when the phase
+  // becomes "pre-roll" OR when a newly decoded MonitorPlayer becomes available
+  // (monitorPlayerKey bumps on each successful decode).
   useEffect(() => {
-    if (phase === "review" && reviewVideoRef.current != null && reviewUrl != null) {
+    if (phase !== "pre-roll") return;
+    const player = monitorPlayerRef.current;
+    if (player == null) return;
+    player.startLooping();
+    return () => {
+      player.stop();
+    };
+  }, [phase, monitorPlayerKey]);
+
+  useEffect(() => {
+    if (
+      phase === "review" &&
+      reviewVideoRef.current != null &&
+      reviewUrl != null
+    ) {
       reviewVideoRef.current.src = reviewUrl;
       reviewVideoRef.current.play().catch(() => {});
     }
@@ -393,7 +428,8 @@ export function RecordingWizard() {
   // ─── Listen (no recording) ──────────────────────────────────────────────────
 
   function handleListen() {
-    // Stop any ongoing listen session first
+    // Stop preview loop and any ongoing listen session first
+    monitorPlayerRef.current?.stop();
     listenSessionRef.current?.stop();
 
     setPhase("listening");
@@ -451,7 +487,8 @@ export function RecordingWizard() {
   async function handleRecord() {
     if (stream == null) return;
 
-    // Stop any ongoing listen session before recording
+    // Stop preview loop and any ongoing listen session before recording
+    monitorPlayerRef.current?.stop();
     listenSessionRef.current?.stop();
     listenSessionRef.current = null;
 
@@ -559,12 +596,20 @@ export function RecordingWizard() {
 
   if (stream == null) return null;
 
-  const partLabel = PART_LABELS[partIndex as PartIndex] ?? `Part ${partIndex + 1}`;
+  const partLabel =
+    PART_LABELS[partIndex as PartIndex] ?? `Part ${partIndex + 1}`;
   const busy = phase === "counting-in" || phase === "recording";
   const isListening = phase === "listening";
 
   return (
-    <Flex minH="100vh" bg="gray.950" align="center" justify="center" px={4} py={6}>
+    <Flex
+      minH="100vh"
+      bg="gray.950"
+      align="center"
+      justify="center"
+      px={4}
+      py={6}
+    >
       <Box w="100%" maxW="420px">
         <Stack gap={3}>
           {/* Header */}
@@ -592,8 +637,8 @@ export function RecordingWizard() {
               {isMelodyPart
                 ? "Sing the melody — harmonies play quietly in your headphones"
                 : partIndex === 0
-                ? "Listen first, then record when ready"
-                : "Prior parts play quietly in your headphones"}
+                  ? "Listen first, then record when ready"
+                  : "Prior parts play quietly in your headphones"}
             </Text>
           </Box>
 
@@ -619,7 +664,9 @@ export function RecordingWizard() {
           )}
 
           {/* Beat indicator — shown during count-in, listening, and recording */}
-          {(phase === "counting-in" || phase === "listening" || phase === "recording") && (
+          {(phase === "counting-in" ||
+            phase === "listening" ||
+            phase === "recording") && (
             <Box bg="gray.900" borderRadius="xl" px={4} py={3}>
               <Flex align="center" justify="space-between" mb={2}>
                 {phase === "counting-in" && (

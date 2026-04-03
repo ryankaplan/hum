@@ -93,7 +93,7 @@ export function SetupScreen() {
               <Input
                 value={chords}
                 onChange={(e) => chordsInput.set(e.target.value)}
-                placeholder="A x2, F#m x2, D x2, E x2"
+                placeholder="A A F#m F#m D D E E"
                 bg="gray.800"
                 border="1px solid"
                 borderColor="gray.700"
@@ -102,7 +102,7 @@ export function SetupScreen() {
                 _focus={{ borderColor: "brand.400", boxShadow: "none" }}
               />
               <Field.HelperText color="gray.500" fontSize="xs">
-                Chord name + optional repeat, e.g. "Am x2, G, F x2, E"
+                One chord per bar, space separated — repeat a chord to hold it: "Am Am G F F E"
               </Field.HelperText>
             </Field.Root>
 

@@ -36,6 +36,34 @@ const TOTAL_PARTS = 4;
 // "listening" = playing guide tones without recording (pre-roll practice)
 type RecordPhase = "pre-roll" | "listening" | "counting-in" | "recording" | "review";
 
+type BeatDotsProps = {
+  beatsPerBar: number;
+  // 0-indexed active beat within the bar; -1 = none lit
+  activeBeat: number;
+};
+
+function BeatDots({ beatsPerBar, activeBeat }: BeatDotsProps) {
+  return (
+    <Flex gap={2} justify="center">
+      {Array.from({ length: beatsPerBar }).map((_, i) => {
+        const isDownbeat = i === 0;
+        const isActive = i === activeBeat;
+        return (
+          <Box
+            key={i}
+            borderRadius="full"
+            bg={isActive ? (isDownbeat ? "brand.400" : "brand.300") : "gray.700"}
+            w={isDownbeat ? 4 : 3}
+            h={isDownbeat ? 4 : 3}
+            transition="background 0.06s"
+            style={isActive ? { boxShadow: "0 0 8px var(--chakra-colors-brand-400)" } : undefined}
+          />
+        );
+      })}
+    </Flex>
+  );
+}
+
 export function RecordingWizard() {
   const stream = useObservable(mediaStream);
   const partIndex = useObservable(currentPartIndex);
@@ -48,7 +76,9 @@ export function RecordingWizard() {
   const [phase, setPhase] = useState<RecordPhase>("pre-roll");
   const [activeChordIndex, setActiveChordIndex] = useState(0);
   const [countInBeat, setCountInBeat] = useState(0);
+  const [currentAbsoluteBeat, setCurrentAbsoluteBeat] = useState(-1);
   const [reviewUrl, setReviewUrl] = useState<string | null>(null);
+  const [monitoringEnabled, setMonitoringEnabled] = useState(true);
 
   const reviewVideoRef = useRef<HTMLVideoElement>(null);
   const monitorRefs = useRef<HTMLAudioElement[]>([]);
@@ -92,6 +122,8 @@ export function RecordingWizard() {
     setPhase("pre-roll");
     setReviewUrl(null);
     setActiveChordIndex(0);
+    setCurrentAbsoluteBeat(-1);
+    setCountInBeat(0);
     currentBlobRef.current = null;
   }, [partIndex]);
 
@@ -103,14 +135,16 @@ export function RecordingWizard() {
 
     setPhase("listening");
     setActiveChordIndex(0);
+    setCurrentAbsoluteBeat(0);
 
     const session = startRecordingPlayback({
       chords,
       harmonyLine,
       beatsPerBar,
       tempo,
-      monitorElements: monitorRefs.current,
+      monitorElements: monitoringEnabled ? monitorRefs.current : [],
       onBeat: (beat) => {
+        setCurrentAbsoluteBeat(beat);
         let remaining = beat;
         for (let i = 0; i < chords.length; i++) {
           const chord = chords[i]!;
@@ -146,6 +180,7 @@ export function RecordingWizard() {
     listenSessionRef.current = null;
     setPhase("pre-roll");
     setActiveChordIndex(0);
+    setCurrentAbsoluteBeat(-1);
   }
 
   // ─── Record ─────────────────────────────────────────────────────────────────
@@ -168,14 +203,16 @@ export function RecordingWizard() {
         harmonyLine,
         beatsPerBar,
         tempo,
-        monitorElements: monitorRefs.current,
+        monitorElements: monitoringEnabled ? monitorRefs.current : [],
         callbacks: {
           onCountInBeat: (beat) => setCountInBeat(beat + 1),
           onRecordingStart: () => {
             setPhase("recording");
             setActiveChordIndex(0);
+            setCurrentAbsoluteBeat(0);
           },
           onBeat: (beat) => {
+            setCurrentAbsoluteBeat(beat);
             let remaining = beat;
             for (let i = 0; i < chords.length; i++) {
               const chord = chords[i]!;
@@ -304,32 +341,44 @@ export function RecordingWizard() {
             />
           )}
 
-          {/* Count-in indicator */}
-          {phase === "counting-in" && (
-            <Box bg="gray.800" borderRadius="xl" p={3} textAlign="center">
-              <Text color="brand.300" fontSize="5xl" fontWeight="bold" lineHeight="1">
-                {Math.max(beatsPerBar - countInBeat, 1)}
-              </Text>
-              <Text color="gray.500" fontSize="xs" mt={1}>
-                Count-in
-              </Text>
-            </Box>
-          )}
-
-          {/* Recording indicator */}
-          {phase === "recording" && (
-            <Flex align="center" gap={3} bg="red.900" borderRadius="xl" px={4} py={3}>
-              <Box
-                w={3}
-                h={3}
-                borderRadius="full"
-                bg="red.400"
-                style={{ animation: "recPulse 1s ease-in-out infinite" }}
+          {/* Beat indicator — shown during count-in, listening, and recording */}
+          {(phase === "counting-in" || phase === "listening" || phase === "recording") && (
+            <Box bg="gray.900" borderRadius="xl" px={4} py={3}>
+              <Flex align="center" justify="space-between" mb={2}>
+                {phase === "counting-in" && (
+                  <Text color="gray.400" fontSize="xs" fontWeight="semibold">
+                    COUNT-IN
+                  </Text>
+                )}
+                {phase === "listening" && (
+                  <Text color="brand.400" fontSize="xs" fontWeight="semibold">
+                    LISTENING
+                  </Text>
+                )}
+                {phase === "recording" && (
+                  <Flex align="center" gap={2}>
+                    <Box
+                      w={2}
+                      h={2}
+                      borderRadius="full"
+                      bg="red.400"
+                      style={{ animation: "recPulse 1s ease-in-out infinite" }}
+                    />
+                    <Text color="red.300" fontSize="xs" fontWeight="semibold">
+                      RECORDING
+                    </Text>
+                  </Flex>
+                )}
+              </Flex>
+              <BeatDots
+                beatsPerBar={beatsPerBar}
+                activeBeat={
+                  phase === "counting-in"
+                    ? countInBeat - 1
+                    : currentAbsoluteBeat % beatsPerBar
+                }
               />
-              <Text color="red.300" fontSize="sm" fontWeight="semibold">
-                RECORDING
-              </Text>
-            </Flex>
+            </Box>
           )}
 
           {/* Progress dots */}
@@ -352,25 +401,39 @@ export function RecordingWizard() {
 
           {/* Action buttons */}
           {(phase === "pre-roll" || isListening) && (
-            <Grid templateColumns="1fr 1fr" gap={3}>
-              <Button
-                variant="outline"
-                size="lg"
-                borderColor={isListening ? "brand.600" : "gray.600"}
-                color={isListening ? "brand.300" : "gray.300"}
-                onClick={isListening ? handleStopListening : handleListen}
-              >
-                {isListening ? "Stop" : "Listen"}
-              </Button>
-              <Button
-                colorPalette="brand"
-                size="lg"
-                onClick={handleRecord}
-                disabled={isListening}
-              >
-                Record
-              </Button>
-            </Grid>
+            <Stack gap={2}>
+              <Grid templateColumns="1fr 1fr" gap={3}>
+                <Button
+                  variant="outline"
+                  size="lg"
+                  borderColor={isListening ? "brand.600" : "gray.600"}
+                  color={isListening ? "brand.300" : "gray.300"}
+                  onClick={isListening ? handleStopListening : handleListen}
+                >
+                  {isListening ? "Stop" : "Listen"}
+                </Button>
+                <Button
+                  colorPalette="brand"
+                  size="lg"
+                  onClick={handleRecord}
+                  disabled={isListening}
+                >
+                  Record
+                </Button>
+              </Grid>
+              {/* Monitoring toggle — only meaningful when there are prior takes */}
+              {partIndex > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  color={monitoringEnabled ? "brand.300" : "gray.600"}
+                  onClick={() => setMonitoringEnabled((v) => !v)}
+                  disabled={busy}
+                >
+                  {monitoringEnabled ? "⏸ Monitor: on" : "⏸ Monitor: off"}
+                </Button>
+              )}
+            </Stack>
           )}
 
           {phase === "review" && (

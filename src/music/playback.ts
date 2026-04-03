@@ -168,3 +168,9 @@ export function stopAllPlayback(): void {
   Tone.getTransport().cancel();
   guideSynth?.releaseAll();
 }
+
+// Play a single note immediately — used when the user taps a note chip.
+export function playNotePreview(midi: MidiNote, durationSec = 1.2): void {
+  const synth = getGuideSynth();
+  synth.triggerAttackRelease(midiToNoteName(midi), durationSec);
+}

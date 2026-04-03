@@ -1,6 +1,7 @@
 import { Box, Flex, Text } from "@chakra-ui/react";
 import { midiToNoteName } from "../music/types";
 import type { Chord, HarmonyLine, MidiNote } from "../music/types";
+import { playNotePreview } from "../music/playback";
 
 type Props = {
   chords: Chord[];
@@ -19,10 +20,15 @@ export function NoteDisplay({ chords, harmonyLine, activeChordIndex }: Props) {
     );
   }
 
+  function handleNoteClick(midi: MidiNote | undefined) {
+    if (midi == null) return;
+    playNotePreview(midi);
+  }
+
   return (
     <Box bg="gray.800" borderRadius="xl" p={4}>
       <Text color="gray.500" fontSize="xs" mb={3} fontWeight="semibold">
-        YOUR NOTES
+        YOUR NOTES — tap to hear
       </Text>
       <Flex gap={2} flexWrap="wrap">
         {chords.map((chord, i) => {
@@ -39,6 +45,11 @@ export function NoteDisplay({ chords, harmonyLine, activeChordIndex }: Props) {
               textAlign="center"
               minW="60px"
               transition="background 0.15s"
+              cursor="pointer"
+              _hover={{ bg: isActive ? "brand.400" : "gray.600" }}
+              _active={{ transform: "scale(0.95)" }}
+              onClick={() => handleNoteClick(midi)}
+              userSelect="none"
             >
               <Text
                 color={isActive ? "white" : "gray.300"}

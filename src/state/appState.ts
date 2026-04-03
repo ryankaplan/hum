@@ -17,7 +17,7 @@ export type PartState =
 
 export const chordsInput = new PersistedObservable<string>(
   "hum.chords",
-  "A x2, F#m x2, D x2, E x2",
+  "A A F#m F#m D D E E",
 );
 
 export const tempoInput = new PersistedObservable<number>("hum.tempo", 80);

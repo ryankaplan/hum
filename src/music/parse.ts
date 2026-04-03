@@ -1,20 +1,17 @@
 import type { Chord, NoteName, TriadQuality } from "./types";
 
-// Parses a chord progression string like "A x2, F#m x2, D x2, E x2"
-// into an array of Chord objects with beat counts.
-// "x2" means 2 bars. Beats per chord = barCount * beatsPerBar.
+// Parses a chord progression string like "A A F#m F#m D D E E"
+// Each token is one bar (beatsPerBar beats). Separate by spaces and/or commas.
 export function parseChordProgression(
   input: string,
   beatsPerBar: number,
 ): Chord[] {
   const chords: Chord[] = [];
-  const tokens = input.split(",");
+  const tokens = input.trim().split(/[\s,]+/);
 
   for (const token of tokens) {
-    const trimmed = token.trim();
-    if (trimmed === "") continue;
-
-    const parsed = parseChordToken(trimmed, beatsPerBar);
+    if (token === "") continue;
+    const parsed = parseChordToken(token, beatsPerBar);
     if (parsed != null) {
       chords.push(parsed);
     }
@@ -24,23 +21,16 @@ export function parseChordProgression(
 }
 
 function parseChordToken(token: string, beatsPerBar: number): Chord | null {
-  // Match patterns like: "A", "F#m", "Bb x2", "C#m x3"
-  const match = token.match(
-    /^([A-G][#b]?)(m?)\s*(?:x(\d+))?$/i,
-  );
+  // Match chord name only: "A", "F#m", "Bb", "C#m"
+  const match = token.match(/^([A-G][#b]?)(m?)$/i);
   if (match == null) return null;
 
-  const rootRaw = match[1]!;
-  const isMinor = match[2] === "m";
-  const bars = match[3] != null ? parseInt(match[3], 10) : 1;
-
-  const root = normalizeRoot(rootRaw);
+  const root = normalizeRoot(match[1]!);
   if (root == null) return null;
 
-  const quality: TriadQuality = isMinor ? "minor" : "major";
-  const beats = bars * beatsPerBar;
+  const quality: TriadQuality = match[2] === "m" ? "minor" : "major";
 
-  return { root, quality, beats };
+  return { root, quality, beats: beatsPerBar };
 }
 
 // Valid note names after normalizing flats to sharps

@@ -8,7 +8,7 @@ import {
   Stack,
   Text,
 } from "@chakra-ui/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { useObservable } from "../observable";
 import {
   appScreen,
@@ -21,6 +21,7 @@ import {
   tempoInput,
   updatePartState,
 } from "../state/appState";
+import type { PartState } from "../state/appState";
 import type { PartIndex } from "../music/types";
 import { PART_LABELS } from "../music/types";
 import { recordTake } from "../recording/recorder";
@@ -65,6 +66,173 @@ function BeatDots({ beatsPerBar, activeBeat }: BeatDotsProps) {
   );
 }
 
+function MuteIcon({ muted }: { muted: boolean }) {
+  if (muted) {
+    return (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" />
+      </svg>
+    );
+  }
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
+    </svg>
+  );
+}
+
+type RecordingGridProps = {
+  stream: MediaStream;
+  partIndex: number;
+  states: PartState[];
+  phase: RecordPhase;
+  reviewUrl: string | null;
+  reviewVideoRef: RefObject<HTMLVideoElement | null>;
+  mutedParts: boolean[];
+  onToggleMute: (index: number) => void;
+};
+
+function RecordingGrid({
+  stream,
+  partIndex,
+  states,
+  phase,
+  reviewUrl,
+  reviewVideoRef,
+  mutedParts,
+  onToggleMute,
+}: RecordingGridProps) {
+  return (
+    <Box
+      borderRadius="xl"
+      overflow="hidden"
+      bg="black"
+      w="min(100%, calc(52vh * 9 / 16))"
+      aspectRatio="9/16"
+      mx="auto"
+    >
+      <Grid
+        templateColumns="1fr 1fr"
+        templateRows="1fr 1fr"
+        w="100%"
+        h="100%"
+        gap="2px"
+        bg="gray.800"
+      >
+        {Array.from({ length: TOTAL_PARTS }).map((_, i) => {
+          const isCurrent = i === partIndex;
+          const state = states[i];
+          const isKept = state != null && state.status === "kept";
+          const isFuture = i > partIndex;
+
+          return (
+            <Box key={i} position="relative" overflow="hidden" bg="gray.950">
+              {isCurrent && phase !== "review" && (
+                <CameraPreview
+                  stream={stream}
+                  borderRadius="none"
+                  maxH="26vh"
+                />
+              )}
+
+              {isCurrent && phase === "review" && reviewUrl != null && (
+                <video
+                  ref={reviewVideoRef}
+                  playsInline
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                    display: "block",
+                  }}
+                />
+              )}
+
+              {isKept && state.status === "kept" && (
+                <KeptCell
+                  url={state.url}
+                  muted={mutedParts[i] ?? false}
+                  onToggleMute={() => onToggleMute(i)}
+                />
+              )}
+
+              {isFuture && (
+                <Flex
+                  w="100%"
+                  h="100%"
+                  align="center"
+                  justify="center"
+                  bg="gray.950"
+                >
+                  <Text color="gray.700" fontSize="xs" fontWeight="semibold">
+                    {PART_LABELS[i as PartIndex]}
+                  </Text>
+                </Flex>
+              )}
+            </Box>
+          );
+        })}
+      </Grid>
+    </Box>
+  );
+}
+
+type KeptCellProps = {
+  url: string;
+  muted: boolean;
+  onToggleMute: () => void;
+};
+
+function KeptCell({ url, muted, onToggleMute }: KeptCellProps) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const el = videoRef.current;
+    if (el == null) return;
+    el.src = url;
+    el.loop = true;
+    el.muted = true; // visual-only; audio is handled via monitorRefs
+    el.play().catch(() => {});
+    return () => {
+      el.pause();
+      el.src = "";
+    };
+  }, [url]);
+
+  return (
+    <>
+      <video
+        ref={videoRef}
+        playsInline
+        style={{
+          width: "100%",
+          height: "100%",
+          objectFit: "cover",
+          display: "block",
+        }}
+      />
+      <Box
+        as="button"
+        position="absolute"
+        bottom="6px"
+        right="6px"
+        bg={muted ? "blackAlpha.800" : "blackAlpha.600"}
+        color={muted ? "gray.400" : "white"}
+        borderRadius="full"
+        p="5px"
+        display="flex"
+        alignItems="center"
+        justifyContent="center"
+        onClick={onToggleMute}
+        style={{ cursor: "pointer", border: "none", lineHeight: 0 }}
+        _hover={{ bg: "blackAlpha.900" }}
+      >
+        <MuteIcon muted={muted} />
+      </Box>
+    </>
+  );
+}
+
 export function RecordingWizard() {
   const stream = useObservable(mediaStream);
   const partIndex = useObservable(currentPartIndex);
@@ -80,7 +248,7 @@ export function RecordingWizard() {
   const [currentAbsoluteBeat, setCurrentAbsoluteBeat] = useState(-1);
   const [reviewUrl, setReviewUrl] = useState<string | null>(null);
   const [guideToneEnabled, setGuideToneEnabled] = useState(true);
-  const [priorTakesEnabled, setPriorTakesEnabled] = useState(true);
+  const [mutedParts, setMutedParts] = useState<boolean[]>([false, false, false, false]);
   const [micDevices, setMicDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedMicId, setSelectedMicId] = useState("");
 
@@ -106,11 +274,27 @@ export function RecordingWizard() {
       if (state != null && state.status === "kept") {
         const el = new Audio(state.url);
         el.preload = "auto";
+        el.muted = mutedParts[i] ?? false;
         elements.push(el);
       }
     }
     monitorRefs.current = elements;
-  }, [partIndex, states]);
+  }, [partIndex, states]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sync mute state onto existing monitor elements when mutedParts changes
+  useEffect(() => {
+    let audioIdx = 0;
+    for (let i = 0; i < partIndex; i++) {
+      const state = states[i];
+      if (state != null && state.status === "kept") {
+        const el = monitorRefs.current[audioIdx];
+        if (el != null) {
+          el.muted = mutedParts[i] ?? false;
+        }
+        audioIdx++;
+      }
+    }
+  }, [mutedParts, partIndex, states]);
 
   useEffect(() => {
     if (phase === "review" && reviewVideoRef.current != null && reviewUrl != null) {
@@ -159,6 +343,16 @@ export function RecordingWizard() {
     currentBlobRef.current = null;
   }, [partIndex]);
 
+  // ─── Mute toggle ────────────────────────────────────────────────────────────
+
+  function handleToggleMute(index: number) {
+    setMutedParts((prev) => {
+      const next = [...prev];
+      next[index] = !(next[index] ?? false);
+      return next;
+    });
+  }
+
   // ─── Listen (no recording) ──────────────────────────────────────────────────
 
   function handleListen() {
@@ -174,7 +368,7 @@ export function RecordingWizard() {
       harmonyLine: guideToneEnabled ? harmonyLine : null,
       beatsPerBar,
       tempo,
-      monitorElements: priorTakesEnabled ? monitorRefs.current : [],
+      monitorElements: monitorRefs.current,
       onBeat: (beat) => {
         setCurrentAbsoluteBeat(beat);
         let remaining = beat;
@@ -235,7 +429,7 @@ export function RecordingWizard() {
         harmonyLine: guideToneEnabled ? harmonyLine : null,
         beatsPerBar,
         tempo,
-        monitorElements: priorTakesEnabled ? monitorRefs.current : [],
+        monitorElements: monitorRefs.current,
         callbacks: {
           onCountInBeat: (beat) => setCountInBeat(beat + 1),
           onRecordingStart: () => {
@@ -360,31 +554,17 @@ export function RecordingWizard() {
             </Text>
           </Box>
 
-          {/* Camera or review video */}
-          {phase !== "review" ? (
-            <CameraPreview stream={stream} />
-          ) : (
-            <Box
-              borderRadius="xl"
-              overflow="hidden"
-              bg="black"
-              w="min(100%, calc(52vh * 9 / 16))"
-              aspectRatio="9/16"
-              mx="auto"
-            >
-              <video
-                ref={reviewVideoRef}
-                controls
-                playsInline
-                style={{
-                  width: "100%",
-                  height: "100%",
-                  objectFit: "cover",
-                  display: "block",
-                }}
-              />
-            </Box>
-          )}
+          {/* 2x2 recording grid */}
+          <RecordingGrid
+            stream={stream}
+            partIndex={partIndex}
+            states={states}
+            phase={phase}
+            reviewUrl={reviewUrl}
+            reviewVideoRef={reviewVideoRef}
+            mutedParts={mutedParts}
+            onToggleMute={handleToggleMute}
+          />
 
           {/* Note display */}
           {phase !== "review" && (
@@ -435,24 +615,6 @@ export function RecordingWizard() {
             </Box>
           )}
 
-          {/* Progress dots */}
-          <Flex justify="center" gap={2}>
-            {Array.from({ length: TOTAL_PARTS }).map((_, i) => {
-              const s = states[i];
-              const isKept = s != null && s.status === "kept";
-              const isCurrent = i === partIndex;
-              return (
-                <Box
-                  key={i}
-                  w={2.5}
-                  h={2.5}
-                  borderRadius="full"
-                  bg={isKept ? "brand.400" : isCurrent ? "white" : "gray.700"}
-                />
-              );
-            })}
-          </Flex>
-
           {/* Action buttons */}
           {(phase === "pre-roll" || isListening) && (
             <Stack gap={2}>
@@ -485,16 +647,6 @@ export function RecordingWizard() {
                     onClick={() => setGuideToneEnabled((v) => !v)}
                   >
                     Guide tones: {guideToneEnabled ? "on" : "off"}
-                  </Button>
-                )}
-                {partIndex > 0 && (
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    color={priorTakesEnabled ? "brand.300" : "gray.600"}
-                    onClick={() => setPriorTakesEnabled((v) => !v)}
-                  >
-                    Prior takes: {priorTakesEnabled ? "on" : "off"}
                   </Button>
                 )}
               </Flex>

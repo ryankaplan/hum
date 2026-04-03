@@ -6,10 +6,16 @@ import {
   startRecordingPlayback,
 } from "../music/playback";
 import type { PlaybackSession } from "../music/playback";
+import type { MonitorPlayer } from "../audio/monitorPlayer";
+import * as Tone from "tone";
 
 export type RecordingResult = {
   blob: Blob;
   url: string;
+  // Seconds of leading silence before beat-1 of the recording. Callers use
+  // this as the `trimOffsetSec` for the track so that subsequent takes can
+  // align to it via AudioBufferSourceNode.start(when, trimOffsetSec).
+  trimOffsetSec: number;
 };
 
 export type RecordingCallbacks = {
@@ -26,7 +32,7 @@ export type RecordingOpts = {
   harmonyLine: HarmonyLine | null;
   beatsPerBar: number;
   tempo: number;
-  monitorElements?: HTMLAudioElement[];
+  monitorPlayer?: MonitorPlayer | null;
   callbacks?: RecordingCallbacks;
 };
 
@@ -39,7 +45,7 @@ export async function recordTake(opts: RecordingOpts): Promise<RecordingResult> 
     harmonyLine,
     beatsPerBar,
     tempo,
-    monitorElements,
+    monitorPlayer,
     callbacks,
   } = opts;
 
@@ -47,7 +53,6 @@ export async function recordTake(opts: RecordingOpts): Promise<RecordingResult> 
   const countTotal = beatsPerBar;
   let countBeat = 0;
 
-  // Override onBeat during count-in to emit count-in beats
   const countInPromise = playCountIn(beatsPerBar, tempo);
 
   // Emit count-in beat events by polling
@@ -62,7 +67,7 @@ export async function recordTake(opts: RecordingOpts): Promise<RecordingResult> 
   await countInPromise;
   clearInterval(countInterval);
 
-  // 2. Start MediaRecorder
+  // 2. Set up MediaRecorder (but don't start it yet)
   const mimeType = getSupportedMimeType();
   const mediaRecorder = new MediaRecorder(stream, {
     mimeType,
@@ -76,7 +81,7 @@ export async function recordTake(opts: RecordingOpts): Promise<RecordingResult> 
     }
   };
 
-  const recordingDone = new Promise<RecordingResult>((resolve) => {
+  const recordingDone = new Promise<Omit<RecordingResult, "trimOffsetSec">>((resolve) => {
     mediaRecorder.onstop = () => {
       const blob = new Blob(chunks, { type: mimeType });
       const url = URL.createObjectURL(blob);
@@ -84,21 +89,36 @@ export async function recordTake(opts: RecordingOpts): Promise<RecordingResult> 
     };
   });
 
+  // 3. Start the MediaRecorder and immediately note the AudioContext time.
+  //    startRecordingPlayback will schedule everything to begin at
+  //    ctx.currentTime + 0.1, so we compute the difference to get the
+  //    exact trim offset.
+  const ctx = Tone.getContext().rawContext as AudioContext;
   mediaRecorder.start(100); // collect data every 100ms
+  const recorderStartCtxTime = ctx.currentTime;
   callbacks?.onRecordingStart?.();
 
-  // 3. Start playback (guide tones + click + monitoring)
+  // 4. Start playback (guide tones + click + monitoring).
+  //    startRecordingPlayback computes startTime = ctx.currentTime + 0.1
+  //    and passes it to both the MonitorPlayer and the Tone transport, so
+  //    all audio begins at the same sample-accurate AudioContext time.
   const playback: PlaybackSession = startRecordingPlayback({
     chords,
     harmonyLine,
     beatsPerBar,
     tempo,
-    monitorElements,
+    monitorPlayer,
     onBeat: callbacks?.onBeat,
     onChordChange: callbacks?.onChordChange,
   });
 
-  // 4. Auto-stop after the full progression + a small buffer
+  // The transport start time is ctx.currentTime + 0.1 (matching the value
+  // computed inside startRecordingPlayback). We re-derive it here using the
+  // same formula rather than plumbing it back out.
+  const transportStartCtxTime = recorderStartCtxTime + 0.1;
+  const trimOffsetSec = transportStartCtxTime - recorderStartCtxTime;
+
+  // 5. Auto-stop after the full progression + a small buffer
   const durationMs =
     progressionDurationSec(chords, tempo) * 1000 + 600;
 
@@ -107,7 +127,8 @@ export async function recordTake(opts: RecordingOpts): Promise<RecordingResult> 
   playback.stop();
   mediaRecorder.stop();
 
-  return recordingDone;
+  const { blob, url } = await recordingDone;
+  return { blob, url, trimOffsetSec };
 }
 
 function getSupportedMimeType(): string {

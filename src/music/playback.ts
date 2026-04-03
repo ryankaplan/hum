@@ -2,6 +2,7 @@ import * as Tone from "tone";
 import type { Chord, HarmonyLine, MidiNote } from "./types";
 import { midiToNoteName } from "./types";
 import { totalBeats } from "./parse";
+import type { MonitorPlayer } from "../audio/monitorPlayer";
 
 // A single Tone.js synth for guide tones
 let guideSynth: Tone.PolySynth | null = null;
@@ -75,13 +76,17 @@ export type RecordingPlaybackOpts = {
   harmonyLine: HarmonyLine | null; // null for melody (no guide tones)
   beatsPerBar: number;
   tempo: number;
-  // Audio elements for previously kept takes to play as monitoring
-  monitorElements?: HTMLAudioElement[];
+  // Sample-accurate monitor player for previously kept takes.
+  // When provided, start(when) is called with the same AudioContext time as
+  // the Tone transport so all audio is aligned to the sample.
+  monitorPlayer?: MonitorPlayer | null;
   onBeat?: (beatIndex: number) => void;
   onChordChange?: (chordIndex: number) => void;
 };
 
 // Schedules click track + optional guide tones for the full progression.
+// All audio — including any prior-take monitor playback — is started at the
+// same AudioContext.currentTime value so everything is sample-accurate.
 // Call stop() to tear everything down.
 export function startRecordingPlayback(
   opts: RecordingPlaybackOpts,
@@ -134,16 +139,18 @@ export function startRecordingPlayback(
     }
   }
 
-  // Start monitoring audio elements
-  if (opts.monitorElements != null) {
-    for (const el of opts.monitorElements) {
-      el.currentTime = 0;
-      el.volume = 0.5;
-      el.play().catch(() => {});
-    }
-  }
+  // Compute the shared start time. Adding a small lookahead guarantees the
+  // scheduled AudioBufferSourceNode starts and the transport start both land
+  // in the future, even accounting for JS event-loop jitter.
+  const ctx = Tone.getContext().rawContext as AudioContext;
+  const startTime = ctx.currentTime + 0.1;
 
-  Tone.getTransport().start();
+  // Start prior-take monitors at the exact same AudioContext time as the
+  // transport. AudioBufferSourceNode.start(when) and Transport.start(when)
+  // share the same clock, so this is sample-accurate.
+  opts.monitorPlayer?.start(startTime);
+
+  Tone.getTransport().start(startTime);
 
   return {
     stop() {
@@ -152,12 +159,7 @@ export function startRecordingPlayback(
       if (guide != null) {
         guide.releaseAll();
       }
-      if (opts.monitorElements != null) {
-        for (const el of opts.monitorElements) {
-          el.pause();
-          el.currentTime = 0;
-        }
-      }
+      opts.monitorPlayer?.stop();
     },
   };
 }

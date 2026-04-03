@@ -2,12 +2,19 @@
 // The graph is built once at mount time so the same gain nodes serve both
 // live preview playback and the export recording pass.
 //
-//  [MediaElementSource] ──> [trackGain] ──┬──> [dryGain] ──────────────────> [masterGain] ──> ctx.destination
-//                                         └──> [convolver] ──> [wetGain] ──> [masterGain]
+//  [AudioBufferSourceNode] ──> [trackGain] ──┬──> [dryGain] ──────────────────> [masterGain] ──> ctx.destination
+//                                            └──> [convolver] ──> [wetGain] ──> [masterGain]
 //
 // During export masterGain is also connected to a MediaStreamDestination.
+//
+// Sources are not wired at construction time. Instead call connectSource(i, node)
+// to attach an AudioNode to a given track's gain input. This allows fresh
+// AudioBufferSourceNodes to be created per playback without the "createMedia-
+// ElementSource can only be called once" constraint.
 
 export type Mixer = {
+  // Connect an audio node (e.g. AudioBufferSourceNode) to a track's gain.
+  connectSource(index: number, node: AudioNode): void;
   setTrackVolume(index: number, value: number): void;
   setTrackMuted(index: number, muted: boolean): void;
   setReverbWet(wet: number): void;
@@ -18,11 +25,11 @@ export type Mixer = {
 
 export function createMixer(
   ctx: AudioContext,
-  sources: MediaElementAudioSourceNode[],
+  trackCount: number,
 ): Mixer {
   const trackGains: GainNode[] = [];
-  const volumes: number[] = sources.map(() => 1.0);
-  const mutedFlags: boolean[] = sources.map(() => false);
+  const volumes: number[] = [];
+  const mutedFlags: boolean[] = [];
 
   // Master: always connected to ctx.destination; also connected to
   // MediaStreamDestination during export.
@@ -43,19 +50,24 @@ export function createMixer(
   convolver.connect(wetGain);
   wetGain.connect(masterGain);
 
-  // Per-track gain nodes
-  for (let i = 0; i < sources.length; i++) {
-    const source = sources[i];
-    if (source == null) continue;
+  // Per-track gain nodes (no sources connected yet)
+  for (let i = 0; i < trackCount; i++) {
     const gain = ctx.createGain();
     gain.gain.value = 1.0;
-    source.connect(gain);
     gain.connect(dryGain);
     gain.connect(convolver);
     trackGains.push(gain);
+    volumes.push(1.0);
+    mutedFlags.push(false);
   }
 
   return {
+    connectSource(index, node) {
+      const gain = trackGains[index];
+      if (gain == null) return;
+      node.connect(gain);
+    },
+
     setTrackVolume(index, value) {
       volumes[index] = value;
       const gain = trackGains[index];

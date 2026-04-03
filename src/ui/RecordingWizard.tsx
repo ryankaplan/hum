@@ -12,6 +12,7 @@ import { useEffect, useRef, useState, type RefObject } from "react";
 import { useObservable } from "../observable";
 import {
   appScreen,
+  audioContext,
   currentPartIndex,
   harmonyVoicing,
   mediaStream,
@@ -30,6 +31,11 @@ import {
   stopAllPlayback,
 } from "../music/playback";
 import type { PlaybackSession } from "../music/playback";
+import {
+  createMonitorPlayer,
+  decodeMonitorTracks,
+} from "../audio/monitorPlayer";
+import type { MonitorPlayer } from "../audio/monitorPlayer";
 import { CameraPreview } from "./CameraPreview";
 import { NoteDisplay } from "./NoteDisplay";
 
@@ -253,8 +259,9 @@ export function RecordingWizard() {
   const [selectedMicId, setSelectedMicId] = useState("");
 
   const reviewVideoRef = useRef<HTMLVideoElement>(null);
-  const monitorRefs = useRef<HTMLAudioElement[]>([]);
+  const monitorPlayerRef = useRef<MonitorPlayer | null>(null);
   const currentBlobRef = useRef<Blob | null>(null);
+  const currentTrimOffsetRef = useRef<number>(0);
   const listenSessionRef = useRef<PlaybackSession | null>(null);
 
   const isLastPart = partIndex === TOTAL_PARTS - 1;
@@ -266,31 +273,60 @@ export function RecordingWizard() {
       ? voicing.lines[partIndex as 0 | 1 | 2]
       : null;
 
-  // Rebuild monitor audio elements whenever we advance to a new part
+  const ctx = useObservable(audioContext);
+
+  // Rebuild the MonitorPlayer whenever we advance to a new part.
+  // Decoding is async; we use a cancelled flag to discard stale results.
   useEffect(() => {
-    const elements: HTMLAudioElement[] = [];
+    monitorPlayerRef.current?.dispose();
+    monitorPlayerRef.current = null;
+
+    if (ctx == null || partIndex === 0) return;
+
+    let cancelled = false;
+
+    const blobs: Blob[] = [];
+    const trimOffsets: number[] = [];
+    const partIndices: number[] = [];
+
     for (let i = 0; i < partIndex; i++) {
       const state = states[i];
       if (state != null && state.status === "kept") {
-        const el = new Audio(state.url);
-        el.preload = "auto";
-        el.muted = mutedParts[i] ?? false;
-        elements.push(el);
+        blobs.push(state.blob);
+        trimOffsets.push(state.trimOffsetSec);
+        partIndices.push(i);
       }
     }
-    monitorRefs.current = elements;
-  }, [partIndex, states]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Sync mute state onto existing monitor elements when mutedParts changes
+    if (blobs.length === 0) return;
+
+    void decodeMonitorTracks(ctx, blobs, trimOffsets).then((tracks) => {
+      if (cancelled) return;
+      const player = createMonitorPlayer(ctx, tracks);
+      // Apply current mute state
+      for (let j = 0; j < partIndices.length; j++) {
+        const partI = partIndices[j];
+        if (partI != null) {
+          player.setMuted(j, mutedParts[partI] ?? false);
+        }
+      }
+      monitorPlayerRef.current = player;
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [partIndex, states, ctx]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sync mute state onto the MonitorPlayer when mutedParts changes
   useEffect(() => {
+    const player = monitorPlayerRef.current;
+    if (player == null) return;
     let audioIdx = 0;
     for (let i = 0; i < partIndex; i++) {
       const state = states[i];
       if (state != null && state.status === "kept") {
-        const el = monitorRefs.current[audioIdx];
-        if (el != null) {
-          el.muted = mutedParts[i] ?? false;
-        }
+        player.setMuted(audioIdx, mutedParts[i] ?? false);
         audioIdx++;
       }
     }
@@ -341,6 +377,7 @@ export function RecordingWizard() {
     setCurrentAbsoluteBeat(-1);
     setCountInBeat(0);
     currentBlobRef.current = null;
+    currentTrimOffsetRef.current = 0;
   }, [partIndex]);
 
   // ─── Mute toggle ────────────────────────────────────────────────────────────
@@ -368,7 +405,7 @@ export function RecordingWizard() {
       harmonyLine: guideToneEnabled ? harmonyLine : null,
       beatsPerBar,
       tempo,
-      monitorElements: monitorRefs.current,
+      monitorPlayer: monitorPlayerRef.current,
       onBeat: (beat) => {
         setCurrentAbsoluteBeat(beat);
         let remaining = beat;
@@ -429,7 +466,7 @@ export function RecordingWizard() {
         harmonyLine: guideToneEnabled ? harmonyLine : null,
         beatsPerBar,
         tempo,
-        monitorElements: monitorRefs.current,
+        monitorPlayer: monitorPlayerRef.current,
         callbacks: {
           onCountInBeat: (beat) => setCountInBeat(beat + 1),
           onRecordingStart: () => {
@@ -453,6 +490,7 @@ export function RecordingWizard() {
       });
 
       currentBlobRef.current = result.blob;
+      currentTrimOffsetRef.current = result.trimOffsetSec;
       setReviewUrl(result.url);
       setPhase("review");
     } catch (err) {
@@ -466,7 +504,12 @@ export function RecordingWizard() {
     const url = reviewUrl;
     if (blob == null || url == null) return;
 
-    updatePartState(partIndex, { status: "kept", blob, url });
+    updatePartState(partIndex, {
+      status: "kept",
+      blob,
+      url,
+      trimOffsetSec: currentTrimOffsetRef.current,
+    });
 
     if (!isLastPart) {
       currentPartIndex.set((partIndex + 1) as PartIndex);

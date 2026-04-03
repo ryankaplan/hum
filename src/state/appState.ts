@@ -11,7 +11,7 @@ export type PartState =
   | { status: "idle" }
   | { status: "recording" }
   | { status: "review"; blob: Blob; url: string }
-  | { status: "kept"; blob: Blob; url: string };
+  | { status: "kept"; blob: Blob; url: string; trimOffsetSec: number };
 
 // ─── Persisted config (survives reload) ──────────────────────────────────────
 

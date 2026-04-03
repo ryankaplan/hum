@@ -8,7 +8,7 @@ import {
   Stack,
   Text,
 } from "@chakra-ui/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useObservable } from "../observable";
 import {
   appScreen,
@@ -40,6 +40,15 @@ export function FinalReview() {
   const compositorRef = useRef<CompositorHandle | null>(null);
   const mixerRef = useRef<Mixer | null>(null);
 
+  // Decoded audio buffers and trim offsets for each track. These are decoded
+  // once on mount so playback can use AudioBufferSourceNode.start(when) for
+  // sample-accurate synchronization.
+  const audioBuffersRef = useRef<(AudioBuffer | null)[]>([null, null, null, null]);
+  const trimOffsetsRef = useRef<number[]>([0, 0, 0, 0]);
+
+  // Currently active AudioBufferSourceNodes so we can stop them on pause
+  const activeSourcesRef = useRef<(AudioBufferSourceNode | null)[]>([]);
+
   const [isPlaying, setIsPlaying] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
@@ -52,42 +61,53 @@ export function FinalReview() {
 
   const durationSec = progressionDurationSec(chords, tempo);
 
-  // Build video elements, compositor, and Web Audio graph together once ctx
-  // is available. Using ctx as a dependency handles the (unlikely) case where
-  // ctx is null on first render. ctx is set before the recording wizard starts
-  // so in practice this runs once on mount.
+  // Build video elements (muted, visual only), compositor, and Web Audio
+  // graph once ctx is available. Audio is handled via AudioBufferSourceNodes
+  // rather than MediaElementSource, so all tracks start sample-accurately.
   useEffect(() => {
     if (ctx == null) return;
 
     const videos: HTMLVideoElement[] = [];
-    const sources: MediaElementAudioSourceNode[] = [];
 
     for (let i = 0; i < 4; i++) {
       const state = states[i];
       const el = document.createElement("video");
       el.loop = true;
-      el.muted = false; // audio flows through Web Audio, not natively
+      el.muted = true; // audio is handled via AudioBufferSourceNode, not the element
       el.playsInline = true;
       if (state != null && state.status === "kept") {
         el.src = state.url;
       }
-      // createMediaElementSource can only be called once per element; doing
-      // it here (not at export time) is what allows per-track volume control
-      // during preview and export alike.
-      const src = ctx.createMediaElementSource(el);
       videoRefs.current[i] = el;
       videos.push(el);
-      sources.push(src);
     }
 
-    const mixer = createMixer(ctx, sources);
+    const mixer = createMixer(ctx, 4);
     mixerRef.current = mixer;
 
     if (canvasRef.current != null) {
       compositorRef.current = startCompositor(canvasRef.current, videos);
     }
 
+    // Decode each kept take's audio asynchronously
+    let cancelled = false;
+    for (let i = 0; i < 4; i++) {
+      const state = states[i];
+      if (state == null || state.status !== "kept") continue;
+      const capturedI = i;
+      const trimOffset = state.trimOffsetSec;
+      void state.blob.arrayBuffer().then((ab) => {
+        if (cancelled) return;
+        return ctx.decodeAudioData(ab);
+      }).then((buffer) => {
+        if (cancelled || buffer == null) return;
+        audioBuffersRef.current[capturedI] = buffer;
+        trimOffsetsRef.current[capturedI] = trimOffset;
+      }).catch(() => {});
+    }
+
     return () => {
+      cancelled = true;
       compositorRef.current?.stop();
       mixerRef.current?.dispose();
       mixerRef.current = null;
@@ -100,14 +120,50 @@ export function FinalReview() {
 
   // ─── Playback ───────────────────────────────────────────────────────────────
 
+  // Start all audio buffers at the same AudioContext time so all tracks are
+  // sample-accurate. Video elements (muted) are started best-effort for visuals.
+  const startAudio = useCallback((when: number) => {
+    if (ctx == null || mixerRef.current == null) return;
+    const newSources: (AudioBufferSourceNode | null)[] = [];
+    for (let i = 0; i < 4; i++) {
+      const buffer = audioBuffersRef.current[i];
+      if (buffer == null) {
+        newSources.push(null);
+        continue;
+      }
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      mixerRef.current.connectSource(i, source);
+      const trimOffset = Math.max(0, trimOffsetsRef.current[i] ?? 0);
+      source.start(when, trimOffset);
+      newSources.push(source);
+    }
+    activeSourcesRef.current = newSources;
+  }, [ctx]);
+
+  const stopAudio = useCallback(() => {
+    for (const source of activeSourcesRef.current) {
+      try {
+        source?.stop();
+      } catch {
+        // safe to ignore if already stopped
+      }
+    }
+    activeSourcesRef.current = [];
+  }, []);
+
   function handlePlayPause() {
-    const videos = videoRefs.current;
     if (isPlaying) {
-      for (const v of videos) v?.pause();
+      stopAudio();
+      for (const v of videoRefs.current) v?.pause();
       setIsPlaying(false);
     } else {
-      for (const v of videos) {
-        if (v != null) {
+      if (ctx == null) return;
+      const when = ctx.currentTime + 0.05;
+      startAudio(when);
+      // Video is muted; start it for visual sync (best-effort)
+      for (const v of videoRefs.current) {
+        if (v != null && v.src !== "") {
           v.currentTime = 0;
           v.play().catch(() => {});
         }
@@ -154,7 +210,9 @@ export function FinalReview() {
     setExporting(true);
     setExportProgress(0);
 
-    // Start all videos from the beginning before recording begins
+    // Start audio buffers and video (visual) together before the recorder captures
+    const when = ctx.currentTime + 0.05;
+    startAudio(when);
     for (const v of videoRefs.current) {
       if (v != null && v.src !== "") {
         v.currentTime = 0;
@@ -176,6 +234,8 @@ export function FinalReview() {
     } catch (err) {
       console.error("Export failed", err);
     } finally {
+      stopAudio();
+      for (const v of videoRefs.current) v?.pause();
       setExporting(false);
     }
   }

@@ -1,9 +1,19 @@
 import { ChakraProvider } from "@chakra-ui/react";
 import { createRoot } from "react-dom/client";
+import { useObservable } from "./observable";
+import { appScreen } from "./state/appState";
 import { system } from "./theme";
+import { SetupScreen } from "./ui/SetupScreen";
+import { RecordingWizard } from "./ui/RecordingWizard";
+import { FinalReview } from "./ui/FinalReview";
 
 function App() {
-  return <div>Hello, Hum!</div>;
+  const screen = useObservable(appScreen);
+
+  if (screen === "setup") return <SetupScreen />;
+  if (screen === "recording") return <RecordingWizard />;
+  if (screen === "review") return <FinalReview />;
+  return null;
 }
 
 const root = document.getElementById("root");

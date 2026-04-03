@@ -63,7 +63,12 @@ export function playCountIn(
 ): CountInResult {
   const secPerBeat = 60 / tempo;
   const startTime = ctx.currentTime + 0.05;
-  const recordingStartTime = startTime + beatsPerBar * secPerBeat;
+  // Shift recordingStartTime forward by the device's output latency so that
+  // trimOffsetSec captures the full gap between MediaRecorder.start() and when
+  // the user actually *hears* beat 1. On wired audio this is ~10ms; on
+  // Bluetooth (e.g. AirPods) it can be 150–300ms. Without this, the recorded
+  // audio is trimmed too early and the take lands behind the beat.
+  const recordingStartTime = startTime + beatsPerBar * secPerBeat + ctx.outputLatency;
 
   // Schedule all count-in clicks on the AudioContext clock
   for (let i = 0; i < beatsPerBar; i++) {

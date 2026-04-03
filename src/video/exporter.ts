@@ -1,31 +1,30 @@
 // Exports the 4-panel canvas + mixed audio as a single WebM file.
+// Audio mixing (per-track gain, reverb) is owned by the Mixer; the exporter
+// just connects the mixer's master output to a MediaStreamDestination for the
+// duration of the recording pass.
+
+import type { Mixer } from "../audio/mixer";
 
 export type ExportOpts = {
   canvas: HTMLCanvasElement;
   audioContext: AudioContext;
-  audioSources: MediaElementAudioSourceNode[];
+  mixer: Mixer;
   durationMs: number;
   onProgress?: (ratio: number) => void;
 };
 
 export async function exportWebM(opts: ExportOpts): Promise<Blob> {
-  const { canvas, audioContext, audioSources, durationMs } = opts;
+  const { canvas, audioContext, mixer, durationMs } = opts;
 
-  // Mix all audio sources to a MediaStreamDestination
   const dest = audioContext.createMediaStreamDestination();
-  for (const src of audioSources) {
-    const gain = audioContext.createGain();
-    gain.gain.value = 0.9;
-    src.connect(gain);
-    gain.connect(dest);
-  }
+  mixer.connectForExport(dest);
 
-  // Combine canvas video track + mixed audio track
   const canvasStream = canvas.captureStream(30);
   const videoTrack = canvasStream.getVideoTracks()[0];
   const audioTrack = dest.stream.getAudioTracks()[0];
 
   if (videoTrack == null) {
+    mixer.disconnectExport(dest);
     throw new Error("Canvas produced no video track");
   }
 
@@ -72,10 +71,7 @@ export async function exportWebM(opts: ExportOpts): Promise<Blob> {
 
   recorder.stop();
 
-  // Cleanup
-  for (const src of audioSources) {
-    src.disconnect();
-  }
+  mixer.disconnectExport(dest);
   dest.disconnect();
   for (const track of combinedStream.getTracks()) {
     track.stop();

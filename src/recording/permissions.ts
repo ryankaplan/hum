@@ -15,7 +15,12 @@ export async function acquirePermissionsAndStart(): Promise<void> {
   let stream: MediaStream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({
-      video: true,
+      video: {
+        aspectRatio: { ideal: 9 / 16 },
+        width: { ideal: 720 },
+        height: { ideal: 1280 },
+        facingMode: { ideal: "user" },
+      },
       audio: true,
     });
   } catch (err) {

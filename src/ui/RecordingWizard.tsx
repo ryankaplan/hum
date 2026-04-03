@@ -4,6 +4,7 @@ import {
   Flex,
   Grid,
   Heading,
+  NativeSelect,
   Stack,
   Text,
 } from "@chakra-ui/react";
@@ -80,6 +81,8 @@ export function RecordingWizard() {
   const [reviewUrl, setReviewUrl] = useState<string | null>(null);
   const [guideToneEnabled, setGuideToneEnabled] = useState(true);
   const [priorTakesEnabled, setPriorTakesEnabled] = useState(true);
+  const [micDevices, setMicDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedMicId, setSelectedMicId] = useState("");
 
   const reviewVideoRef = useRef<HTMLVideoElement>(null);
   const monitorRefs = useRef<HTMLAudioElement[]>([]);
@@ -115,6 +118,34 @@ export function RecordingWizard() {
       reviewVideoRef.current.play().catch(() => {});
     }
   }, [phase, reviewUrl]);
+
+  // Enumerate audio input devices; re-enumerate when devices change (e.g.
+  // headphones plugged in). Labels are only populated after permissions are
+  // granted, which has already happened by the time we reach this screen.
+  useEffect(() => {
+    function enumerate() {
+      navigator.mediaDevices
+        .enumerateDevices()
+        .then((devices) => {
+          setMicDevices(devices.filter((d) => d.kind === "audioinput"));
+        })
+        .catch(() => {});
+    }
+    enumerate();
+    navigator.mediaDevices.addEventListener("devicechange", enumerate);
+    return () => {
+      navigator.mediaDevices.removeEventListener("devicechange", enumerate);
+    };
+  }, []);
+
+  // Keep selectedMicId in sync with the active stream's audio track
+  useEffect(() => {
+    if (stream == null) return;
+    const track = stream.getAudioTracks()[0];
+    if (track != null) {
+      setSelectedMicId(track.getSettings().deviceId ?? "");
+    }
+  }, [stream]);
 
   // Reset local phase state when partIndex changes (e.g. after keep)
   useEffect(() => {
@@ -267,6 +298,28 @@ export function RecordingWizard() {
     }
   }
 
+  async function handleMicChange(deviceId: string) {
+    if (stream == null || deviceId === selectedMicId) return;
+    try {
+      const newAudioStream = await navigator.mediaDevices.getUserMedia({
+        audio: { deviceId: { exact: deviceId } },
+      });
+      const newAudioTrack = newAudioStream.getAudioTracks()[0];
+      if (newAudioTrack == null) return;
+      for (const track of stream.getAudioTracks()) {
+        track.stop();
+      }
+      const newStream = new MediaStream([
+        ...stream.getVideoTracks(),
+        newAudioTrack,
+      ]);
+      mediaStream.set(newStream);
+      setSelectedMicId(deviceId);
+    } catch (err) {
+      console.error("Failed to switch microphone", err);
+    }
+  }
+
   if (stream == null) return null;
 
   const partLabel = PART_LABELS[partIndex as PartIndex] ?? `Part ${partIndex + 1}`;
@@ -315,9 +368,9 @@ export function RecordingWizard() {
               borderRadius="xl"
               overflow="hidden"
               bg="black"
-              w="100%"
+              w="min(100%, calc(52vh * 9 / 16))"
               aspectRatio="9/16"
-              maxH="52vh"
+              mx="auto"
             >
               <video
                 ref={reviewVideoRef}
@@ -445,6 +498,32 @@ export function RecordingWizard() {
                   </Button>
                 )}
               </Flex>
+
+              {/* Microphone selector */}
+              {micDevices.length > 0 && (
+                <Flex align="center" gap={2}>
+                  <Text color="gray.500" fontSize="xs" flexShrink={0}>
+                    Mic
+                  </Text>
+                  <NativeSelect.Root size="xs" flex={1} minW={0}>
+                    <NativeSelect.Field
+                      value={selectedMicId}
+                      onChange={(e) => handleMicChange(e.target.value)}
+                      bg="gray.800"
+                      border="1px solid"
+                      borderColor="gray.700"
+                      color="gray.300"
+                      fontSize="xs"
+                    >
+                      {micDevices.map((d, i) => (
+                        <option key={d.deviceId} value={d.deviceId}>
+                          {d.label || `Microphone ${i + 1}`}
+                        </option>
+                      ))}
+                    </NativeSelect.Field>
+                  </NativeSelect.Root>
+                </Flex>
+              )}
             </Stack>
           )}
 

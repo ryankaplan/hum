@@ -34,10 +34,12 @@ export function CameraPreview({
       borderRadius={borderRadius}
       overflow="hidden"
       bg="black"
-      w="100%"
-      // aspectRatio gives the natural 9:16 shape, maxH caps it on short screens
+      // Cap width so height never exceeds maxH at 9:16. Using w="100%" + maxH
+      // alone breaks aspect-ratio in CSS because the browser won't shrink an
+      // explicit width to satisfy max-height. min() keeps both constraints.
+      w={`min(100%, calc(${maxH} * 9 / 16))`}
       aspectRatio="9/16"
-      maxH={maxH}
+      mx="auto"
       position="relative"
     >
       <video

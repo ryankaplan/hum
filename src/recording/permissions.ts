@@ -1,15 +1,9 @@
-import {
-  appScreen,
-  audioContext,
-  mediaStream,
-  permissionError,
-  resetSession,
-} from "../state/appState";
+import { model } from "../state/model";
 
 // Called when the user clicks "Start Recording" on the setup screen.
 // Acquires camera + mic, sets up AudioContext, then transitions to recording.
 export async function acquirePermissionsAndStart(): Promise<void> {
-  permissionError.set(null);
+  model.permissionError.set(null);
 
   let stream: MediaStream;
   try {
@@ -27,33 +21,33 @@ export async function acquirePermissionsAndStart(): Promise<void> {
       err instanceof DOMException
         ? formatPermissionError(err)
         : "Could not access camera or microphone.";
-    permissionError.set(message);
+    model.permissionError.set(message);
     return;
   }
 
   // Stop any previously held stream tracks before replacing
-  const existing = mediaStream.get();
+  const existing = model.mediaStream.get();
   if (existing != null) {
     for (const track of existing.getTracks()) {
       track.stop();
     }
   }
 
-  mediaStream.set(stream);
+  model.mediaStream.set(stream);
 
   // Create (or resume) the AudioContext. A user gesture is in scope here
   // (the button click that triggered this function), so browsers allow it.
-  let ctx = audioContext.get();
+  let ctx = model.audioContext.get();
   if (ctx == null) {
     ctx = new AudioContext();
   }
   if (ctx.state === "suspended") {
     await ctx.resume();
   }
-  audioContext.set(ctx);
+  model.audioContext.set(ctx);
 
-  resetSession();
-  appScreen.set("recording");
+  model.resetSession();
+  model.appScreen.set("recording");
 }
 
 function formatPermissionError(err: DOMException): string {
@@ -70,11 +64,11 @@ function formatPermissionError(err: DOMException): string {
 }
 
 export function releasePermissions(): void {
-  const stream = mediaStream.get();
+  const stream = model.mediaStream.get();
   if (stream != null) {
     for (const track of stream.getTracks()) {
       track.stop();
     }
   }
-  mediaStream.set(null);
+  model.mediaStream.set(null);
 }

@@ -10,19 +10,8 @@ import {
 } from "@chakra-ui/react";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { useObservable } from "../observable";
-import {
-  appScreen,
-  audioContext,
-  currentPartIndex,
-  harmonyVoicing,
-  mediaStream,
-  meterInput,
-  parsedChords,
-  partStates,
-  tempoInput,
-  updatePartState,
-} from "../state/appState";
-import type { PartState } from "../state/appState";
+import { model } from "../state/model";
+import type { PartState } from "../state/model";
 import { getPartLabel } from "../music/types";
 import { recordTake } from "../recording/recorder";
 import { startRecordingPlayback, stopAllPlayback } from "../music/playback";
@@ -266,13 +255,13 @@ function KeptCell({ url, muted, onToggleMute }: KeptCellProps) {
 }
 
 export function RecordingWizard() {
-  const stream = useObservable(mediaStream);
-  const partIndex = useObservable(currentPartIndex);
-  const states = useObservable(partStates);
-  const chords = useObservable(parsedChords);
-  const voicing = useObservable(harmonyVoicing);
-  const tempo = useObservable(tempoInput);
-  const meter = useObservable(meterInput);
+  const stream = useObservable(model.mediaStream);
+  const partIndex = useObservable(model.currentPartIndex);
+  const states = useObservable(model.partStates);
+  const chords = useObservable(model.parsedChords);
+  const voicing = useObservable(model.harmonyVoicing);
+  const tempo = useObservable(model.tempoInput);
+  const meter = useObservable(model.meterInput);
 
   const [phase, setPhase] = useState<RecordPhase>("pre-roll");
   const [activeChordIndex, setActiveChordIndex] = useState(0);
@@ -304,7 +293,7 @@ export function RecordingWizard() {
       ? (voicing.lines[partIndex] ?? null)
       : null;
 
-  const ctx = useObservable(audioContext);
+  const ctx = useObservable(model.audioContext);
 
   // Rebuild the MonitorPlayer whenever we advance to a new part.
   // Decoding is async; we use a cancelled flag to discard stale results.
@@ -567,17 +556,17 @@ export function RecordingWizard() {
     const url = reviewUrl;
     if (blob == null || url == null) return;
 
-    updatePartState(partIndex, {
-      status: "kept",
+    model.keepRecordedTake({
+      laneIndex: partIndex,
       blob,
       url,
       trimOffsetSec: currentTrimOffsetRef.current,
     });
 
     if (!isLastPart) {
-      currentPartIndex.set(partIndex + 1);
+      model.currentPartIndex.set(partIndex + 1);
     } else {
-      appScreen.set("review");
+      model.appScreen.set("review");
     }
   }
 
@@ -592,9 +581,9 @@ export function RecordingWizard() {
     stopAllPlayback();
     listenSessionRef.current = null;
     if (partIndex > 0) {
-      currentPartIndex.set(partIndex - 1);
+      model.currentPartIndex.set(partIndex - 1);
     } else {
-      appScreen.set("setup");
+      model.appScreen.set("setup");
     }
   }
 
@@ -613,7 +602,7 @@ export function RecordingWizard() {
         ...stream.getVideoTracks(),
         newAudioTrack,
       ]);
-      mediaStream.set(newStream);
+      model.mediaStream.set(newStream);
       setSelectedMicId(deviceId);
     } catch (err) {
       console.error("Failed to switch microphone", err);

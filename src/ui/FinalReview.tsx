@@ -17,39 +17,23 @@ import {
   useState,
 } from "react";
 import { useObservable } from "../observable";
-import {
-  appScreen,
-  audioContext,
-  currentPartIndex,
-  parsedChords,
-  partStates,
-  resetSession,
-  tempoInput,
-  updatePartState,
-} from "../state/appState";
+import { model } from "../state/model";
 import { getPartLabel } from "../music/types";
 import { progressionDurationSec } from "../music/playback";
 import { startCompositor } from "../video/compositor";
-import type { CompositorHandle } from "../video/compositor";
 import { exportWebM } from "../video/exporter";
 import { createMixer } from "../audio/mixer";
-import type { Mixer } from "../audio/mixer";
 import {
   buildWaveformPeaks,
-  deleteSegmentById,
   getActiveSegmentAtTime,
-  getSegmentEndSec,
   getTimelineEndSec,
-  moveSegmentWithClamp,
   samplePeaksForSegment,
   snapTimeSec,
-  splitSegmentAtPlayhead,
 } from "./timeline";
 import type {
   EditorSelection,
   TimelineSegment,
   TrackTimeline,
-  WaveformPeaks,
 } from "./timeline";
 
 const PLAYBACK_SCHEDULE_LEAD_SEC = 0.05;
@@ -71,11 +55,11 @@ type PlaybackClock = {
 };
 
 export function FinalReview() {
-  const states = useObservable(partStates);
-  const chords = useObservable(parsedChords);
-  const tempo = useObservable(tempoInput);
-  const ctx = useObservable(audioContext);
-  const trackCount = states.length;
+  const tracksState = useObservable(model.tracks);
+  const chords = useObservable(model.parsedChords);
+  const tempo = useObservable(model.tempoInput);
+  const ctx = useObservable(model.audioContext);
+  const trackCount = tracksState.lanes.length;
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const timelineViewportRef = useRef<HTMLDivElement>(null);
@@ -85,21 +69,6 @@ export function FinalReview() {
   );
   const activeVideoMaskRef = useRef<boolean[]>(
     Array.from({ length: trackCount }, () => false),
-  );
-  const compositorRef = useRef<CompositorHandle | null>(null);
-  const mixerRef = useRef<Mixer | null>(null);
-
-  const audioBuffersRef = useRef<(AudioBuffer | null)[]>(
-    Array.from({ length: trackCount }, () => null),
-  );
-  const laneSourceStartRef = useRef<number[]>(
-    Array.from({ length: trackCount }, () => 0),
-  );
-  const laneSourceDurationRef = useRef<number[]>(
-    Array.from({ length: trackCount }, () => 0),
-  );
-  const waveformPeaksRef = useRef<WaveformPeaks[]>(
-    Array.from({ length: trackCount }, () => []),
   );
 
   const activeSourcesRef = useRef<ActiveAudioSource[]>([]);
@@ -112,45 +81,27 @@ export function FinalReview() {
     rafId: null,
   });
 
-  const segmentIdCounterRef = useRef(0);
-  const timelinesRef = useRef<TrackTimeline[]>(
-    Array.from({ length: trackCount }, () => []),
+  const timelines = useMemo<TrackTimeline[]>(
+    () => tracksState.lanes.map((lane) => lane.clips),
+    [tracksState],
   );
+  const timelinesRef = useRef<TrackTimeline[]>(timelines);
 
-  const [timelines, setTimelines] = useState<TrackTimeline[]>(
-    Array.from({ length: trackCount }, () => []),
-  );
-  const [selection, setSelection] = useState<EditorSelection>({
-    laneIndex: null,
-    segmentId: null,
-  });
-  const [playheadSec, setPlayheadSec] = useState(0);
+  const selection = tracksState.editor.selection;
+  const playheadSec = tracksState.editor.playheadSec;
+  const snapToBeat = tracksState.editor.snapToBeat;
+
   const [isPlaying, setIsPlaying] = useState(false);
-  const [snapToBeat, setSnapToBeat] = useState(false);
 
   const [timelineViewportWidth, setTimelineViewportWidth] = useState(0);
   const [waveformVersion, setWaveformVersion] = useState(0);
 
-  const [exporting, setExporting] = useState(false);
-  const [exportProgress, setExportProgress] = useState(0);
-  const [exportedUrl, setExportedUrl] = useState<string | null>(null);
-
-  const [volumes, setVolumes] = useState<number[]>(
-    Array.from({ length: trackCount }, () => 1),
-  );
-  const [muted, setMuted] = useState<boolean[]>(
-    Array.from({ length: trackCount }, () => false),
-  );
-  const [reverbWet, setReverbWet] = useState(0.15);
-
-  useEffect(() => {
-    setVolumes((prev) =>
-      Array.from({ length: trackCount }, (_, i) => prev[i] ?? 1),
-    );
-    setMuted((prev) =>
-      Array.from({ length: trackCount }, (_, i) => prev[i] ?? false),
-    );
-  }, [trackCount]);
+  const exporting = tracksState.export.exporting;
+  const exportProgress = tracksState.export.progress;
+  const exportedUrl = tracksState.export.exportedUrl;
+  const volumes = tracksState.mix.volumes;
+  const muted = tracksState.mix.muted;
+  const reverbWet = tracksState.mix.reverbWet;
 
   const baseDurationSec = progressionDurationSec(chords, tempo);
   const beatSec = tempo > 0 ? 60 / tempo : 0;
@@ -174,11 +125,6 @@ export function FinalReview() {
   }, [beatSec, timelineEndSec]);
 
   timelinesRef.current = timelines;
-
-  const makeSegmentId = useCallback((): string => {
-    segmentIdCounterRef.current += 1;
-    return `segment-${segmentIdCounterRef.current}`;
-  }, []);
 
   const syncVideosToTimeline = useCallback((timelineSec: number, shouldPlay: boolean) => {
     const nextMask = Array.from({ length: trackCount }, () => false);
@@ -260,7 +206,7 @@ export function FinalReview() {
     );
 
     if (!preservePlayhead) {
-      setPlayheadSec(0);
+      model.setPlayhead(0);
       syncVideosToTimeline(0, false);
     }
   }, [stopAudio, stopClock, syncVideosToTimeline, trackCount]);
@@ -273,14 +219,14 @@ export function FinalReview() {
     const timelineNow = clock.startTimelineSec + elapsed;
     const clampedNow = Math.min(timelineNow, clock.endTimelineSec);
 
-    setPlayheadSec(clampedNow);
+    model.setPlayhead(clampedNow);
     syncVideosToTimeline(clampedNow, true);
 
     if (timelineNow >= clock.endTimelineSec - 0.001) {
       stopAudio();
       stopClock();
       setIsPlaying(false);
-      setPlayheadSec(clock.endTimelineSec);
+      model.setPlayhead(clock.endTimelineSec);
       syncVideosToTimeline(clock.endTimelineSec, false);
       return;
     }
@@ -296,7 +242,7 @@ export function FinalReview() {
     const timelineNow = clock.startTimelineSec + elapsed;
     const clampedNow = Math.min(timelineNow, clock.endTimelineSec);
 
-    setPlayheadSec(clampedNow);
+    model.setPlayhead(clampedNow);
     syncVideosToTimeline(clampedNow, true);
 
     if (timelineNow >= clock.endTimelineSec - 0.001) {
@@ -335,18 +281,21 @@ export function FinalReview() {
     startTimelineSec: number,
     endTimelineSec: number,
   ) => {
-    if (ctx == null || mixerRef.current == null) return;
+    if (ctx == null || model.mixer == null) return;
 
     stopAudio();
 
     for (let lane = 0; lane < trackCount; lane++) {
-      const buffer = audioBuffersRef.current[lane];
-      if (buffer == null) continue;
+      const track = timelinesRef.current[lane] as Array<TimelineSegment & { takeId?: string }> | undefined;
+      if (track == null) continue;
 
-      const track = timelinesRef.current[lane] ?? [];
       for (const segment of track) {
+        if (segment.takeId == null) continue;
+        const buffer = model.audioBuffersByTakeId.get(segment.takeId);
+        if (buffer == null) continue;
+
         const segStart = segment.timelineStartSec;
-        const segEnd = getSegmentEndSec(segment);
+        const segEnd = segment.timelineStartSec + segment.durationSec;
         if (segEnd <= startTimelineSec || segStart >= endTimelineSec) continue;
 
         const playFrom = Math.max(startTimelineSec, segStart);
@@ -362,7 +311,7 @@ export function FinalReview() {
 
         const source = ctx.createBufferSource();
         source.buffer = buffer;
-        mixerRef.current.connectSource(lane, source);
+        model.mixer.connectSource(lane, source);
 
         const startAt = startCtxTime + (playFrom - startTimelineSec);
         source.start(startAt, sourceOffset, cappedDuration);
@@ -383,24 +332,30 @@ export function FinalReview() {
 
     let cancelled = false;
     const videos: HTMLVideoElement[] = [];
+    const activeLaneTakeIds = tracksState.laneTakeIds;
 
-    audioBuffersRef.current = Array.from({ length: trackCount }, () => null);
-    laneSourceStartRef.current = Array.from({ length: trackCount }, () => 0);
-    laneSourceDurationRef.current = Array.from({ length: trackCount }, () => 0);
-    waveformPeaksRef.current = Array.from({ length: trackCount }, () => []);
-    setTimelines(Array.from({ length: trackCount }, () => []));
-    setSelection({ laneIndex: null, segmentId: null });
-    setPlayheadSec(0);
+    model.audioBuffersByTakeId.clear();
+    model.waveformPeaksByTakeId.clear();
+    model.videoElByTakeId.clear();
+    model.laneSourceStartSecByTakeId.clear();
+    model.laneSourceDurationSecByTakeId.clear();
+    model.setPlayhead(0);
+    model.setSelection({ laneIndex: null, segmentId: null });
+    setWaveformVersion((v) => v + 1);
 
     for (let i = 0; i < trackCount; i++) {
-      const state = states[i];
+      const takeId = activeLaneTakeIds[i];
+      const take = takeId != null ? tracksState.takesById[takeId] : null;
       const video = document.createElement("video");
       video.muted = true;
       video.playsInline = true;
       video.loop = false;
       video.preload = "auto";
-      if (state != null && state.status === "kept") {
-        video.src = state.url;
+      if (take != null) {
+        video.src = take.url;
+      }
+      if (takeId != null) {
+        model.videoElByTakeId.set(takeId, video);
       }
       videoRefs.current[i] = video;
       videos.push(video);
@@ -408,26 +363,28 @@ export function FinalReview() {
 
     const mixer = createMixer(ctx, trackCount);
     for (let i = 0; i < trackCount; i++) {
-      mixer.setTrackVolume(i, volumes[i] ?? 1);
-      mixer.setTrackMuted(i, muted[i] ?? false);
+      mixer.setTrackVolume(i, tracksState.mix.volumes[i] ?? 1);
+      mixer.setTrackMuted(i, tracksState.mix.muted[i] ?? false);
     }
-    mixer.setReverbWet(reverbWet);
-    mixerRef.current = mixer;
+    mixer.setReverbWet(tracksState.mix.reverbWet);
+    model.mixer = mixer;
 
     if (canvasRef.current != null) {
-      compositorRef.current = startCompositor(canvasRef.current, videos, {
+      model.compositor = startCompositor(canvasRef.current, videos, {
         isVideoActive: (index) => activeVideoMaskRef.current[index] ?? false,
       });
     }
 
     for (let i = 0; i < trackCount; i++) {
-      const state = states[i];
-      if (state == null || state.status !== "kept") continue;
+      const takeId = tracksState.laneTakeIds[i];
+      if (takeId == null) continue;
+      const take = tracksState.takesById[takeId];
+      if (take == null) continue;
 
       const laneIndex = i;
-      const trimOffsetSec = Math.max(0, state.trimOffsetSec);
+      const trimOffsetSec = Math.max(0, take.trimOffsetSec);
 
-      void state.blob
+      void take.blob
         .arrayBuffer()
         .then((ab) => {
           if (cancelled) return null;
@@ -443,40 +400,25 @@ export function FinalReview() {
             Math.min(rawDuration, Math.max(0, baseDurationSec)),
           );
 
-          audioBuffersRef.current[laneIndex] = buffer;
-          laneSourceStartRef.current[laneIndex] = sourceStartSec;
-          laneSourceDurationRef.current[laneIndex] = laneDurationSec;
-          waveformPeaksRef.current[laneIndex] = buildWaveformPeaks(
-            buffer,
+          model.audioBuffersByTakeId.set(takeId, buffer);
+          model.laneSourceStartSecByTakeId.set(takeId, sourceStartSec);
+          model.laneSourceDurationSecByTakeId.set(takeId, laneDurationSec);
+          model.waveformPeaksByTakeId.set(
+            takeId,
+            buildWaveformPeaks(
+              buffer,
+              sourceStartSec,
+              laneDurationSec,
+              400,
+            ),
+          );
+          model.initializeTrackFromTake(
+            laneIndex,
+            takeId,
             sourceStartSec,
             laneDurationSec,
-            400,
           );
           setWaveformVersion((v) => v + 1);
-
-          if (laneDurationSec <= 0) return;
-
-          const firstSegmentId = makeSegmentId();
-          setTimelines((prev) => {
-            const track = prev[laneIndex] ?? [];
-            if (track.length > 0) return prev;
-            const next = [...prev];
-            next[laneIndex] = [
-              {
-                id: firstSegmentId,
-                laneIndex,
-                timelineStartSec: 0,
-                sourceStartSec,
-                durationSec: laneDurationSec,
-              },
-            ];
-            return next;
-          });
-
-          setSelection((prev) => {
-            if (prev.segmentId != null) return prev;
-            return { laneIndex, segmentId: firstSegmentId };
-          });
         })
         .catch(() => {
           // Keep lane empty if decoding fails.
@@ -487,11 +429,11 @@ export function FinalReview() {
       cancelled = true;
       stopPlaybackEngine(false);
 
-      compositorRef.current?.stop();
-      compositorRef.current = null;
+      model.compositor?.stop();
+      model.compositor = null;
 
-      mixerRef.current?.dispose();
-      mixerRef.current = null;
+      model.mixer?.dispose();
+      model.mixer = null;
 
       for (const video of videos) {
         video.pause();
@@ -501,15 +443,15 @@ export function FinalReview() {
   }, [
     baseDurationSec,
     ctx,
-    makeSegmentId,
-    states,
     stopPlaybackEngine,
     trackCount,
+    tracksState.laneTakeIds,
+    tracksState.takesById,
   ]);
 
   // Keep mixer graph in sync with UI controls after mount.
   useEffect(() => {
-    const mixer = mixerRef.current;
+    const mixer = model.mixer;
     if (mixer == null) return;
     for (let i = 0; i < trackCount; i++) {
       mixer.setTrackVolume(i, volumes[i] ?? 1);
@@ -535,13 +477,13 @@ export function FinalReview() {
         if (selection.laneIndex === lane && selection.segmentId === first.id) {
           return;
         }
-        setSelection({ laneIndex: lane, segmentId: first.id });
+        model.setSelection({ laneIndex: lane, segmentId: first.id });
         return;
       }
     }
 
     if (selection.laneIndex != null || selection.segmentId != null) {
-      setSelection({ laneIndex: null, segmentId: null });
+      model.setSelection({ laneIndex: null, segmentId: null });
     }
   }, [selection, timelines, trackCount]);
 
@@ -576,7 +518,7 @@ export function FinalReview() {
     const startTimelineSec = playheadSec >= timelineEndSec ? 0 : playheadSec;
     const startCtxTime = ctx.currentTime + PLAYBACK_SCHEDULE_LEAD_SEC;
 
-    setPlayheadSec(startTimelineSec);
+    model.setPlayhead(startTimelineSec);
     startAudioFromTimeline(startCtxTime, startTimelineSec, timelineEndSec);
     startPlaybackClock("preview", startCtxTime, startTimelineSec, timelineEndSec);
     setIsPlaying(true);
@@ -590,25 +532,7 @@ export function FinalReview() {
       stopPlaybackEngine(true);
     }
 
-    const lane = selection.laneIndex;
-    let selectedSegmentId: string | null = null;
-
-    setTimelines((prev) => {
-      const track = prev[lane] ?? [];
-      const split = splitSegmentAtPlayhead(track, playheadSec, makeSegmentId);
-      if (split == null) return prev;
-      const next = [...prev];
-      next[lane] = split;
-      const atPlayhead = split.find(
-        (segment) => Math.abs(segment.timelineStartSec - playheadSec) < 0.0005,
-      );
-      selectedSegmentId = atPlayhead?.id ?? split[0]?.id ?? null;
-      return next;
-    });
-
-    if (selectedSegmentId != null) {
-      setSelection({ laneIndex: lane, segmentId: selectedSegmentId });
-    }
+    model.splitSelectedClipAtPlayhead();
   }
 
   function handleDeleteSelectedSegment() {
@@ -619,27 +543,7 @@ export function FinalReview() {
       stopPlaybackEngine(true);
     }
 
-    const lane = selection.laneIndex;
-    const segmentId = selection.segmentId;
-    let nextSegmentId: string | null = null;
-
-    setTimelines((prev) => {
-      const track = prev[lane] ?? [];
-      const nextTrack = deleteSegmentById(track, segmentId);
-      if (nextTrack.length === track.length) return prev;
-      const next = [...prev];
-      next[lane] = nextTrack;
-
-      const after = nextTrack.find((segment) => segment.timelineStartSec >= playheadSec);
-      nextSegmentId = after?.id ?? nextTrack[nextTrack.length - 1]?.id ?? null;
-      return next;
-    });
-
-    if (nextSegmentId != null) {
-      setSelection({ laneIndex: lane, segmentId: nextSegmentId });
-    } else {
-      setSelection({ laneIndex: null, segmentId: null });
-    }
+    model.deleteSelectedClip();
   }
 
   function handleLaneClick(e: ReactPointerEvent<HTMLDivElement>, laneIndex: number) {
@@ -654,8 +558,8 @@ export function FinalReview() {
     const unclampedTime = contentX / TIMELINE_PX_PER_SEC;
     const nextPlayhead = Math.max(0, Math.min(unclampedTime, timelineEndSec));
 
-    setSelection((prev) => ({ laneIndex, segmentId: prev.segmentId }));
-    setPlayheadSec(nextPlayhead);
+    model.setSelection({ laneIndex, segmentId: selection.segmentId });
+    model.setPlayhead(nextPlayhead);
   }
 
   function handleSegmentPointerDown(
@@ -666,7 +570,7 @@ export function FinalReview() {
     e.stopPropagation();
     if (exporting || isPlaying) return;
 
-    setSelection({ laneIndex, segmentId: segment.id });
+    model.setSelection({ laneIndex, segmentId: segment.id });
 
     const startClientX = e.clientX;
     const originStartSec = segment.timelineStartSec;
@@ -680,14 +584,7 @@ export function FinalReview() {
         desiredStartSec = snapTimeSec(desiredStartSec, beatSec);
       }
 
-      setTimelines((prev) => {
-        const track = prev[laneIndex] ?? [];
-        const moved = moveSegmentWithClamp(track, segment.id, desiredStartSec);
-        if (moved === track) return prev;
-        const next = [...prev];
-        next[laneIndex] = moved;
-        return next;
-      });
+      model.moveClip(laneIndex, segment.id, desiredStartSec);
     };
 
     const onUp = () => {
@@ -702,44 +599,39 @@ export function FinalReview() {
   function handleSeek(valueSec: number) {
     if (isPlaying || exporting) return;
     const next = Math.max(0, Math.min(valueSec, timelineEndSec));
-    setPlayheadSec(next);
+    model.setPlayhead(next);
   }
 
   function handleVolumeChange(index: number, value: number) {
-    const next = [...volumes];
-    next[index] = value;
-    setVolumes(next);
-    mixerRef.current?.setTrackVolume(index, value);
+    model.setTrackVolume(index, value);
+    model.mixer?.setTrackVolume(index, value);
   }
 
   function handleMuteToggle(index: number) {
-    const next = [...muted];
-    next[index] = !(next[index] ?? false);
-    setMuted(next);
-    mixerRef.current?.setTrackMuted(index, next[index] ?? false);
+    const nextMuted = !(muted[index] ?? false);
+    model.setTrackMuted(index, nextMuted);
+    model.mixer?.setTrackMuted(index, nextMuted);
   }
 
   function handleReverbChange(wet: number) {
-    setReverbWet(wet);
-    mixerRef.current?.setReverbWet(wet);
+    model.setReverbWet(wet);
+    model.mixer?.setReverbWet(wet);
   }
 
   function handleRedoPart(index: number) {
     stopPlaybackEngine(false);
-    updatePartState(index, { status: "idle" });
-    currentPartIndex.set(index);
-    appScreen.set("recording");
+    model.redoPart(index);
   }
 
   async function handleExport() {
-    const mixer = mixerRef.current;
+    const mixer = model.mixer;
     if (ctx == null || canvasRef.current == null || mixer == null) return;
     if (timelineEndSec <= 0) return;
 
     stopPlaybackEngine(false);
-    setExporting(true);
-    setExportProgress(0);
-    setPlayheadSec(0);
+    model.setExporting(true);
+    model.setExportProgress(0);
+    model.setPlayhead(0);
 
     const startCtxTime = ctx.currentTime + PLAYBACK_SCHEDULE_LEAD_SEC;
     startAudioFromTimeline(startCtxTime, 0, timelineEndSec);
@@ -751,21 +643,16 @@ export function FinalReview() {
         audioContext: ctx,
         mixer,
         durationMs: timelineEndSec * 1000,
-        onProgress: setExportProgress,
+        onProgress: (progress) => model.setExportProgress(progress),
       });
 
       const nextUrl = URL.createObjectURL(blob);
-      setExportedUrl((prev) => {
-        if (prev != null) {
-          URL.revokeObjectURL(prev);
-        }
-        return nextUrl;
-      });
+      model.setExportedUrl(nextUrl);
     } catch (err) {
       console.error("Export failed", err);
     } finally {
       stopPlaybackEngine(false);
-      setExporting(false);
+      model.setExporting(false);
     }
   }
 
@@ -779,8 +666,8 @@ export function FinalReview() {
 
   function handleStartOver() {
     stopPlaybackEngine(false);
-    resetSession();
-    appScreen.set("setup");
+    model.resetSession();
+    model.appScreen.set("setup");
   }
 
   const selectedSegment = findSegmentBySelection(selection);
@@ -915,7 +802,7 @@ export function FinalReview() {
                       borderColor="whiteAlpha.200"
                       fontSize="xs"
                       fontWeight="normal"
-                      onClick={() => setSnapToBeat((v) => !v)}
+                      onClick={() => model.setSnapToBeat(!snapToBeat)}
                       disabled={exporting || isPlaying}
                     >
                       Snap {snapToBeat ? "on" : "off"}
@@ -970,9 +857,16 @@ export function FinalReview() {
                       >
                         {Array.from({ length: trackCount }).map((_, lane) => {
                           const track = timelines[lane] ?? [];
-                          const peaks = waveformPeaksRef.current[lane] ?? [];
-                          const laneStart = laneSourceStartRef.current[lane] ?? 0;
-                          const laneDuration = laneSourceDurationRef.current[lane] ?? 0;
+                          const takeId = tracksState.laneTakeIds[lane];
+                          const peaks = takeId != null
+                            ? model.waveformPeaksByTakeId.get(takeId) ?? []
+                            : [];
+                          const laneStart = takeId != null
+                            ? model.laneSourceStartSecByTakeId.get(takeId) ?? 0
+                            : 0;
+                          const laneDuration = takeId != null
+                            ? model.laneSourceDurationSecByTakeId.get(takeId) ?? 0
+                            : 0;
                           const laneClass =
                             `timeline-lane ${selection.laneIndex === lane ? "is-selected-lane" : ""}` +
                             (lane % 2 === 0 ? " is-alt" : "");
@@ -1176,8 +1070,7 @@ export function FinalReview() {
                 variant="ghost"
                 color="gray.500"
                 onClick={() => {
-                  URL.revokeObjectURL(exportedUrl);
-                  setExportedUrl(null);
+                  model.setExportedUrl(null);
                 }}
               >
                 Export Again

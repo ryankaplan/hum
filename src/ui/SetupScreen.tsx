@@ -13,17 +13,6 @@ import {
 import { useRef, useState } from "react";
 import { useObservable } from "../observable";
 import { acquirePermissionsAndStart } from "../recording/permissions";
-import {
-  chordsInput,
-  harmonyVoicing,
-  meterInput,
-  parsedChords,
-  permissionError,
-  tempoInput,
-  totalPartsInput,
-  vocalRangeHigh,
-  vocalRangeLow,
-} from "../state/appState";
 import type { Meter } from "../music/types";
 import {
   playHarmonyPreview,
@@ -31,7 +20,7 @@ import {
   stopAllPlayback,
 } from "../music/playback";
 import type { PlaybackSession } from "../music/playback";
-import { audioContext } from "../state/appState";
+import { model } from "../state/model";
 
 const NOTE_OPTIONS = [
   "C2", "D2", "E2", "F2", "G2", "A2", "B2",
@@ -47,17 +36,17 @@ const METER_OPTIONS: { label: string; value: Meter }[] = [
 ];
 
 export function SetupScreen() {
-  const chords = useObservable(chordsInput);
-  const tempo = useObservable(tempoInput);
-  const meter = useObservable(meterInput);
-  const rangeLow = useObservable(vocalRangeLow);
-  const rangeHigh = useObservable(vocalRangeHigh);
-  const totalParts = useObservable(totalPartsInput);
-  const parsed = useObservable(parsedChords);
-  const voicing = useObservable(harmonyVoicing);
-  const error = useObservable(permissionError);
-
-  const isValid = parsed.length > 0 && voicing != null;
+  const arrangement = useObservable(model.arrangementInfo);
+  const { input, parsedChords: parsed, harmonyVoicing: voicing, isValid } = arrangement;
+  const {
+    chordsInput: chords,
+    tempo,
+    meter,
+    vocalRangeLow: rangeLow,
+    vocalRangeHigh: rangeHigh,
+    totalParts,
+  } = input;
+  const error = useObservable(model.permissionError);
 
   const [previewing, setPreviewing] = useState(false);
   const previewSessionRef = useRef<PlaybackSession | null>(null);
@@ -65,10 +54,10 @@ export function SetupScreen() {
   async function handlePreview() {
     if (voicing == null || parsed.length === 0) return;
     // Create or resume the AudioContext — a user gesture is in scope here.
-    let ctx = audioContext.get();
+    let ctx = model.audioContext.get();
     if (ctx == null) {
       ctx = new AudioContext();
-      audioContext.set(ctx);
+      model.audioContext.set(ctx);
     }
     if (ctx.state === "suspended") {
       await ctx.resume();
@@ -95,12 +84,12 @@ export function SetupScreen() {
   function handleMeterChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const found = METER_OPTIONS.find((o) => o.label === e.target.value);
     if (found != null) {
-      meterInput.set(found.value);
+      model.setArrangementInput({ meter: found.value });
     }
   }
 
   function handlePartCountChange(e: React.ChangeEvent<HTMLSelectElement>) {
-    totalPartsInput.set(e.target.value === "2" ? 2 : 4);
+    model.setArrangementInput({ totalParts: e.target.value === "2" ? 2 : 4 });
   }
 
   const meterLabel =
@@ -139,7 +128,7 @@ export function SetupScreen() {
               <Field.Label color="gray.300">Chord Progression</Field.Label>
               <Input
                 value={chords}
-                onChange={(e) => chordsInput.set(e.target.value)}
+                onChange={(e) => model.setArrangementInput({ chordsInput: e.target.value })}
                 placeholder="A A F#m F#m D D E E"
                 bg="gray.800"
                 border="1px solid"
@@ -163,7 +152,7 @@ export function SetupScreen() {
                   max={240}
                   onChange={(e) => {
                     const v = parseInt(e.target.value, 10);
-                    if (!isNaN(v)) tempoInput.set(v);
+                    if (!isNaN(v)) model.setArrangementInput({ tempo: v });
                   }}
                   bg="gray.800"
                   border="1px solid"
@@ -201,7 +190,7 @@ export function SetupScreen() {
                 <NativeSelect.Root>
                   <NativeSelect.Field
                     value={rangeLow}
-                    onChange={(e) => vocalRangeLow.set(e.target.value)}
+                    onChange={(e) => model.setArrangementInput({ vocalRangeLow: e.target.value })}
                     bg="gray.800"
                     border="1px solid"
                     borderColor="gray.700"
@@ -222,7 +211,7 @@ export function SetupScreen() {
                 <NativeSelect.Root>
                   <NativeSelect.Field
                     value={rangeHigh}
-                    onChange={(e) => vocalRangeHigh.set(e.target.value)}
+                    onChange={(e) => model.setArrangementInput({ vocalRangeHigh: e.target.value })}
                     bg="gray.800"
                     border="1px solid"
                     borderColor="gray.700"

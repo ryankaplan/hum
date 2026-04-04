@@ -3,8 +3,11 @@ import { model } from "./model";
 export type {
   AppScreen,
   ArrangementInfo,
+  LaneRuntimeWaveform,
   KeepTakeInput,
   PartState,
+  RuntimeTakeMediaIngestInput,
+  TakeSourceWindow,
   TotalPartCount,
   TrackClip,
   TrackEditorSelection,

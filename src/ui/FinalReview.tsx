@@ -24,7 +24,6 @@ import { startCompositor } from "../video/compositor";
 import { exportWebM } from "../video/exporter";
 import { createMixer } from "../audio/mixer";
 import {
-  buildWaveformPeaks,
   getActiveSegmentAtTime,
   getTimelineEndSec,
   samplePeaksForSegment,
@@ -291,7 +290,7 @@ export function FinalReview() {
 
       for (const segment of track) {
         if (segment.takeId == null) continue;
-        const buffer = model.audioBuffersByTakeId.get(segment.takeId);
+        const buffer = model.getTakeAudioBuffer(segment.takeId);
         if (buffer == null) continue;
 
         const segStart = segment.timelineStartSec;
@@ -334,11 +333,7 @@ export function FinalReview() {
     const videos: HTMLVideoElement[] = [];
     const activeLaneTakeIds = tracksState.laneTakeIds;
 
-    model.audioBuffersByTakeId.clear();
-    model.waveformPeaksByTakeId.clear();
-    model.videoElByTakeId.clear();
-    model.laneSourceStartSecByTakeId.clear();
-    model.laneSourceDurationSecByTakeId.clear();
+    model.clearRuntimeTakeMedia();
     model.setPlayhead(0);
     model.setSelection({ laneIndex: null, segmentId: null });
     setWaveformVersion((v) => v + 1);
@@ -353,9 +348,6 @@ export function FinalReview() {
       video.preload = "auto";
       if (take != null) {
         video.src = take.url;
-      }
-      if (takeId != null) {
-        model.videoElByTakeId.set(takeId, video);
       }
       videoRefs.current[i] = video;
       videos.push(video);
@@ -381,43 +373,21 @@ export function FinalReview() {
       const take = tracksState.takesById[takeId];
       if (take == null) continue;
 
-      const laneIndex = i;
-      const trimOffsetSec = Math.max(0, take.trimOffsetSec);
+      const videoEl = videos[i];
+      if (videoEl == null) continue;
 
-      void take.blob
-        .arrayBuffer()
-        .then((ab) => {
-          if (cancelled) return null;
-          return ctx.decodeAudioData(ab);
-        })
-        .then((buffer) => {
-          if (cancelled || buffer == null) return;
-
-          const sourceStartSec = Math.min(trimOffsetSec, buffer.duration);
-          const rawDuration = Math.max(0, buffer.duration - sourceStartSec);
-          const laneDurationSec = Math.max(
-            0,
-            Math.min(rawDuration, Math.max(0, baseDurationSec)),
-          );
-
-          model.audioBuffersByTakeId.set(takeId, buffer);
-          model.laneSourceStartSecByTakeId.set(takeId, sourceStartSec);
-          model.laneSourceDurationSecByTakeId.set(takeId, laneDurationSec);
-          model.waveformPeaksByTakeId.set(
-            takeId,
-            buildWaveformPeaks(
-              buffer,
-              sourceStartSec,
-              laneDurationSec,
-              400,
-            ),
-          );
-          model.initializeTrackFromTake(
-            laneIndex,
-            takeId,
-            sourceStartSec,
-            laneDurationSec,
-          );
+      void model.ingestTakeRuntimeMedia({
+        takeId,
+        laneIndex: i,
+        blob: take.blob,
+        trimOffsetSec: Math.max(0, take.trimOffsetSec),
+        ctx,
+        videoEl,
+        maxDurationSec: baseDurationSec,
+        waveformBuckets: 400,
+      })
+        .then((ingested) => {
+          if (cancelled || !ingested) return;
           setWaveformVersion((v) => v + 1);
         })
         .catch(() => {
@@ -604,18 +574,15 @@ export function FinalReview() {
 
   function handleVolumeChange(index: number, value: number) {
     model.setTrackVolume(index, value);
-    model.mixer?.setTrackVolume(index, value);
   }
 
   function handleMuteToggle(index: number) {
     const nextMuted = !(muted[index] ?? false);
     model.setTrackMuted(index, nextMuted);
-    model.mixer?.setTrackMuted(index, nextMuted);
   }
 
   function handleReverbChange(wet: number) {
     model.setReverbWet(wet);
-    model.mixer?.setReverbWet(wet);
   }
 
   function handleRedoPart(index: number) {
@@ -629,9 +596,7 @@ export function FinalReview() {
     if (timelineEndSec <= 0) return;
 
     stopPlaybackEngine(false);
-    model.setExporting(true);
-    model.setExportProgress(0);
-    model.setPlayhead(0);
+    model.beginExport();
 
     const startCtxTime = ctx.currentTime + PLAYBACK_SCHEDULE_LEAD_SEC;
     startAudioFromTimeline(startCtxTime, 0, timelineEndSec);
@@ -643,16 +608,16 @@ export function FinalReview() {
         audioContext: ctx,
         mixer,
         durationMs: timelineEndSec * 1000,
-        onProgress: (progress) => model.setExportProgress(progress),
+        onProgress: (progress) => model.updateExportProgress(progress),
       });
 
       const nextUrl = URL.createObjectURL(blob);
-      model.setExportedUrl(nextUrl);
+      model.completeExport(nextUrl);
     } catch (err) {
       console.error("Export failed", err);
+      model.failOrResetExport();
     } finally {
       stopPlaybackEngine(false);
-      model.setExporting(false);
     }
   }
 
@@ -857,16 +822,10 @@ export function FinalReview() {
                       >
                         {Array.from({ length: trackCount }).map((_, lane) => {
                           const track = timelines[lane] ?? [];
-                          const takeId = tracksState.laneTakeIds[lane];
-                          const peaks = takeId != null
-                            ? model.waveformPeaksByTakeId.get(takeId) ?? []
-                            : [];
-                          const laneStart = takeId != null
-                            ? model.laneSourceStartSecByTakeId.get(takeId) ?? 0
-                            : 0;
-                          const laneDuration = takeId != null
-                            ? model.laneSourceDurationSecByTakeId.get(takeId) ?? 0
-                            : 0;
+                          const laneRuntime = model.getLaneRuntimeWaveform(lane);
+                          const peaks = laneRuntime?.peaks ?? [];
+                          const laneStart = laneRuntime?.sourceWindow.sourceStartSec ?? 0;
+                          const laneDuration = laneRuntime?.sourceWindow.durationSec ?? 0;
                           const laneClass =
                             `timeline-lane ${selection.laneIndex === lane ? "is-selected-lane" : ""}` +
                             (lane % 2 === 0 ? " is-alt" : "");
@@ -1070,7 +1029,7 @@ export function FinalReview() {
                 variant="ghost"
                 color="gray.500"
                 onClick={() => {
-                  model.setExportedUrl(null);
+                  model.clearExportedUrl();
                 }}
               >
                 Export Again

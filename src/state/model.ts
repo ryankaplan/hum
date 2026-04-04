@@ -6,6 +6,7 @@ import { noteNameToMidi } from "../music/types";
 import type { Chord, HarmonyVoicing, Meter, PartIndex } from "../music/types";
 import type { Mixer } from "../audio/mixer";
 import type { CompositorHandle } from "../video/compositor";
+import { buildWaveformPeaks } from "../ui/timeline";
 
 type WaveformPeaks = number[];
 
@@ -92,6 +93,28 @@ export type KeepTakeInput = {
   trimOffsetSec: number;
 };
 
+export type RuntimeTakeMediaIngestInput = {
+  takeId: string;
+  laneIndex: number;
+  blob: Blob;
+  trimOffsetSec: number;
+  ctx: AudioContext;
+  videoEl: HTMLVideoElement;
+  maxDurationSec: number;
+  waveformBuckets?: number;
+};
+
+export type TakeSourceWindow = {
+  sourceStartSec: number;
+  durationSec: number;
+};
+
+export type LaneRuntimeWaveform = {
+  takeId: string;
+  peaks: WaveformPeaks;
+  sourceWindow: TakeSourceWindow;
+} | null;
+
 function parseTotalPartCount(raw: unknown): TotalPartCount {
   return raw === 2 ? 2 : 4;
 }
@@ -129,6 +152,10 @@ function createEmptyTracks(totalParts: number): TracksState {
 class AppModel {
   private nextTakeId = 0;
   private nextClipId = 0;
+  private audioBuffersByTakeId = new Map<string, AudioBuffer>();
+  private waveformPeaksByTakeId = new Map<string, WaveformPeaks>();
+  private videoElByTakeId = new Map<string, HTMLVideoElement>();
+  private takeSourceWindowByTakeId = new Map<string, TakeSourceWindow>();
 
   readonly chordsInput = new PersistedObservable<string>(
     "hum.chords",
@@ -173,13 +200,8 @@ class AppModel {
     createEmptyTracks(this.totalPartsInput.get()),
   );
 
-  // Mutable runtime assets: these are intentionally mutable and are not used
-  // as direct React state sources.
-  readonly audioBuffersByTakeId = new Map<string, AudioBuffer>();
-  readonly waveformPeaksByTakeId = new Map<string, WaveformPeaks>();
-  readonly videoElByTakeId = new Map<string, HTMLVideoElement>();
-  readonly laneSourceStartSecByTakeId = new Map<string, number>();
-  readonly laneSourceDurationSecByTakeId = new Map<string, number>();
+  // Mutable runtime systems are intentionally exposed so screens can compose
+  // playback/export behavior while keeping simple runtime storage encapsulated.
   mixer: Mixer | null = null;
   compositor: CompositorHandle | null = null;
 
@@ -298,7 +320,7 @@ class AppModel {
           URL.revokeObjectURL(previousTake.url);
         }
         delete nextTakesById[previousTakeId];
-        this.deleteRuntimeAssetsForTake(previousTakeId);
+        this.removeTakeRuntimeMedia(previousTakeId);
       }
 
       return {
@@ -561,8 +583,11 @@ class AppModel {
   }
 
   setTrackVolume(laneIndex: number, volume: number): void {
+    if (laneIndex < 0 || laneIndex >= this.tracks.get().mix.volumes.length) {
+      return;
+    }
+
     this.setTracks((current) => {
-      if (laneIndex < 0 || laneIndex >= current.mix.volumes.length) return current;
       const nextVolumes = [...current.mix.volumes];
       nextVolumes[laneIndex] = volume;
       return {
@@ -573,11 +598,16 @@ class AppModel {
         },
       };
     });
+
+    this.mixer?.setTrackVolume(laneIndex, volume);
   }
 
   setTrackMuted(laneIndex: number, muted: boolean): void {
+    if (laneIndex < 0 || laneIndex >= this.tracks.get().mix.muted.length) {
+      return;
+    }
+
     this.setTracks((current) => {
-      if (laneIndex < 0 || laneIndex >= current.mix.muted.length) return current;
       const nextMuted = [...current.mix.muted];
       nextMuted[laneIndex] = muted;
       return {
@@ -588,6 +618,8 @@ class AppModel {
         },
       };
     });
+
+    this.mixer?.setTrackMuted(laneIndex, muted);
   }
 
   setReverbWet(wet: number): void {
@@ -598,29 +630,33 @@ class AppModel {
         reverbWet: wet,
       },
     }));
+    this.mixer?.setReverbWet(wet);
   }
 
-  setExporting(exporting: boolean): void {
+  beginExport(): void {
     this.setTracks((current) => ({
       ...current,
       export: {
         ...current.export,
-        exporting,
+        exporting: true,
+        progress: 0,
       },
     }));
+    this.setPlayhead(0);
   }
 
-  setExportProgress(progress: number): void {
+  updateExportProgress(progress: number): void {
+    const clamped = Math.min(1, Math.max(0, progress));
     this.setTracks((current) => ({
       ...current,
       export: {
         ...current.export,
-        progress,
+        progress: clamped,
       },
     }));
   }
 
-  setExportedUrl(url: string | null): void {
+  completeExport(url: string): void {
     this.setTracks((current) => {
       const prevUrl = current.export.exportedUrl;
       if (prevUrl != null && prevUrl !== url) {
@@ -631,10 +667,128 @@ class AppModel {
         ...current,
         export: {
           ...current.export,
+          exporting: false,
+          progress: 1,
           exportedUrl: url,
         },
       };
     });
+  }
+
+  failOrResetExport(): void {
+    this.setTracks((current) => ({
+      ...current,
+      export: {
+        ...current.export,
+        exporting: false,
+        progress: 0,
+      },
+    }));
+  }
+
+  clearExportedUrl(): void {
+    this.setTracks((current) => {
+      const prevUrl = current.export.exportedUrl;
+      if (prevUrl != null) {
+        URL.revokeObjectURL(prevUrl);
+      }
+
+      return {
+        ...current,
+        export: {
+          ...current.export,
+          exportedUrl: null,
+        },
+      };
+    });
+  }
+
+  async ingestTakeRuntimeMedia(input: RuntimeTakeMediaIngestInput): Promise<boolean> {
+    const {
+      takeId,
+      laneIndex,
+      blob,
+      trimOffsetSec,
+      ctx,
+      videoEl,
+      maxDurationSec,
+      waveformBuckets = 400,
+    } = input;
+
+    this.videoElByTakeId.set(takeId, videoEl);
+
+    const raw = await blob.arrayBuffer();
+    const decoded = await ctx.decodeAudioData(raw);
+
+    const current = this.tracks.get();
+    if (current.laneTakeIds[laneIndex] !== takeId) {
+      return false;
+    }
+
+    const sourceStartSec = Math.min(Math.max(0, trimOffsetSec), decoded.duration);
+    const rawDuration = Math.max(0, decoded.duration - sourceStartSec);
+    const durationSec = Math.max(
+      0,
+      Math.min(rawDuration, Math.max(0, maxDurationSec)),
+    );
+
+    this.audioBuffersByTakeId.set(takeId, decoded);
+    this.takeSourceWindowByTakeId.set(takeId, {
+      sourceStartSec,
+      durationSec,
+    });
+    this.waveformPeaksByTakeId.set(
+      takeId,
+      buildWaveformPeaks(decoded, sourceStartSec, durationSec, waveformBuckets),
+    );
+
+    this.initializeTrackFromTake(laneIndex, takeId, sourceStartSec, durationSec);
+    return true;
+  }
+
+  getTakeAudioBuffer(takeId: string): AudioBuffer | null {
+    return this.audioBuffersByTakeId.get(takeId) ?? null;
+  }
+
+  getTakeWaveform(takeId: string): WaveformPeaks | null {
+    return this.waveformPeaksByTakeId.get(takeId) ?? null;
+  }
+
+  getTakeSourceWindow(takeId: string): TakeSourceWindow | null {
+    return this.takeSourceWindowByTakeId.get(takeId) ?? null;
+  }
+
+  getTakeVideoElement(takeId: string): HTMLVideoElement | null {
+    return this.videoElByTakeId.get(takeId) ?? null;
+  }
+
+  getLaneRuntimeWaveform(laneIndex: number): LaneRuntimeWaveform {
+    const takeId = this.tracks.get().laneTakeIds[laneIndex];
+    if (takeId == null) return null;
+
+    const peaks = this.getTakeWaveform(takeId);
+    const sourceWindow = this.getTakeSourceWindow(takeId);
+    if (peaks == null || sourceWindow == null) return null;
+
+    return {
+      takeId,
+      peaks,
+      sourceWindow,
+    };
+  }
+
+  clearRuntimeTakeMedia(): void {
+    this.audioBuffersByTakeId.clear();
+    this.waveformPeaksByTakeId.clear();
+    this.videoElByTakeId.clear();
+    this.takeSourceWindowByTakeId.clear();
+  }
+
+  removeTakeRuntimeMedia(takeId: string): void {
+    this.audioBuffersByTakeId.delete(takeId);
+    this.waveformPeaksByTakeId.delete(takeId);
+    this.videoElByTakeId.delete(takeId);
+    this.takeSourceWindowByTakeId.delete(takeId);
   }
 
   redoPart(index: number): void {
@@ -651,7 +805,7 @@ class AppModel {
         if (take != null) {
           URL.revokeObjectURL(take.url);
         }
-        this.deleteRuntimeAssetsForTake(takeId);
+        this.removeTakeRuntimeMedia(takeId);
       }
 
       const nextLaneTakeIds = [...current.laneTakeIds];
@@ -704,13 +858,9 @@ class AppModel {
       }
     }
 
-    this.setExportedUrl(null);
+    this.clearExportedUrl();
     this.tracks.set(createEmptyTracks(this.totalPartsInput.get()));
-    this.audioBuffersByTakeId.clear();
-    this.waveformPeaksByTakeId.clear();
-    this.videoElByTakeId.clear();
-    this.laneSourceStartSecByTakeId.clear();
-    this.laneSourceDurationSecByTakeId.clear();
+    this.clearRuntimeTakeMedia();
 
     this.mixer?.dispose();
     this.mixer = null;
@@ -810,7 +960,7 @@ class AppModel {
         nextTakesById[takeId] = take;
       } else {
         URL.revokeObjectURL(take.url);
-        this.deleteRuntimeAssetsForTake(takeId);
+        this.removeTakeRuntimeMedia(takeId);
       }
     }
 
@@ -843,14 +993,6 @@ class AppModel {
     if (next !== current) {
       this.tracks.set(next);
     }
-  }
-
-  private deleteRuntimeAssetsForTake(takeId: string): void {
-    this.audioBuffersByTakeId.delete(takeId);
-    this.waveformPeaksByTakeId.delete(takeId);
-    this.videoElByTakeId.delete(takeId);
-    this.laneSourceStartSecByTakeId.delete(takeId);
-    this.laneSourceDurationSecByTakeId.delete(takeId);
   }
 
   private makeTakeId(): string {

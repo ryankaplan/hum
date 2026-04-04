@@ -57,7 +57,8 @@ const TRACK_COUNT = 4;
 const PLAYBACK_SCHEDULE_LEAD_SEC = 0.05;
 const TIMELINE_PX_PER_SEC = 110;
 const TIMELINE_RIGHT_PAD_PX = 48;
-const LANE_HEIGHT_PX = 74;
+const LANE_HEIGHT_PX = 72;
+const TRACK_RAIL_WIDTH_PX = 72;
 
 type ActiveAudioSource = {
   source: AudioBufferSourceNode;
@@ -786,163 +787,234 @@ export function FinalReview() {
             </Box>
 
             <Box flex="1" minW={0}>
-              <Stack gap={3}>
-                <Flex justify="space-between" align="center" wrap="wrap" gap={2}>
-                  <Text color="gray.400" fontSize="xs" fontWeight="semibold">
-                    TIMELINE EDITOR
-                  </Text>
-                  <Flex align="center" gap={2}>
-                    <Text color="gray.500" fontSize="xs">
-                      Playhead {formatTime(playheadSec)} / {formatTime(timelineEndSec)}
+              <Stack gap={0}>
+                <Box
+                  borderRadius="md"
+                  borderWidth="1px"
+                  borderColor="whiteAlpha.200"
+                  bg="gray.900"
+                  overflow="hidden"
+                  boxShadow="0 1px 2px rgba(0, 0, 0, 0.35)"
+                >
+                  <Flex
+                    align="center"
+                    justify="space-between"
+                    gap={3}
+                    px={3}
+                    py={2}
+                    borderBottomWidth="1px"
+                    borderColor="whiteAlpha.100"
+                  >
+                    <Text fontSize="xs" fontWeight="medium" color="gray.400" letterSpacing="0.02em">
+                      Tracks
                     </Text>
-                  </Flex>
-                </Flex>
-
-                <Flex gap={2} wrap="wrap">
-                  <Button
-                    colorPalette={isPlaying ? "gray" : "brand"}
-                    variant={isPlaying ? "outline" : "solid"}
-                    size="sm"
-                    onClick={handlePlayPause}
-                    disabled={exporting || timelineEndSec <= 0}
-                  >
-                    {isPlaying ? "Pause" : "Play"}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    borderColor="gray.700"
-                    color="gray.300"
-                    onClick={handleSplitAtPlayhead}
-                    disabled={exporting || !canSplit}
-                  >
-                    Split at Playhead
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    borderColor="gray.700"
-                    color="gray.300"
-                    onClick={handleDeleteSelectedSegment}
-                    disabled={exporting || !canDelete}
-                  >
-                    Delete Segment
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant={snapToBeat ? "solid" : "outline"}
-                    colorPalette={snapToBeat ? "brand" : "gray"}
-                    borderColor="gray.700"
-                    onClick={() => setSnapToBeat((v) => !v)}
-                    disabled={exporting || isPlaying}
-                  >
-                    Snap: {snapToBeat ? "On" : "Off"}
-                  </Button>
-                </Flex>
-
-                <Box borderRadius="lg" border="1px solid" borderColor="gray.800" bg="gray.900" p={2}>
-                  <Box
-                    ref={timelineViewportRef}
-                    overflowX="auto"
-                    overflowY="hidden"
-                    borderRadius="md"
-                    bg="gray.950"
-                  >
                     <Box
-                      position="relative"
-                      w={`${timelineContentWidthPx}px`}
-                      h={`${TRACK_COUNT * LANE_HEIGHT_PX}px`}
+                      as="span"
+                      fontSize="xs"
+                      color="gray.500"
+                      fontFamily="mono"
+                      fontVariantNumeric="tabular-nums"
                     >
-                      {Array.from({ length: TRACK_COUNT }).map((_, lane) => {
-                        const track = timelines[lane] ?? [];
-                        const peaks = waveformPeaksRef.current[lane] ?? [];
-                        const laneStart = laneSourceStartRef.current[lane] ?? 0;
-                        const laneDuration = laneSourceDurationRef.current[lane] ?? 0;
+                      {formatTime(playheadSec)}
+                      <Box as="span" color="gray.600">
+                        {" "}
+                        / {formatTime(timelineEndSec)}
+                      </Box>
+                    </Box>
+                  </Flex>
 
-                        return (
-                          <Box
-                            key={lane}
-                            className={`timeline-lane ${selection.laneIndex === lane ? "is-selected-lane" : ""}`}
-                            position="absolute"
-                            left={0}
-                            right={0}
-                            top={`${lane * LANE_HEIGHT_PX}px`}
-                            h={`${LANE_HEIGHT_PX - 2}px`}
-                            onPointerDown={(e) => handleLaneClick(e, lane)}
+                  <Flex
+                    gap={1.5}
+                    flexWrap="wrap"
+                    px={3}
+                    py={2}
+                    borderBottomWidth="1px"
+                    borderColor="whiteAlpha.100"
+                  >
+                    <Button
+                      colorPalette={isPlaying ? "gray" : "brand"}
+                      variant={isPlaying ? "outline" : "solid"}
+                      size="sm"
+                      h={8}
+                      px={3}
+                      fontSize="xs"
+                      fontWeight="medium"
+                      onClick={handlePlayPause}
+                      disabled={exporting || timelineEndSec <= 0}
+                    >
+                      {isPlaying ? "Pause" : "Play"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      h={8}
+                      px={3}
+                      variant="outline"
+                      borderColor="whiteAlpha.200"
+                      color="gray.300"
+                      _hover={{ bg: "whiteAlpha.50" }}
+                      fontSize="xs"
+                      fontWeight="normal"
+                      onClick={handleSplitAtPlayhead}
+                      disabled={exporting || !canSplit}
+                    >
+                      Split
+                    </Button>
+                    <Button
+                      size="sm"
+                      h={8}
+                      px={3}
+                      variant="outline"
+                      borderColor="whiteAlpha.200"
+                      color="gray.300"
+                      _hover={{ bg: "whiteAlpha.50" }}
+                      fontSize="xs"
+                      fontWeight="normal"
+                      onClick={handleDeleteSelectedSegment}
+                      disabled={exporting || !canDelete}
+                    >
+                      Delete
+                    </Button>
+                    <Button
+                      size="sm"
+                      h={8}
+                      px={3}
+                      variant={snapToBeat ? "solid" : "outline"}
+                      colorPalette={snapToBeat ? "brand" : "gray"}
+                      borderColor="whiteAlpha.200"
+                      fontSize="xs"
+                      fontWeight="normal"
+                      onClick={() => setSnapToBeat((v) => !v)}
+                      disabled={exporting || isPlaying}
+                    >
+                      Snap {snapToBeat ? "on" : "off"}
+                    </Button>
+                  </Flex>
+
+                  <Flex align="stretch" minH={0}>
+                    <Box
+                      flexShrink={0}
+                      w={`${TRACK_RAIL_WIDTH_PX}px`}
+                      borderRightWidth="1px"
+                      borderColor="whiteAlpha.100"
+                      bg="blackAlpha.300"
+                    >
+                      {Array.from({ length: TRACK_COUNT }).map((_, lane) => (
+                        <Flex
+                          key={`rail-${lane}`}
+                          h={`${LANE_HEIGHT_PX}px`}
+                          align="center"
+                          justify="center"
+                          borderBottomWidth="1px"
+                          borderColor="whiteAlpha.50"
+                          px={2}
+                        >
+                          <Text
+                            fontSize="10px"
+                            fontWeight="medium"
+                            color="gray.500"
+                            textAlign="center"
+                            lineHeight="1.25"
+                            textTransform="uppercase"
+                            letterSpacing="0.06em"
                           >
-                            <Flex
+                            {PART_LABELS[lane as PartIndex]}
+                          </Text>
+                        </Flex>
+                      ))}
+                    </Box>
+
+                    <Box
+                      ref={timelineViewportRef}
+                      overflowX="auto"
+                      overflowY="hidden"
+                      flex={1}
+                      minW={0}
+                      bg="#0c0c0e"
+                    >
+                      <Box
+                        position="relative"
+                        w={`${timelineContentWidthPx}px`}
+                        h={`${TRACK_COUNT * LANE_HEIGHT_PX}px`}
+                      >
+                        {Array.from({ length: TRACK_COUNT }).map((_, lane) => {
+                          const track = timelines[lane] ?? [];
+                          const peaks = waveformPeaksRef.current[lane] ?? [];
+                          const laneStart = laneSourceStartRef.current[lane] ?? 0;
+                          const laneDuration = laneSourceDurationRef.current[lane] ?? 0;
+                          const laneClass =
+                            `timeline-lane ${selection.laneIndex === lane ? "is-selected-lane" : ""}` +
+                            (lane % 2 === 0 ? " is-alt" : "");
+
+                          return (
+                            <Box
+                              key={lane}
+                              className={laneClass}
                               position="absolute"
-                              top={0}
                               left={0}
                               right={0}
-                              bottom={0}
-                              align="center"
-                              px={2}
-                              pointerEvents="none"
+                              top={`${lane * LANE_HEIGHT_PX}px`}
+                              h={`${LANE_HEIGHT_PX - 1}px`}
+                              onPointerDown={(e) => handleLaneClick(e, lane)}
                             >
-                              <Text color="gray.500" fontSize="10px" fontWeight="semibold">
-                                {PART_LABELS[lane as PartIndex]}
-                              </Text>
-                            </Flex>
-
-                            {beatLineTimes.map((line, index) => (
-                              <Box
-                                key={`${lane}-beat-${index}`}
-                                className="timeline-beat"
-                                left={`${line * TIMELINE_PX_PER_SEC}px`}
-                              />
-                            ))}
-
-                            {track.map((segment) => {
-                              const leftPx = segment.timelineStartSec * TIMELINE_PX_PER_SEC;
-                              const widthPx = Math.max(8, segment.durationSec * TIMELINE_PX_PER_SEC);
-                              const isSelected = selection.segmentId === segment.id;
-
-                              const bars = Math.max(8, Math.min(220, Math.floor(widthPx / 5)));
-                              const relativeSourceStart = Math.max(
-                                0,
-                                segment.sourceStartSec - laneStart,
-                              );
-                              const samples = samplePeaksForSegment(
-                                peaks,
-                                laneDuration,
-                                relativeSourceStart,
-                                segment.durationSec,
-                                bars,
-                              );
-
-                              return (
+                              {beatLineTimes.map((line, index) => (
                                 <Box
-                                  key={segment.id}
-                                  className={`timeline-segment ${isSelected ? "is-selected" : ""}`}
-                                  left={`${leftPx}px`}
-                                  w={`${widthPx}px`}
-                                  onPointerDown={(e) => handleSegmentPointerDown(e, lane, segment)}
-                                >
-                                  <Box className="segment-waveform">
-                                    {samples.map((sample, idx) => (
-                                      <Box
-                                        key={`${segment.id}-${idx}`}
-                                        className="segment-bar"
-                                        h={`${Math.max(12, Math.round(sample * 100))}%`}
-                                      />
-                                    ))}
+                                  key={`${lane}-beat-${index}`}
+                                  className="timeline-beat"
+                                  left={`${line * TIMELINE_PX_PER_SEC}px`}
+                                />
+                              ))}
+
+                              {track.map((segment) => {
+                                const leftPx = segment.timelineStartSec * TIMELINE_PX_PER_SEC;
+                                const widthPx = Math.max(8, segment.durationSec * TIMELINE_PX_PER_SEC);
+                                const isSelected = selection.segmentId === segment.id;
+
+                                const bars = Math.max(8, Math.min(220, Math.floor(widthPx / 5)));
+                                const relativeSourceStart = Math.max(
+                                  0,
+                                  segment.sourceStartSec - laneStart,
+                                );
+                                const samples = samplePeaksForSegment(
+                                  peaks,
+                                  laneDuration,
+                                  relativeSourceStart,
+                                  segment.durationSec,
+                                  bars,
+                                );
+
+                                return (
+                                  <Box
+                                    key={segment.id}
+                                    className={`timeline-segment ${isSelected ? "is-selected" : ""}`}
+                                    left={`${leftPx}px`}
+                                    w={`${widthPx}px`}
+                                    onPointerDown={(e) => handleSegmentPointerDown(e, lane, segment)}
+                                  >
+                                    <Box className="segment-waveform">
+                                      {samples.map((sample, idx) => (
+                                        <Box
+                                          key={`${segment.id}-${idx}`}
+                                          className="segment-bar"
+                                          h={`${Math.max(12, Math.round(sample * 100))}%`}
+                                        />
+                                      ))}
+                                    </Box>
                                   </Box>
-                                </Box>
-                              );
-                            })}
-                          </Box>
-                        );
-                      })}
+                                );
+                              })}
+                            </Box>
+                          );
+                        })}
 
-                      <Box
-                        className="timeline-playhead"
-                        left={`${playheadSec * TIMELINE_PX_PER_SEC}px`}
-                      />
+                        <Box
+                          className="timeline-playhead"
+                          left={`${playheadSec * TIMELINE_PX_PER_SEC}px`}
+                        />
+                      </Box>
                     </Box>
-                  </Box>
+                  </Flex>
 
-                  <Box mt={3}>
+                  <Box px={3} py={2.5} borderTopWidth="1px" borderColor="whiteAlpha.100" bg="gray.900">
                     <input
                       type="range"
                       className="timeline-slider"
@@ -1136,52 +1208,59 @@ export function FinalReview() {
           width: 100%;
           appearance: none;
           height: 4px;
-          border-radius: 2px;
-          background: #2f3745;
+          border-radius: 999px;
+          background: rgba(255, 255, 255, 0.08);
           outline: none;
           cursor: pointer;
         }
         .timeline-slider::-webkit-slider-thumb {
           appearance: none;
-          width: 14px;
-          height: 14px;
+          width: 13px;
+          height: 13px;
           border-radius: 50%;
-          background: #38bdf8;
+          background: #fafafa;
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
           cursor: pointer;
         }
         .timeline-slider::-moz-range-thumb {
-          width: 14px;
-          height: 14px;
+          width: 13px;
+          height: 13px;
           border-radius: 50%;
-          background: #38bdf8;
-          border: none;
+          background: #fafafa;
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
           cursor: pointer;
         }
 
         .timeline-lane {
-          border-bottom: 1px solid #1f2937;
-          background: linear-gradient(180deg, rgba(17, 24, 39, 0.95), rgba(8, 14, 26, 0.95));
+          border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+          background: transparent;
           user-select: none;
           touch-action: none;
         }
+        .timeline-lane.is-alt {
+          background: rgba(255, 255, 255, 0.02);
+        }
         .timeline-lane.is-selected-lane {
-          box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.28);
+          background: rgba(129, 140, 248, 0.06);
+          box-shadow: inset 0 0 0 1px rgba(129, 140, 248, 0.18);
         }
         .timeline-beat {
           position: absolute;
           top: 0;
           bottom: 0;
           width: 1px;
-          background: rgba(107, 114, 128, 0.26);
+          background: rgba(255, 255, 255, 0.04);
           pointer-events: none;
         }
         .timeline-segment {
           position: absolute;
-          top: 10px;
-          bottom: 10px;
-          border: 1px solid rgba(16, 185, 129, 0.72);
-          border-radius: 8px;
-          background: linear-gradient(180deg, rgba(6, 78, 59, 0.78), rgba(6, 95, 70, 0.72));
+          top: 9px;
+          bottom: 9px;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 6px;
+          background: rgba(255, 255, 255, 0.04);
           display: flex;
           align-items: center;
           cursor: grab;
@@ -1191,8 +1270,9 @@ export function FinalReview() {
           cursor: grabbing;
         }
         .timeline-segment.is-selected {
-          border-color: rgba(125, 211, 252, 0.94);
-          box-shadow: 0 0 0 1px rgba(125, 211, 252, 0.75), 0 8px 18px rgba(2, 132, 199, 0.35);
+          border-color: rgba(129, 140, 248, 0.45);
+          background: rgba(129, 140, 248, 0.1);
+          box-shadow: 0 0 0 1px rgba(129, 140, 248, 0.25);
         }
         .segment-waveform {
           display: flex;
@@ -1201,22 +1281,23 @@ export function FinalReview() {
           gap: 1px;
           width: 100%;
           height: 100%;
-          padding: 0 3px;
+          padding: 0 4px;
           pointer-events: none;
         }
         .segment-bar {
           width: 2px;
           border-radius: 999px;
-          background: rgba(236, 253, 245, 0.85);
+          background: rgba(255, 255, 255, 0.28);
           align-self: center;
         }
         .timeline-playhead {
           position: absolute;
           top: 0;
           bottom: 0;
-          width: 2px;
-          background: rgba(248, 113, 113, 0.95);
-          box-shadow: 0 0 10px rgba(248, 113, 113, 0.45);
+          width: 1px;
+          margin-left: -0.5px;
+          background: #fafafa;
+          box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
           pointer-events: none;
           z-index: 10;
         }

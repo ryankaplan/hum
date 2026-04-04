@@ -20,6 +20,7 @@ import {
   parsedChords,
   permissionError,
   tempoInput,
+  totalPartsInput,
   vocalRangeHigh,
   vocalRangeLow,
 } from "../state/appState";
@@ -51,6 +52,7 @@ export function SetupScreen() {
   const meter = useObservable(meterInput);
   const rangeLow = useObservable(vocalRangeLow);
   const rangeHigh = useObservable(vocalRangeHigh);
+  const totalParts = useObservable(totalPartsInput);
   const parsed = useObservable(parsedChords);
   const voicing = useObservable(harmonyVoicing);
   const error = useObservable(permissionError);
@@ -97,6 +99,10 @@ export function SetupScreen() {
     }
   }
 
+  function handlePartCountChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    totalPartsInput.set(e.target.value === "2" ? 2 : 4);
+  }
+
   const meterLabel =
     METER_OPTIONS.find(
       (o) => o.value[0] === meter[0] && o.value[1] === meter[1],
@@ -124,7 +130,7 @@ export function SetupScreen() {
               hum
             </Heading>
             <Text color="gray.400" mt={1} fontSize="sm">
-              4-part harmony video creator
+              {totalParts}-part harmony video creator
             </Text>
           </Box>
 
@@ -232,6 +238,24 @@ export function SetupScreen() {
                 </NativeSelect.Root>
               </Field.Root>
             </Grid>
+
+            <Field.Root>
+              <Field.Label color="gray.300">Arrangement</Field.Label>
+              <NativeSelect.Root>
+                <NativeSelect.Field
+                  value={String(totalParts)}
+                  onChange={handlePartCountChange}
+                  bg="gray.800"
+                  border="1px solid"
+                  borderColor="gray.700"
+                  color="white"
+                  _focus={{ borderColor: "brand.400", boxShadow: "none" }}
+                >
+                  <option value="4">4-part (3 harmony + melody)</option>
+                  <option value="2">2-part (harmony + melody)</option>
+                </NativeSelect.Field>
+              </NativeSelect.Root>
+            </Field.Root>
           </Stack>
 
           {parsed.length > 0 && (

@@ -27,8 +27,7 @@ import {
   tempoInput,
   updatePartState,
 } from "../state/appState";
-import type { PartIndex } from "../music/types";
-import { PART_LABELS } from "../music/types";
+import { getPartLabel } from "../music/types";
 import { progressionDurationSec } from "../music/playback";
 import { startCompositor } from "../video/compositor";
 import type { CompositorHandle } from "../video/compositor";
@@ -53,7 +52,6 @@ import type {
   WaveformPeaks,
 } from "./timeline";
 
-const TRACK_COUNT = 4;
 const PLAYBACK_SCHEDULE_LEAD_SEC = 0.05;
 const TIMELINE_PX_PER_SEC = 110;
 const TIMELINE_RIGHT_PAD_PX = 48;
@@ -77,19 +75,32 @@ export function FinalReview() {
   const chords = useObservable(parsedChords);
   const tempo = useObservable(tempoInput);
   const ctx = useObservable(audioContext);
+  const trackCount = states.length;
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const timelineViewportRef = useRef<HTMLDivElement>(null);
 
-  const videoRefs = useRef<(HTMLVideoElement | null)[]>([null, null, null, null]);
-  const activeVideoMaskRef = useRef<boolean[]>([false, false, false, false]);
+  const videoRefs = useRef<(HTMLVideoElement | null)[]>(
+    Array.from({ length: trackCount }, () => null),
+  );
+  const activeVideoMaskRef = useRef<boolean[]>(
+    Array.from({ length: trackCount }, () => false),
+  );
   const compositorRef = useRef<CompositorHandle | null>(null);
   const mixerRef = useRef<Mixer | null>(null);
 
-  const audioBuffersRef = useRef<(AudioBuffer | null)[]>([null, null, null, null]);
-  const laneSourceStartRef = useRef<number[]>([0, 0, 0, 0]);
-  const laneSourceDurationRef = useRef<number[]>([0, 0, 0, 0]);
-  const waveformPeaksRef = useRef<WaveformPeaks[]>([[], [], [], []]);
+  const audioBuffersRef = useRef<(AudioBuffer | null)[]>(
+    Array.from({ length: trackCount }, () => null),
+  );
+  const laneSourceStartRef = useRef<number[]>(
+    Array.from({ length: trackCount }, () => 0),
+  );
+  const laneSourceDurationRef = useRef<number[]>(
+    Array.from({ length: trackCount }, () => 0),
+  );
+  const waveformPeaksRef = useRef<WaveformPeaks[]>(
+    Array.from({ length: trackCount }, () => []),
+  );
 
   const activeSourcesRef = useRef<ActiveAudioSource[]>([]);
 
@@ -102,9 +113,13 @@ export function FinalReview() {
   });
 
   const segmentIdCounterRef = useRef(0);
-  const timelinesRef = useRef<TrackTimeline[]>([[], [], [], []]);
+  const timelinesRef = useRef<TrackTimeline[]>(
+    Array.from({ length: trackCount }, () => []),
+  );
 
-  const [timelines, setTimelines] = useState<TrackTimeline[]>([[], [], [], []]);
+  const [timelines, setTimelines] = useState<TrackTimeline[]>(
+    Array.from({ length: trackCount }, () => []),
+  );
   const [selection, setSelection] = useState<EditorSelection>({
     laneIndex: null,
     segmentId: null,
@@ -120,9 +135,22 @@ export function FinalReview() {
   const [exportProgress, setExportProgress] = useState(0);
   const [exportedUrl, setExportedUrl] = useState<string | null>(null);
 
-  const [volumes, setVolumes] = useState<number[]>([1, 1, 1, 1]);
-  const [muted, setMuted] = useState<boolean[]>([false, false, false, false]);
+  const [volumes, setVolumes] = useState<number[]>(
+    Array.from({ length: trackCount }, () => 1),
+  );
+  const [muted, setMuted] = useState<boolean[]>(
+    Array.from({ length: trackCount }, () => false),
+  );
   const [reverbWet, setReverbWet] = useState(0.15);
+
+  useEffect(() => {
+    setVolumes((prev) =>
+      Array.from({ length: trackCount }, (_, i) => prev[i] ?? 1),
+    );
+    setMuted((prev) =>
+      Array.from({ length: trackCount }, (_, i) => prev[i] ?? false),
+    );
+  }, [trackCount]);
 
   const baseDurationSec = progressionDurationSec(chords, tempo);
   const beatSec = tempo > 0 ? 60 / tempo : 0;
@@ -153,9 +181,9 @@ export function FinalReview() {
   }, []);
 
   const syncVideosToTimeline = useCallback((timelineSec: number, shouldPlay: boolean) => {
-    const nextMask = [false, false, false, false];
+    const nextMask = Array.from({ length: trackCount }, () => false);
 
-    for (let lane = 0; lane < TRACK_COUNT; lane++) {
+    for (let lane = 0; lane < trackCount; lane++) {
       const track = timelinesRef.current[lane] ?? [];
       const segment = getActiveSegmentAtTime(track, timelineSec);
       const video = videoRefs.current[lane];
@@ -191,7 +219,7 @@ export function FinalReview() {
     }
 
     activeVideoMaskRef.current = nextMask;
-  }, []);
+  }, [trackCount]);
 
   const stopAudio = useCallback(() => {
     for (const entry of activeSourcesRef.current) {
@@ -226,13 +254,16 @@ export function FinalReview() {
     for (const video of videoRefs.current) {
       video?.pause();
     }
-    activeVideoMaskRef.current = [false, false, false, false];
+    activeVideoMaskRef.current = Array.from(
+      { length: trackCount },
+      () => false,
+    );
 
     if (!preservePlayhead) {
       setPlayheadSec(0);
       syncVideosToTimeline(0, false);
     }
-  }, [stopAudio, stopClock, syncVideosToTimeline]);
+  }, [stopAudio, stopClock, syncVideosToTimeline, trackCount]);
 
   const runPreviewTick = useCallback(() => {
     const clock = playbackClockRef.current;
@@ -308,7 +339,7 @@ export function FinalReview() {
 
     stopAudio();
 
-    for (let lane = 0; lane < TRACK_COUNT; lane++) {
+    for (let lane = 0; lane < trackCount; lane++) {
       const buffer = audioBuffersRef.current[lane];
       if (buffer == null) continue;
 
@@ -338,7 +369,7 @@ export function FinalReview() {
         activeSourcesRef.current.push({ source });
       }
     }
-  }, [ctx, stopAudio]);
+  }, [ctx, stopAudio, trackCount]);
 
   function findSegmentBySelection(sel: EditorSelection): TimelineSegment | null {
     if (sel.laneIndex == null || sel.segmentId == null) return null;
@@ -353,15 +384,15 @@ export function FinalReview() {
     let cancelled = false;
     const videos: HTMLVideoElement[] = [];
 
-    audioBuffersRef.current = [null, null, null, null];
-    laneSourceStartRef.current = [0, 0, 0, 0];
-    laneSourceDurationRef.current = [0, 0, 0, 0];
-    waveformPeaksRef.current = [[], [], [], []];
-    setTimelines([[], [], [], []]);
+    audioBuffersRef.current = Array.from({ length: trackCount }, () => null);
+    laneSourceStartRef.current = Array.from({ length: trackCount }, () => 0);
+    laneSourceDurationRef.current = Array.from({ length: trackCount }, () => 0);
+    waveformPeaksRef.current = Array.from({ length: trackCount }, () => []);
+    setTimelines(Array.from({ length: trackCount }, () => []));
     setSelection({ laneIndex: null, segmentId: null });
     setPlayheadSec(0);
 
-    for (let i = 0; i < TRACK_COUNT; i++) {
+    for (let i = 0; i < trackCount; i++) {
       const state = states[i];
       const video = document.createElement("video");
       video.muted = true;
@@ -375,8 +406,8 @@ export function FinalReview() {
       videos.push(video);
     }
 
-    const mixer = createMixer(ctx, TRACK_COUNT);
-    for (let i = 0; i < TRACK_COUNT; i++) {
+    const mixer = createMixer(ctx, trackCount);
+    for (let i = 0; i < trackCount; i++) {
       mixer.setTrackVolume(i, volumes[i] ?? 1);
       mixer.setTrackMuted(i, muted[i] ?? false);
     }
@@ -389,7 +420,7 @@ export function FinalReview() {
       });
     }
 
-    for (let i = 0; i < TRACK_COUNT; i++) {
+    for (let i = 0; i < trackCount; i++) {
       const state = states[i];
       if (state == null || state.status !== "kept") continue;
 
@@ -473,18 +504,19 @@ export function FinalReview() {
     makeSegmentId,
     states,
     stopPlaybackEngine,
+    trackCount,
   ]);
 
   // Keep mixer graph in sync with UI controls after mount.
   useEffect(() => {
     const mixer = mixerRef.current;
     if (mixer == null) return;
-    for (let i = 0; i < TRACK_COUNT; i++) {
+    for (let i = 0; i < trackCount; i++) {
       mixer.setTrackVolume(i, volumes[i] ?? 1);
       mixer.setTrackMuted(i, muted[i] ?? false);
     }
     mixer.setReverbWet(reverbWet);
-  }, [muted, reverbWet, volumes]);
+  }, [muted, reverbWet, trackCount, volumes]);
 
   // Keep a current frame visible while paused.
   useEffect(() => {
@@ -497,7 +529,7 @@ export function FinalReview() {
     const selected = findSegmentBySelection(selection);
     if (selected != null) return;
 
-    for (let lane = 0; lane < TRACK_COUNT; lane++) {
+    for (let lane = 0; lane < trackCount; lane++) {
       const first = timelines[lane]?.[0] ?? null;
       if (first != null) {
         if (selection.laneIndex === lane && selection.segmentId === first.id) {
@@ -511,7 +543,7 @@ export function FinalReview() {
     if (selection.laneIndex != null || selection.segmentId != null) {
       setSelection({ laneIndex: null, segmentId: null });
     }
-  }, [selection, timelines]);
+  }, [selection, timelines, trackCount]);
 
   // Track timeline viewport width for responsive content width.
   useEffect(() => {
@@ -695,7 +727,7 @@ export function FinalReview() {
   function handleRedoPart(index: number) {
     stopPlaybackEngine(false);
     updatePartState(index, { status: "idle" });
-    currentPartIndex.set(index as PartIndex);
+    currentPartIndex.set(index);
     appScreen.set("recording");
   }
 
@@ -766,7 +798,7 @@ export function FinalReview() {
               Final Review
             </Heading>
             <Text color="gray.500" fontSize="sm" mt={1}>
-              Edit four synced A/V tracks before exporting
+              Edit synced A/V tracks before exporting
             </Text>
           </Box>
 
@@ -898,7 +930,7 @@ export function FinalReview() {
                       borderColor="whiteAlpha.100"
                       bg="blackAlpha.300"
                     >
-                      {Array.from({ length: TRACK_COUNT }).map((_, lane) => (
+                      {Array.from({ length: trackCount }).map((_, lane) => (
                         <Flex
                           key={`rail-${lane}`}
                           h={`${LANE_HEIGHT_PX}px`}
@@ -917,7 +949,7 @@ export function FinalReview() {
                             textTransform="uppercase"
                             letterSpacing="0.06em"
                           >
-                            {PART_LABELS[lane as PartIndex]}
+                            {getPartLabel(lane, trackCount)}
                           </Text>
                         </Flex>
                       ))}
@@ -934,9 +966,9 @@ export function FinalReview() {
                       <Box
                         position="relative"
                         w={`${timelineContentWidthPx}px`}
-                        h={`${TRACK_COUNT * LANE_HEIGHT_PX}px`}
+                        h={`${trackCount * LANE_HEIGHT_PX}px`}
                       >
-                        {Array.from({ length: TRACK_COUNT }).map((_, lane) => {
+                        {Array.from({ length: trackCount }).map((_, lane) => {
                           const track = timelines[lane] ?? [];
                           const peaks = waveformPeaksRef.current[lane] ?? [];
                           const laneStart = laneSourceStartRef.current[lane] ?? 0;
@@ -1036,10 +1068,10 @@ export function FinalReview() {
               MIX
             </Text>
             <Stack gap={2}>
-              {Array.from({ length: TRACK_COUNT }).map((_, i) => (
+              {Array.from({ length: trackCount }).map((_, i) => (
                 <Flex key={i} align="center" gap={3}>
                   <Text color="gray.400" fontSize="xs" w="24" flexShrink={0} lineClamp={1}>
-                    {PART_LABELS[i as PartIndex]}
+                    {getPartLabel(i, trackCount)}
                   </Text>
                   <Button
                     size="xs"
@@ -1104,8 +1136,8 @@ export function FinalReview() {
             <Text color="gray.500" fontSize="xs" mb={3} fontWeight="semibold">
               REDO A PART
             </Text>
-            <Grid templateColumns="repeat(4, 1fr)" gap={2}>
-              {Array.from({ length: TRACK_COUNT }).map((_, i) => (
+            <Grid templateColumns={`repeat(${trackCount}, 1fr)`} gap={2}>
+              {Array.from({ length: trackCount }).map((_, i) => (
                 <Button
                   key={i}
                   size="sm"
@@ -1116,7 +1148,7 @@ export function FinalReview() {
                   onClick={() => handleRedoPart(i)}
                   disabled={exporting}
                 >
-                  {PART_LABELS[i as PartIndex]}
+                  {getPartLabel(i, trackCount)}
                 </Button>
               ))}
             </Grid>

@@ -23,8 +23,7 @@ import {
   updatePartState,
 } from "../state/appState";
 import type { PartState } from "../state/appState";
-import type { PartIndex } from "../music/types";
-import { PART_LABELS } from "../music/types";
+import { getPartLabel } from "../music/types";
 import { recordTake } from "../recording/recorder";
 import { startRecordingPlayback, stopAllPlayback } from "../music/playback";
 import type { PlaybackSession } from "../music/playback";
@@ -35,8 +34,6 @@ import {
 import type { MonitorPlayer } from "../audio/monitorPlayer";
 import { CameraPreview } from "./CameraPreview";
 import { NoteDisplay } from "./NoteDisplay";
-
-const TOTAL_PARTS = 4;
 
 // "listening" = playing guide tones without recording (pre-roll practice)
 type RecordPhase =
@@ -95,8 +92,9 @@ function MuteIcon({ muted }: { muted: boolean }) {
   );
 }
 
-type RecordingGridProps = {
+type RecordingListProps = {
   stream: MediaStream;
+  totalParts: number;
   partIndex: number;
   states: PartState[];
   phase: RecordPhase;
@@ -106,8 +104,9 @@ type RecordingGridProps = {
   onToggleMute: (index: number) => void;
 };
 
-function RecordingGrid({
+function RecordingList({
   stream,
+  totalParts,
   partIndex,
   states,
   phase,
@@ -115,78 +114,97 @@ function RecordingGrid({
   reviewVideoRef,
   mutedParts,
   onToggleMute,
-}: RecordingGridProps) {
+}: RecordingListProps) {
   return (
     <Box
       borderRadius="xl"
-      overflow="hidden"
+      overflowX="auto"
+      overflowY="hidden"
       bg="black"
-      w="min(100%, calc(52vh * 9 / 16))"
-      aspectRatio="9/16"
-      mx="auto"
+      px={2}
+      py={3}
     >
-      <Grid
-        templateColumns="1fr 1fr"
-        templateRows="1fr 1fr"
-        w="100%"
-        h="100%"
-        gap="0"
-        bg="gray.800"
-      >
-        {Array.from({ length: TOTAL_PARTS }).map((_, i) => {
+      <Flex gap={2} w="max-content">
+        {Array.from({ length: totalParts }).map((_, i) => {
           const isCurrent = i === partIndex;
           const state = states[i];
           const isKept = state != null && state.status === "kept";
           const isFuture = i > partIndex;
 
           return (
-            <Box key={i} position="relative" overflow="hidden" bg="gray.950">
-              {isCurrent && phase !== "review" && (
-                <CameraPreview
-                  stream={stream}
-                  borderRadius="none"
-                  maxH="26vh"
-                />
-              )}
+            <Stack
+              key={i}
+              gap={1.5}
+              w="100px"
+              flexShrink={0}
+              opacity={isCurrent ? 1 : 0.32}
+              transition="opacity 0.2s"
+            >
+              <Box
+                position="relative"
+                overflow="hidden"
+                bg="gray.950"
+                borderRadius="lg"
+                aspectRatio="9/16"
+                borderWidth={isCurrent ? "1px" : "0px"}
+                borderColor={isCurrent ? "brand.500" : "transparent"}
+              >
+                {isCurrent && phase !== "review" && (
+                  <CameraPreview
+                    stream={stream}
+                    borderRadius="none"
+                    maxH="none"
+                  />
+                )}
 
-              {isCurrent && phase === "review" && reviewUrl != null && (
-                <video
-                  ref={reviewVideoRef}
-                  playsInline
-                  style={{
-                    width: "100%",
-                    height: "100%",
-                    objectFit: "cover",
-                    display: "block",
-                  }}
-                />
-              )}
+                {isCurrent && phase === "review" && reviewUrl != null && (
+                  <video
+                    ref={reviewVideoRef}
+                    playsInline
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "cover",
+                      display: "block",
+                    }}
+                  />
+                )}
 
-              {isKept && state.status === "kept" && (
-                <KeptCell
-                  url={state.url}
-                  muted={mutedParts[i] ?? false}
-                  onToggleMute={() => onToggleMute(i)}
-                />
-              )}
+                {isKept && state.status === "kept" && (
+                  <KeptCell
+                    url={state.url}
+                    muted={mutedParts[i] ?? false}
+                    onToggleMute={() => onToggleMute(i)}
+                  />
+                )}
 
-              {isFuture && (
-                <Flex
-                  w="100%"
-                  h="100%"
-                  align="center"
-                  justify="center"
-                  bg="gray.950"
-                >
-                  <Text color="gray.700" fontSize="xs" fontWeight="semibold">
-                    {PART_LABELS[i as PartIndex]}
-                  </Text>
-                </Flex>
-              )}
-            </Box>
+                {isFuture && (
+                  <Flex
+                    w="100%"
+                    h="100%"
+                    align="center"
+                    justify="center"
+                    bg="gray.950"
+                  >
+                    <Text color="gray.700" fontSize="xs" fontWeight="semibold">
+                      {getPartLabel(i, totalParts)}
+                    </Text>
+                  </Flex>
+                )}
+              </Box>
+
+              <Text
+                fontSize="10px"
+                color={isCurrent ? "gray.200" : "gray.600"}
+                textAlign="center"
+                fontWeight="semibold"
+              >
+                {getPartLabel(i, totalParts)}
+              </Text>
+            </Stack>
           );
         })}
-      </Grid>
+      </Flex>
     </Box>
   );
 }
@@ -262,12 +280,7 @@ export function RecordingWizard() {
   const [currentAbsoluteBeat, setCurrentAbsoluteBeat] = useState(-1);
   const [reviewUrl, setReviewUrl] = useState<string | null>(null);
   const [guideToneEnabled, setGuideToneEnabled] = useState(true);
-  const [mutedParts, setMutedParts] = useState<boolean[]>([
-    false,
-    false,
-    false,
-    false,
-  ]);
+  const [mutedParts, setMutedParts] = useState<boolean[]>([]);
   const [micDevices, setMicDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedMicId, setSelectedMicId] = useState("");
 
@@ -280,13 +293,15 @@ export function RecordingWizard() {
   // effect can fire even though monitorPlayerRef is a ref (not state).
   const [monitorPlayerKey, setMonitorPlayerKey] = useState(0);
 
-  const isLastPart = partIndex === TOTAL_PARTS - 1;
-  const isMelodyPart = partIndex === 3;
+  const totalParts = states.length;
+  const harmonyPartCount = Math.max(1, totalParts - 1);
+  const isLastPart = partIndex === totalParts - 1;
+  const isMelodyPart = partIndex >= harmonyPartCount;
   const beatsPerBar = meter[0];
 
   const harmonyLine =
-    voicing != null && partIndex < 3
-      ? voicing.lines[partIndex as 0 | 1 | 2]
+    voicing != null && partIndex < harmonyPartCount
+      ? (voicing.lines[partIndex] ?? null)
       : null;
 
   const ctx = useObservable(audioContext);
@@ -348,6 +363,12 @@ export function RecordingWizard() {
       }
     }
   }, [mutedParts, partIndex, states]);
+
+  useEffect(() => {
+    setMutedParts((prev) =>
+      Array.from({ length: totalParts }, (_, i) => prev[i] ?? false),
+    );
+  }, [totalParts]);
 
   // Auto-play looping audio preview during pre-roll so kept parts are audible
   // while the user decides whether to listen or record. Fires when the phase
@@ -554,7 +575,7 @@ export function RecordingWizard() {
     });
 
     if (!isLastPart) {
-      currentPartIndex.set((partIndex + 1) as PartIndex);
+      currentPartIndex.set(partIndex + 1);
     } else {
       appScreen.set("review");
     }
@@ -571,7 +592,7 @@ export function RecordingWizard() {
     stopAllPlayback();
     listenSessionRef.current = null;
     if (partIndex > 0) {
-      currentPartIndex.set((partIndex - 1) as PartIndex);
+      currentPartIndex.set(partIndex - 1);
     } else {
       appScreen.set("setup");
     }
@@ -601,8 +622,7 @@ export function RecordingWizard() {
 
   if (stream == null) return null;
 
-  const partLabel =
-    PART_LABELS[partIndex as PartIndex] ?? `Part ${partIndex + 1}`;
+  const partLabel = getPartLabel(partIndex, totalParts);
   const busy = phase === "counting-in" || phase === "recording";
   const isListening = phase === "listening";
 
@@ -629,7 +649,7 @@ export function RecordingWizard() {
               ← Back
             </Button>
             <Text color="gray.400" fontSize="sm">
-              Part {partIndex + 1} of {TOTAL_PARTS}
+              Part {partIndex + 1} of {totalParts}
             </Text>
           </Flex>
 
@@ -647,9 +667,10 @@ export function RecordingWizard() {
             </Text>
           </Box>
 
-          {/* 2x2 recording grid */}
-          <RecordingGrid
+          {/* Recording list */}
+          <RecordingList
             stream={stream}
+            totalParts={totalParts}
             partIndex={partIndex}
             states={states}
             phase={phase}

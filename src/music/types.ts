@@ -33,9 +33,11 @@ export type VocalRange = {
   high: MidiNote;
 };
 
-// The full voicing output: three harmony lines + computed melody range ceiling
+// The full voicing output: one or more harmony lines + computed melody range
+// ceiling.
 export type HarmonyVoicing = {
-  lines: [HarmonyLine, HarmonyLine, HarmonyLine];
+  lines: HarmonyLine[];
+  harmonyPartCount: number;
   // Highest MIDI note used by harmonies — melody should stay above this
   harmonyTop: MidiNote;
 };
@@ -50,15 +52,21 @@ export type ProjectConfig = {
   vocalRangeHigh: string; // e.g. "C5"
 };
 
-// Which part is being recorded: 0-2 = harmony low/mid/high, 3 = melody
-export type PartIndex = 0 | 1 | 2 | 3;
+export type PartIndex = number;
 
-export const PART_LABELS: Record<PartIndex, string> = {
-  0: "Harmony Low",
-  1: "Harmony Mid",
-  2: "Harmony High",
-  3: "Melody",
-};
+const FOUR_PART_LABELS = [
+  "Harmony Low",
+  "Harmony Mid",
+  "Harmony High",
+  "Melody",
+] as const;
+
+export function getPartLabel(index: number, totalParts: number): string {
+  if (totalParts === 2) {
+    return index === 0 ? "Harmony" : "Melody";
+  }
+  return FOUR_PART_LABELS[index] ?? `Part ${index + 1}`;
+}
 
 // MIDI note number helpers
 export const NOTE_NAMES: NoteName[] = [

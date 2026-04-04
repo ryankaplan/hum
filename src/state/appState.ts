@@ -13,6 +13,12 @@ export type PartState =
   | { status: "review"; blob: Blob; url: string }
   | { status: "kept"; blob: Blob; url: string; trimOffsetSec: number };
 
+export type TotalPartCount = 2 | 4;
+
+function parseTotalPartCount(raw: unknown): TotalPartCount {
+  return raw === 2 ? 2 : 4;
+}
+
 // ─── Persisted config (survives reload) ──────────────────────────────────────
 
 export const chordsInput = new PersistedObservable<string>(
@@ -34,6 +40,12 @@ export const vocalRangeHigh = new PersistedObservable<string>(
   "C5",
 );
 
+export const totalPartsInput = new PersistedObservable<TotalPartCount>(
+  "hum.totalParts",
+  4,
+  { schema: parseTotalPartCount },
+);
+
 // ─── Session state (ephemeral) ────────────────────────────────────────────────
 
 export const appScreen = new Observable<AppScreen>("setup");
@@ -44,16 +56,17 @@ export const mediaStream = new Observable<MediaStream | null>(null);
 // The AudioContext — created once when permissions are granted
 export const audioContext = new Observable<AudioContext | null>(null);
 
-// Which part we're currently recording (0-2 = harmony, 3 = melody)
+// Which part we're currently recording (last part is always melody)
 export const currentPartIndex = new Observable<PartIndex>(0);
 
-// State for each of the 4 parts
-export const partStates = new Observable<PartState[]>([
-  { status: "idle" },
-  { status: "idle" },
-  { status: "idle" },
-  { status: "idle" },
-]);
+export function createIdlePartStates(totalParts: number): PartState[] {
+  return Array.from({ length: totalParts }, () => ({ status: "idle" as const }));
+}
+
+// State for each active part in the current session.
+export const partStates = new Observable<PartState[]>(
+  createIdlePartStates(totalPartsInput.get()),
+);
 
 // Error message for permission failures etc.
 export const permissionError = new Observable<string | null>(null);
@@ -80,12 +93,13 @@ export const harmonyVoicing = new Derived<HarmonyVoicing | null>(
       const low = noteNameToMidi(vocalRangeLow.get());
       const high = noteNameToMidi(vocalRangeHigh.get());
       if (high <= low) return null;
-      return generateHarmony(chords, { low, high });
+      const harmonyPartCount = Math.max(1, totalPartsInput.get() - 1);
+      return generateHarmony(chords, { low, high }, harmonyPartCount);
     } catch {
       return null;
     }
   },
-  [parsedChords, vocalRangeLow, vocalRangeHigh],
+  [parsedChords, vocalRangeLow, vocalRangeHigh, totalPartsInput],
   { checkForEqualityOnNotify: false },
 );
 
@@ -107,11 +121,6 @@ export function getKeptBlobs(): (Blob | null)[] {
 
 export function resetSession(): void {
   currentPartIndex.set(0);
-  partStates.set([
-    { status: "idle" },
-    { status: "idle" },
-    { status: "idle" },
-    { status: "idle" },
-  ]);
+  partStates.set(createIdlePartStates(totalPartsInput.get()));
   permissionError.set(null);
 }

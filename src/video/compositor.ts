@@ -1,4 +1,5 @@
-// Draws 4 video elements into a 2x2 grid on a canvas at 9:16 aspect ratio.
+// Draws up to 4 video elements into a 2x2 grid on a canvas at 9:16 aspect
+// ratio.
 
 export type CompositorHandle = {
   stop: () => void;
@@ -39,11 +40,11 @@ export function startCompositor(
     ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-    for (let i = 0; i < videos.length && i < 4; i++) {
-      const video = videos[i]!;
+    for (let i = 0; i < 4; i++) {
+      const video = videos[i];
       const pos = positions[i]!;
       const active = opts?.isVideoActive?.(i) ?? true;
-      if (active && video.readyState >= 2) {
+      if (video != null && active && video.readyState >= 2) {
         // Cover-fit: center-crop the video into the cell
         drawCoverFit(ctx, video, pos[0], pos[1], cellW, cellH);
       } else {

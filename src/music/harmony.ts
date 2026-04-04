@@ -7,7 +7,7 @@ import type {
   VocalRange,
 } from "./types";
 
-// Generates 3 harmony voice lines from a chord progression and vocal range.
+// Generates harmony voice lines from a chord progression and vocal range.
 // The bottom 2/3 of the range is used for harmony; melody lives in the top 1/3.
 //
 // Strategy: soprano-led drop-2 voicings.
@@ -21,10 +21,14 @@ import type {
 export function generateHarmony(
   chords: Chord[],
   range: VocalRange,
+  harmonyPartCount: number,
 ): HarmonyVoicing {
+  const resolvedHarmonyPartCount = harmonyPartCount === 1 ? 1 : 3;
+
   if (chords.length === 0) {
     return {
-      lines: [[], [], []],
+      lines: Array.from({ length: resolvedHarmonyPartCount }, () => []),
+      harmonyPartCount: resolvedHarmonyPartCount,
       harmonyTop: range.low,
     };
   }
@@ -33,18 +37,31 @@ export function generateHarmony(
   const harmonyTop = range.low + Math.round((rangeSpan * 2) / 3);
   const harmonyRange: VocalRange = { low: range.low, high: harmonyTop };
 
-  const lines: [HarmonyLine, HarmonyLine, HarmonyLine] = [[], [], []];
+  const lines: HarmonyLine[] = Array.from(
+    { length: resolvedHarmonyPartCount },
+    () => [],
+  );
   let prevSoprano: MidiNote | null = null;
 
   for (const chord of chords) {
     const voices = voiceChord(chord, harmonyRange, prevSoprano);
-    lines[0].push(voices[0]);
-    lines[1].push(voices[1]);
-    lines[2].push(voices[2]);
+    if (resolvedHarmonyPartCount === 1) {
+      // For duet mode, use the middle voice to keep enough vertical space
+      // below melody while still sounding harmonically grounded.
+      lines[0]?.push(voices[1]);
+    } else {
+      lines[0]?.push(voices[0]);
+      lines[1]?.push(voices[1]);
+      lines[2]?.push(voices[2]);
+    }
     prevSoprano = voices[2];
   }
 
-  return { lines, harmonyTop };
+  return {
+    lines,
+    harmonyPartCount: resolvedHarmonyPartCount,
+    harmonyTop,
+  };
 }
 
 function voiceChord(

@@ -222,12 +222,12 @@ export function playNotePreview(ctx: AudioContext, midi: MidiNote, durationSec =
 
 // ─── Harmony preview ─────────────────────────────────────────────────────────
 
-// Play all 3 harmony lines simultaneously over the chord progression.
+// Play all available harmony lines simultaneously over the chord progression.
 // Used by the setup screen "Preview Harmony" button.
 export function playHarmonyPreview(
   ctx: AudioContext,
   chords: Chord[],
-  harmonyLines: [HarmonyLine, HarmonyLine, HarmonyLine],
+  harmonyLines: HarmonyLine[],
   beatsPerBar: number,
   tempo: number,
 ): PlaybackSession {
@@ -240,7 +240,7 @@ export function playHarmonyPreview(
     playClick(ctx, startTime + beat * secPerBeat, beat % beatsPerBar === 0);
   }
 
-  // All 3 harmony lines
+  // All harmony lines
   const guideStops: Array<() => void> = [];
   for (const line of harmonyLines) {
     let beatOffset = 0;

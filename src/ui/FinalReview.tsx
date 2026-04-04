@@ -8,7 +8,14 @@ import {
   Stack,
   Text,
 } from "@chakra-ui/react";
-import { useEffect, useRef, useState, useCallback } from "react";
+import {
+  type PointerEvent as ReactPointerEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useObservable } from "../observable";
 import {
   appScreen,
@@ -28,6 +35,41 @@ import type { CompositorHandle } from "../video/compositor";
 import { exportWebM } from "../video/exporter";
 import { createMixer } from "../audio/mixer";
 import type { Mixer } from "../audio/mixer";
+import {
+  buildWaveformPeaks,
+  deleteSegmentById,
+  getActiveSegmentAtTime,
+  getSegmentEndSec,
+  getTimelineEndSec,
+  moveSegmentWithClamp,
+  samplePeaksForSegment,
+  snapTimeSec,
+  splitSegmentAtPlayhead,
+} from "./timeline";
+import type {
+  EditorSelection,
+  TimelineSegment,
+  TrackTimeline,
+  WaveformPeaks,
+} from "./timeline";
+
+const TRACK_COUNT = 4;
+const PLAYBACK_SCHEDULE_LEAD_SEC = 0.05;
+const TIMELINE_PX_PER_SEC = 110;
+const TIMELINE_RIGHT_PAD_PX = 48;
+const LANE_HEIGHT_PX = 74;
+
+type ActiveAudioSource = {
+  source: AudioBufferSourceNode;
+};
+
+type PlaybackClock = {
+  mode: "idle" | "preview" | "export";
+  startCtxTime: number;
+  startTimelineSec: number;
+  endTimelineSec: number;
+  rafId: number | null;
+};
 
 export function FinalReview() {
   const states = useObservable(partStates);
@@ -36,143 +78,599 @@ export function FinalReview() {
   const ctx = useObservable(audioContext);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const timelineViewportRef = useRef<HTMLDivElement>(null);
+
   const videoRefs = useRef<(HTMLVideoElement | null)[]>([null, null, null, null]);
+  const activeVideoMaskRef = useRef<boolean[]>([false, false, false, false]);
   const compositorRef = useRef<CompositorHandle | null>(null);
   const mixerRef = useRef<Mixer | null>(null);
 
-  // Decoded audio buffers and trim offsets for each track. These are decoded
-  // once on mount so playback can use AudioBufferSourceNode.start(when) for
-  // sample-accurate synchronization.
   const audioBuffersRef = useRef<(AudioBuffer | null)[]>([null, null, null, null]);
-  const trimOffsetsRef = useRef<number[]>([0, 0, 0, 0]);
+  const laneSourceStartRef = useRef<number[]>([0, 0, 0, 0]);
+  const laneSourceDurationRef = useRef<number[]>([0, 0, 0, 0]);
+  const waveformPeaksRef = useRef<WaveformPeaks[]>([[], [], [], []]);
 
-  // Currently active AudioBufferSourceNodes so we can stop them on pause
-  const activeSourcesRef = useRef<(AudioBufferSourceNode | null)[]>([]);
+  const activeSourcesRef = useRef<ActiveAudioSource[]>([]);
 
+  const playbackClockRef = useRef<PlaybackClock>({
+    mode: "idle",
+    startCtxTime: 0,
+    startTimelineSec: 0,
+    endTimelineSec: 0,
+    rafId: null,
+  });
+
+  const segmentIdCounterRef = useRef(0);
+  const timelinesRef = useRef<TrackTimeline[]>([[], [], [], []]);
+
+  const [timelines, setTimelines] = useState<TrackTimeline[]>([[], [], [], []]);
+  const [selection, setSelection] = useState<EditorSelection>({
+    laneIndex: null,
+    segmentId: null,
+  });
+  const [playheadSec, setPlayheadSec] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [snapToBeat, setSnapToBeat] = useState(false);
+
+  const [timelineViewportWidth, setTimelineViewportWidth] = useState(0);
+  const [waveformVersion, setWaveformVersion] = useState(0);
+
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
   const [exportedUrl, setExportedUrl] = useState<string | null>(null);
 
-  // Mixer UI state
   const [volumes, setVolumes] = useState<number[]>([1, 1, 1, 1]);
   const [muted, setMuted] = useState<boolean[]>([false, false, false, false]);
   const [reverbWet, setReverbWet] = useState(0.15);
 
-  const durationSec = progressionDurationSec(chords, tempo);
+  const baseDurationSec = progressionDurationSec(chords, tempo);
+  const beatSec = tempo > 0 ? 60 / tempo : 0;
 
-  // Build video elements (muted, visual only), compositor, and Web Audio
-  // graph once ctx is available. Audio is handled via AudioBufferSourceNodes
-  // rather than MediaElementSource, so all tracks start sample-accurately.
-  useEffect(() => {
-    if (ctx == null) return;
+  const timelineEndSec = useMemo(() => {
+    return getTimelineEndSec(timelines);
+  }, [timelines]);
 
-    const videos: HTMLVideoElement[] = [];
+  const timelineContentWidthPx = useMemo(() => {
+    const minContent = Math.max(1, timelineEndSec) * TIMELINE_PX_PER_SEC + TIMELINE_RIGHT_PAD_PX;
+    return Math.max(timelineViewportWidth, Math.ceil(minContent));
+  }, [timelineEndSec, timelineViewportWidth]);
 
-    for (let i = 0; i < 4; i++) {
-      const state = states[i];
-      const el = document.createElement("video");
-      el.loop = true;
-      el.muted = true; // audio is handled via AudioBufferSourceNode, not the element
-      el.playsInline = true;
-      if (state != null && state.status === "kept") {
-        el.src = state.url;
-      }
-      videoRefs.current[i] = el;
-      videos.push(el);
+  const beatLineTimes = useMemo(() => {
+    if (beatSec <= 0 || timelineEndSec <= 0) return [] as number[];
+    const lines: number[] = [];
+    for (let t = 0; t <= timelineEndSec + 0.0001; t += beatSec) {
+      lines.push(t);
     }
+    return lines;
+  }, [beatSec, timelineEndSec]);
 
-    const mixer = createMixer(ctx, 4);
-    mixerRef.current = mixer;
+  timelinesRef.current = timelines;
 
-    if (canvasRef.current != null) {
-      compositorRef.current = startCompositor(canvasRef.current, videos);
-    }
+  const makeSegmentId = useCallback((): string => {
+    segmentIdCounterRef.current += 1;
+    return `segment-${segmentIdCounterRef.current}`;
+  }, []);
 
-    // Decode each kept take's audio asynchronously
-    let cancelled = false;
-    for (let i = 0; i < 4; i++) {
-      const state = states[i];
-      if (state == null || state.status !== "kept") continue;
-      const capturedI = i;
-      const trimOffset = state.trimOffsetSec;
-      void state.blob.arrayBuffer().then((ab) => {
-        if (cancelled) return;
-        return ctx.decodeAudioData(ab);
-      }).then((buffer) => {
-        if (cancelled || buffer == null) return;
-        audioBuffersRef.current[capturedI] = buffer;
-        trimOffsetsRef.current[capturedI] = trimOffset;
-      }).catch(() => {});
-    }
+  const syncVideosToTimeline = useCallback((timelineSec: number, shouldPlay: boolean) => {
+    const nextMask = [false, false, false, false];
 
-    return () => {
-      cancelled = true;
-      compositorRef.current?.stop();
-      mixerRef.current?.dispose();
-      mixerRef.current = null;
-      for (const el of videos) {
-        el.pause();
-        el.src = "";
-      }
-    };
-  }, [ctx]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ─── Playback ───────────────────────────────────────────────────────────────
-
-  // Start all audio buffers at the same AudioContext time so all tracks are
-  // sample-accurate. Video elements (muted) are started best-effort for visuals.
-  const startAudio = useCallback((when: number) => {
-    if (ctx == null || mixerRef.current == null) return;
-    const newSources: (AudioBufferSourceNode | null)[] = [];
-    for (let i = 0; i < 4; i++) {
-      const buffer = audioBuffersRef.current[i];
-      if (buffer == null) {
-        newSources.push(null);
+    for (let lane = 0; lane < TRACK_COUNT; lane++) {
+      const track = timelinesRef.current[lane] ?? [];
+      const segment = getActiveSegmentAtTime(track, timelineSec);
+      const video = videoRefs.current[lane];
+      if (video == null || segment == null) {
+        if (video != null) {
+          video.pause();
+        }
         continue;
       }
-      const source = ctx.createBufferSource();
-      source.buffer = buffer;
-      mixerRef.current.connectSource(i, source);
-      const trimOffset = Math.max(0, trimOffsetsRef.current[i] ?? 0);
-      source.start(when, trimOffset);
-      newSources.push(source);
+
+      const laneTime = timelineSec - segment.timelineStartSec;
+      const desiredSourceTime = segment.sourceStartSec + laneTime;
+      if (!Number.isFinite(desiredSourceTime)) {
+        video.pause();
+        continue;
+      }
+
+      nextMask[lane] = true;
+
+      if (Math.abs(video.currentTime - desiredSourceTime) > 0.045) {
+        try {
+          video.currentTime = desiredSourceTime;
+        } catch {
+          // Some browsers can throw while metadata is still loading.
+        }
+      }
+
+      if (shouldPlay) {
+        video.play().catch(() => {});
+      } else {
+        video.pause();
+      }
     }
-    activeSourcesRef.current = newSources;
-  }, [ctx]);
+
+    activeVideoMaskRef.current = nextMask;
+  }, []);
 
   const stopAudio = useCallback(() => {
-    for (const source of activeSourcesRef.current) {
+    for (const entry of activeSourcesRef.current) {
       try {
-        source?.stop();
+        entry.source.stop();
       } catch {
-        // safe to ignore if already stopped
+        // Safe to ignore if already stopped.
       }
     }
     activeSourcesRef.current = [];
   }, []);
 
-  function handlePlayPause() {
-    if (isPlaying) {
+  const stopClock = useCallback(() => {
+    const clock = playbackClockRef.current;
+    if (clock.rafId != null) {
+      cancelAnimationFrame(clock.rafId);
+    }
+    playbackClockRef.current = {
+      mode: "idle",
+      startCtxTime: 0,
+      startTimelineSec: 0,
+      endTimelineSec: 0,
+      rafId: null,
+    };
+  }, []);
+
+  const stopPlaybackEngine = useCallback((preservePlayhead: boolean) => {
+    stopClock();
+    stopAudio();
+    setIsPlaying(false);
+
+    for (const video of videoRefs.current) {
+      video?.pause();
+    }
+    activeVideoMaskRef.current = [false, false, false, false];
+
+    if (!preservePlayhead) {
+      setPlayheadSec(0);
+      syncVideosToTimeline(0, false);
+    }
+  }, [stopAudio, stopClock, syncVideosToTimeline]);
+
+  const runPreviewTick = useCallback(() => {
+    const clock = playbackClockRef.current;
+    if (clock.mode !== "preview" || ctx == null) return;
+
+    const elapsed = Math.max(0, ctx.currentTime - clock.startCtxTime);
+    const timelineNow = clock.startTimelineSec + elapsed;
+    const clampedNow = Math.min(timelineNow, clock.endTimelineSec);
+
+    setPlayheadSec(clampedNow);
+    syncVideosToTimeline(clampedNow, true);
+
+    if (timelineNow >= clock.endTimelineSec - 0.001) {
       stopAudio();
-      for (const v of videoRefs.current) v?.pause();
+      stopClock();
       setIsPlaying(false);
+      setPlayheadSec(clock.endTimelineSec);
+      syncVideosToTimeline(clock.endTimelineSec, false);
+      return;
+    }
+
+    clock.rafId = requestAnimationFrame(runPreviewTick);
+  }, [ctx, stopAudio, stopClock, syncVideosToTimeline]);
+
+  const runExportTick = useCallback(() => {
+    const clock = playbackClockRef.current;
+    if (clock.mode !== "export" || ctx == null) return;
+
+    const elapsed = Math.max(0, ctx.currentTime - clock.startCtxTime);
+    const timelineNow = clock.startTimelineSec + elapsed;
+    const clampedNow = Math.min(timelineNow, clock.endTimelineSec);
+
+    setPlayheadSec(clampedNow);
+    syncVideosToTimeline(clampedNow, true);
+
+    if (timelineNow >= clock.endTimelineSec - 0.001) {
+      stopClock();
+      syncVideosToTimeline(clock.endTimelineSec, false);
+      return;
+    }
+
+    clock.rafId = requestAnimationFrame(runExportTick);
+  }, [ctx, stopClock, syncVideosToTimeline]);
+
+  const startPlaybackClock = useCallback((
+    mode: "preview" | "export",
+    startCtxTime: number,
+    startTimelineSec: number,
+    endTimelineSec: number,
+  ) => {
+    stopClock();
+    playbackClockRef.current = {
+      mode,
+      startCtxTime,
+      startTimelineSec,
+      endTimelineSec,
+      rafId: null,
+    };
+
+    if (mode === "preview") {
+      playbackClockRef.current.rafId = requestAnimationFrame(runPreviewTick);
     } else {
-      if (ctx == null) return;
-      const when = ctx.currentTime + 0.05;
-      startAudio(when);
-      // Video is muted; start it for visual sync (best-effort)
-      for (const v of videoRefs.current) {
-        if (v != null && v.src !== "") {
-          v.currentTime = 0;
-          v.play().catch(() => {});
-        }
+      playbackClockRef.current.rafId = requestAnimationFrame(runExportTick);
+    }
+  }, [runExportTick, runPreviewTick, stopClock]);
+
+  const startAudioFromTimeline = useCallback((
+    startCtxTime: number,
+    startTimelineSec: number,
+    endTimelineSec: number,
+  ) => {
+    if (ctx == null || mixerRef.current == null) return;
+
+    stopAudio();
+
+    for (let lane = 0; lane < TRACK_COUNT; lane++) {
+      const buffer = audioBuffersRef.current[lane];
+      if (buffer == null) continue;
+
+      const track = timelinesRef.current[lane] ?? [];
+      for (const segment of track) {
+        const segStart = segment.timelineStartSec;
+        const segEnd = getSegmentEndSec(segment);
+        if (segEnd <= startTimelineSec || segStart >= endTimelineSec) continue;
+
+        const playFrom = Math.max(startTimelineSec, segStart);
+        const playTo = Math.min(endTimelineSec, segEnd);
+        const playDuration = playTo - playFrom;
+        if (playDuration <= 0) continue;
+
+        const sourceOffset = segment.sourceStartSec + (playFrom - segStart);
+        if (sourceOffset >= buffer.duration) continue;
+
+        const cappedDuration = Math.min(playDuration, buffer.duration - sourceOffset);
+        if (cappedDuration <= 0) continue;
+
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        mixerRef.current.connectSource(lane, source);
+
+        const startAt = startCtxTime + (playFrom - startTimelineSec);
+        source.start(startAt, sourceOffset, cappedDuration);
+        activeSourcesRef.current.push({ source });
       }
-      setIsPlaying(true);
+    }
+  }, [ctx, stopAudio]);
+
+  function findSegmentBySelection(sel: EditorSelection): TimelineSegment | null {
+    if (sel.laneIndex == null || sel.segmentId == null) return null;
+    const track = timelines[sel.laneIndex] ?? [];
+    return track.find((segment) => segment.id === sel.segmentId) ?? null;
+  }
+
+  // Build video elements, mixer, compositor and decode track audio once.
+  useEffect(() => {
+    if (ctx == null) return;
+
+    let cancelled = false;
+    const videos: HTMLVideoElement[] = [];
+
+    audioBuffersRef.current = [null, null, null, null];
+    laneSourceStartRef.current = [0, 0, 0, 0];
+    laneSourceDurationRef.current = [0, 0, 0, 0];
+    waveformPeaksRef.current = [[], [], [], []];
+    setTimelines([[], [], [], []]);
+    setSelection({ laneIndex: null, segmentId: null });
+    setPlayheadSec(0);
+
+    for (let i = 0; i < TRACK_COUNT; i++) {
+      const state = states[i];
+      const video = document.createElement("video");
+      video.muted = true;
+      video.playsInline = true;
+      video.loop = false;
+      video.preload = "auto";
+      if (state != null && state.status === "kept") {
+        video.src = state.url;
+      }
+      videoRefs.current[i] = video;
+      videos.push(video);
+    }
+
+    const mixer = createMixer(ctx, TRACK_COUNT);
+    for (let i = 0; i < TRACK_COUNT; i++) {
+      mixer.setTrackVolume(i, volumes[i] ?? 1);
+      mixer.setTrackMuted(i, muted[i] ?? false);
+    }
+    mixer.setReverbWet(reverbWet);
+    mixerRef.current = mixer;
+
+    if (canvasRef.current != null) {
+      compositorRef.current = startCompositor(canvasRef.current, videos, {
+        isVideoActive: (index) => activeVideoMaskRef.current[index] ?? false,
+      });
+    }
+
+    for (let i = 0; i < TRACK_COUNT; i++) {
+      const state = states[i];
+      if (state == null || state.status !== "kept") continue;
+
+      const laneIndex = i;
+      const trimOffsetSec = Math.max(0, state.trimOffsetSec);
+
+      void state.blob
+        .arrayBuffer()
+        .then((ab) => {
+          if (cancelled) return null;
+          return ctx.decodeAudioData(ab);
+        })
+        .then((buffer) => {
+          if (cancelled || buffer == null) return;
+
+          const sourceStartSec = Math.min(trimOffsetSec, buffer.duration);
+          const rawDuration = Math.max(0, buffer.duration - sourceStartSec);
+          const laneDurationSec = Math.max(
+            0,
+            Math.min(rawDuration, Math.max(0, baseDurationSec)),
+          );
+
+          audioBuffersRef.current[laneIndex] = buffer;
+          laneSourceStartRef.current[laneIndex] = sourceStartSec;
+          laneSourceDurationRef.current[laneIndex] = laneDurationSec;
+          waveformPeaksRef.current[laneIndex] = buildWaveformPeaks(
+            buffer,
+            sourceStartSec,
+            laneDurationSec,
+            400,
+          );
+          setWaveformVersion((v) => v + 1);
+
+          if (laneDurationSec <= 0) return;
+
+          const firstSegmentId = makeSegmentId();
+          setTimelines((prev) => {
+            const track = prev[laneIndex] ?? [];
+            if (track.length > 0) return prev;
+            const next = [...prev];
+            next[laneIndex] = [
+              {
+                id: firstSegmentId,
+                laneIndex,
+                timelineStartSec: 0,
+                sourceStartSec,
+                durationSec: laneDurationSec,
+              },
+            ];
+            return next;
+          });
+
+          setSelection((prev) => {
+            if (prev.segmentId != null) return prev;
+            return { laneIndex, segmentId: firstSegmentId };
+          });
+        })
+        .catch(() => {
+          // Keep lane empty if decoding fails.
+        });
+    }
+
+    return () => {
+      cancelled = true;
+      stopPlaybackEngine(false);
+
+      compositorRef.current?.stop();
+      compositorRef.current = null;
+
+      mixerRef.current?.dispose();
+      mixerRef.current = null;
+
+      for (const video of videos) {
+        video.pause();
+        video.src = "";
+      }
+    };
+  }, [
+    baseDurationSec,
+    ctx,
+    makeSegmentId,
+    states,
+    stopPlaybackEngine,
+  ]);
+
+  // Keep mixer graph in sync with UI controls after mount.
+  useEffect(() => {
+    const mixer = mixerRef.current;
+    if (mixer == null) return;
+    for (let i = 0; i < TRACK_COUNT; i++) {
+      mixer.setTrackVolume(i, volumes[i] ?? 1);
+      mixer.setTrackMuted(i, muted[i] ?? false);
+    }
+    mixer.setReverbWet(reverbWet);
+  }, [muted, reverbWet, volumes]);
+
+  // Keep a current frame visible while paused.
+  useEffect(() => {
+    if (isPlaying || exporting) return;
+    syncVideosToTimeline(playheadSec, false);
+  }, [exporting, isPlaying, playheadSec, syncVideosToTimeline, timelines, waveformVersion]);
+
+  // Ensure selection always points to an existing segment.
+  useEffect(() => {
+    const selected = findSegmentBySelection(selection);
+    if (selected != null) return;
+
+    for (let lane = 0; lane < TRACK_COUNT; lane++) {
+      const first = timelines[lane]?.[0] ?? null;
+      if (first != null) {
+        if (selection.laneIndex === lane && selection.segmentId === first.id) {
+          return;
+        }
+        setSelection({ laneIndex: lane, segmentId: first.id });
+        return;
+      }
+    }
+
+    if (selection.laneIndex != null || selection.segmentId != null) {
+      setSelection({ laneIndex: null, segmentId: null });
+    }
+  }, [selection, timelines]);
+
+  // Track timeline viewport width for responsive content width.
+  useEffect(() => {
+    const el = timelineViewportRef.current;
+    if (el == null) return;
+
+    const update = () => setTimelineViewportWidth(el.clientWidth);
+    update();
+
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      stopPlaybackEngine(false);
+    };
+  }, [stopPlaybackEngine]);
+
+  function handlePlayPause() {
+    if (exporting || ctx == null) return;
+    if (timelineEndSec <= 0) return;
+
+    if (isPlaying) {
+      stopPlaybackEngine(true);
+      return;
+    }
+
+    const startTimelineSec = playheadSec >= timelineEndSec ? 0 : playheadSec;
+    const startCtxTime = ctx.currentTime + PLAYBACK_SCHEDULE_LEAD_SEC;
+
+    setPlayheadSec(startTimelineSec);
+    startAudioFromTimeline(startCtxTime, startTimelineSec, timelineEndSec);
+    startPlaybackClock("preview", startCtxTime, startTimelineSec, timelineEndSec);
+    setIsPlaying(true);
+  }
+
+  function handleSplitAtPlayhead() {
+    if (exporting) return;
+    if (selection.laneIndex == null) return;
+
+    if (isPlaying) {
+      stopPlaybackEngine(true);
+    }
+
+    const lane = selection.laneIndex;
+    let selectedSegmentId: string | null = null;
+
+    setTimelines((prev) => {
+      const track = prev[lane] ?? [];
+      const split = splitSegmentAtPlayhead(track, playheadSec, makeSegmentId);
+      if (split == null) return prev;
+      const next = [...prev];
+      next[lane] = split;
+      const atPlayhead = split.find(
+        (segment) => Math.abs(segment.timelineStartSec - playheadSec) < 0.0005,
+      );
+      selectedSegmentId = atPlayhead?.id ?? split[0]?.id ?? null;
+      return next;
+    });
+
+    if (selectedSegmentId != null) {
+      setSelection({ laneIndex: lane, segmentId: selectedSegmentId });
     }
   }
 
-  // ─── Mixer ──────────────────────────────────────────────────────────────────
+  function handleDeleteSelectedSegment() {
+    if (exporting) return;
+    if (selection.laneIndex == null || selection.segmentId == null) return;
+
+    if (isPlaying) {
+      stopPlaybackEngine(true);
+    }
+
+    const lane = selection.laneIndex;
+    const segmentId = selection.segmentId;
+    let nextSegmentId: string | null = null;
+
+    setTimelines((prev) => {
+      const track = prev[lane] ?? [];
+      const nextTrack = deleteSegmentById(track, segmentId);
+      if (nextTrack.length === track.length) return prev;
+      const next = [...prev];
+      next[lane] = nextTrack;
+
+      const after = nextTrack.find((segment) => segment.timelineStartSec >= playheadSec);
+      nextSegmentId = after?.id ?? nextTrack[nextTrack.length - 1]?.id ?? null;
+      return next;
+    });
+
+    if (nextSegmentId != null) {
+      setSelection({ laneIndex: lane, segmentId: nextSegmentId });
+    } else {
+      setSelection({ laneIndex: null, segmentId: null });
+    }
+  }
+
+  function handleLaneClick(e: ReactPointerEvent<HTMLDivElement>, laneIndex: number) {
+    if (exporting) return;
+    if (isPlaying) return;
+
+    const viewport = timelineViewportRef.current;
+    if (viewport == null) return;
+
+    const rect = viewport.getBoundingClientRect();
+    const contentX = e.clientX - rect.left + viewport.scrollLeft;
+    const unclampedTime = contentX / TIMELINE_PX_PER_SEC;
+    const nextPlayhead = Math.max(0, Math.min(unclampedTime, timelineEndSec));
+
+    setSelection((prev) => ({ laneIndex, segmentId: prev.segmentId }));
+    setPlayheadSec(nextPlayhead);
+  }
+
+  function handleSegmentPointerDown(
+    e: ReactPointerEvent<HTMLDivElement>,
+    laneIndex: number,
+    segment: TimelineSegment,
+  ) {
+    e.stopPropagation();
+    if (exporting || isPlaying) return;
+
+    setSelection({ laneIndex, segmentId: segment.id });
+
+    const startClientX = e.clientX;
+    const originStartSec = segment.timelineStartSec;
+
+    const onMove = (event: PointerEvent) => {
+      const deltaPx = event.clientX - startClientX;
+      const deltaSec = deltaPx / TIMELINE_PX_PER_SEC;
+      let desiredStartSec = originStartSec + deltaSec;
+
+      if (snapToBeat) {
+        desiredStartSec = snapTimeSec(desiredStartSec, beatSec);
+      }
+
+      setTimelines((prev) => {
+        const track = prev[laneIndex] ?? [];
+        const moved = moveSegmentWithClamp(track, segment.id, desiredStartSec);
+        if (moved === track) return prev;
+        const next = [...prev];
+        next[laneIndex] = moved;
+        return next;
+      });
+    };
+
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }
+
+  function handleSeek(valueSec: number) {
+    if (isPlaying || exporting) return;
+    const next = Math.max(0, Math.min(valueSec, timelineEndSec));
+    setPlayheadSec(next);
+  }
 
   function handleVolumeChange(index: number, value: number) {
     const next = [...volumes];
@@ -193,49 +691,47 @@ export function FinalReview() {
     mixerRef.current?.setReverbWet(wet);
   }
 
-  // ─── Part management ────────────────────────────────────────────────────────
-
   function handleRedoPart(index: number) {
+    stopPlaybackEngine(false);
     updatePartState(index, { status: "idle" });
     currentPartIndex.set(index as PartIndex);
     appScreen.set("recording");
   }
 
-  // ─── Export ─────────────────────────────────────────────────────────────────
-
   async function handleExport() {
     const mixer = mixerRef.current;
     if (ctx == null || canvasRef.current == null || mixer == null) return;
+    if (timelineEndSec <= 0) return;
 
+    stopPlaybackEngine(false);
     setExporting(true);
     setExportProgress(0);
+    setPlayheadSec(0);
 
-    // Start audio buffers and video (visual) together before the recorder captures
-    const when = ctx.currentTime + 0.05;
-    startAudio(when);
-    for (const v of videoRefs.current) {
-      if (v != null && v.src !== "") {
-        v.currentTime = 0;
-        v.play().catch(() => {});
-      }
-    }
+    const startCtxTime = ctx.currentTime + PLAYBACK_SCHEDULE_LEAD_SEC;
+    startAudioFromTimeline(startCtxTime, 0, timelineEndSec);
+    startPlaybackClock("export", startCtxTime, 0, timelineEndSec);
 
     try {
       const blob = await exportWebM({
         canvas: canvasRef.current,
         audioContext: ctx,
         mixer,
-        durationMs: durationSec * 1000,
+        durationMs: timelineEndSec * 1000,
         onProgress: setExportProgress,
       });
 
-      const url = URL.createObjectURL(blob);
-      setExportedUrl(url);
+      const nextUrl = URL.createObjectURL(blob);
+      setExportedUrl((prev) => {
+        if (prev != null) {
+          URL.revokeObjectURL(prev);
+        }
+        return nextUrl;
+      });
     } catch (err) {
       console.error("Export failed", err);
     } finally {
-      stopAudio();
-      for (const v of videoRefs.current) v?.pause();
+      stopPlaybackEngine(false);
       setExporting(false);
     }
   }
@@ -249,64 +745,228 @@ export function FinalReview() {
   }
 
   function handleStartOver() {
+    stopPlaybackEngine(false);
     resetSession();
     appScreen.set("setup");
   }
 
+  const selectedSegment = findSegmentBySelection(selection);
+  const canDelete = selectedSegment != null;
+  const canSplit =
+    selection.laneIndex != null &&
+    getActiveSegmentAtTime(timelines[selection.laneIndex] ?? [], playheadSec) != null;
+
   return (
     <Flex minH="100vh" bg="gray.950" align="center" justify="center" px={4} py={8}>
-      <Box w="100%" maxW="520px">
+      <Box w="100%" maxW="980px">
         <Stack gap={6}>
           <Box>
             <Heading size="xl" color="white">
               Final Review
             </Heading>
             <Text color="gray.500" fontSize="sm" mt={1}>
-              Preview your 4-part harmony video before exporting
+              Edit four synced A/V tracks before exporting
             </Text>
           </Box>
 
-          {/* Canvas preview */}
-          <Box
-            borderRadius="xl"
-            overflow="hidden"
-            bg="black"
-            w="min(100%, calc(60vh * 9 / 16))"
-            aspectRatio="9/16"
-            mx="auto"
-          >
-            <canvas
-              ref={canvasRef}
-              style={{ width: "100%", height: "100%", display: "block" }}
-            />
-          </Box>
+          <Flex direction={{ base: "column", lg: "row" }} gap={6} align="start">
+            <Box
+              borderRadius="xl"
+              overflow="hidden"
+              bg="black"
+              w={{ base: "100%", lg: "min(46%, calc(70vh * 9 / 16))" }}
+              aspectRatio="9/16"
+              flexShrink={0}
+              mx={{ base: "auto", lg: 0 }}
+            >
+              <canvas
+                ref={canvasRef}
+                style={{ width: "100%", height: "100%", display: "block" }}
+              />
+            </Box>
 
-          {/* Playback */}
-          <Button
-            colorPalette={isPlaying ? "gray" : "brand"}
-            variant={isPlaying ? "outline" : "solid"}
-            size="lg"
-            onClick={handlePlayPause}
-            disabled={exporting}
-          >
-            {isPlaying ? "Pause" : "Play Preview"}
-          </Button>
+            <Box flex="1" minW={0}>
+              <Stack gap={3}>
+                <Flex justify="space-between" align="center" wrap="wrap" gap={2}>
+                  <Text color="gray.400" fontSize="xs" fontWeight="semibold">
+                    TIMELINE EDITOR
+                  </Text>
+                  <Flex align="center" gap={2}>
+                    <Text color="gray.500" fontSize="xs">
+                      Playhead {formatTime(playheadSec)} / {formatTime(timelineEndSec)}
+                    </Text>
+                  </Flex>
+                </Flex>
 
-          {/* Mixer */}
+                <Flex gap={2} wrap="wrap">
+                  <Button
+                    colorPalette={isPlaying ? "gray" : "brand"}
+                    variant={isPlaying ? "outline" : "solid"}
+                    size="sm"
+                    onClick={handlePlayPause}
+                    disabled={exporting || timelineEndSec <= 0}
+                  >
+                    {isPlaying ? "Pause" : "Play"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    borderColor="gray.700"
+                    color="gray.300"
+                    onClick={handleSplitAtPlayhead}
+                    disabled={exporting || !canSplit}
+                  >
+                    Split at Playhead
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    borderColor="gray.700"
+                    color="gray.300"
+                    onClick={handleDeleteSelectedSegment}
+                    disabled={exporting || !canDelete}
+                  >
+                    Delete Segment
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={snapToBeat ? "solid" : "outline"}
+                    colorPalette={snapToBeat ? "brand" : "gray"}
+                    borderColor="gray.700"
+                    onClick={() => setSnapToBeat((v) => !v)}
+                    disabled={exporting || isPlaying}
+                  >
+                    Snap: {snapToBeat ? "On" : "Off"}
+                  </Button>
+                </Flex>
+
+                <Box borderRadius="lg" border="1px solid" borderColor="gray.800" bg="gray.900" p={2}>
+                  <Box
+                    ref={timelineViewportRef}
+                    overflowX="auto"
+                    overflowY="hidden"
+                    borderRadius="md"
+                    bg="gray.950"
+                  >
+                    <Box
+                      position="relative"
+                      w={`${timelineContentWidthPx}px`}
+                      h={`${TRACK_COUNT * LANE_HEIGHT_PX}px`}
+                    >
+                      {Array.from({ length: TRACK_COUNT }).map((_, lane) => {
+                        const track = timelines[lane] ?? [];
+                        const peaks = waveformPeaksRef.current[lane] ?? [];
+                        const laneStart = laneSourceStartRef.current[lane] ?? 0;
+                        const laneDuration = laneSourceDurationRef.current[lane] ?? 0;
+
+                        return (
+                          <Box
+                            key={lane}
+                            className={`timeline-lane ${selection.laneIndex === lane ? "is-selected-lane" : ""}`}
+                            position="absolute"
+                            left={0}
+                            right={0}
+                            top={`${lane * LANE_HEIGHT_PX}px`}
+                            h={`${LANE_HEIGHT_PX - 2}px`}
+                            onPointerDown={(e) => handleLaneClick(e, lane)}
+                          >
+                            <Flex
+                              position="absolute"
+                              top={0}
+                              left={0}
+                              right={0}
+                              bottom={0}
+                              align="center"
+                              px={2}
+                              pointerEvents="none"
+                            >
+                              <Text color="gray.500" fontSize="10px" fontWeight="semibold">
+                                {PART_LABELS[lane as PartIndex]}
+                              </Text>
+                            </Flex>
+
+                            {beatLineTimes.map((line, index) => (
+                              <Box
+                                key={`${lane}-beat-${index}`}
+                                className="timeline-beat"
+                                left={`${line * TIMELINE_PX_PER_SEC}px`}
+                              />
+                            ))}
+
+                            {track.map((segment) => {
+                              const leftPx = segment.timelineStartSec * TIMELINE_PX_PER_SEC;
+                              const widthPx = Math.max(8, segment.durationSec * TIMELINE_PX_PER_SEC);
+                              const isSelected = selection.segmentId === segment.id;
+
+                              const bars = Math.max(8, Math.min(220, Math.floor(widthPx / 5)));
+                              const relativeSourceStart = Math.max(
+                                0,
+                                segment.sourceStartSec - laneStart,
+                              );
+                              const samples = samplePeaksForSegment(
+                                peaks,
+                                laneDuration,
+                                relativeSourceStart,
+                                segment.durationSec,
+                                bars,
+                              );
+
+                              return (
+                                <Box
+                                  key={segment.id}
+                                  className={`timeline-segment ${isSelected ? "is-selected" : ""}`}
+                                  left={`${leftPx}px`}
+                                  w={`${widthPx}px`}
+                                  onPointerDown={(e) => handleSegmentPointerDown(e, lane, segment)}
+                                >
+                                  <Box className="segment-waveform">
+                                    {samples.map((sample, idx) => (
+                                      <Box
+                                        key={`${segment.id}-${idx}`}
+                                        className="segment-bar"
+                                        h={`${Math.max(12, Math.round(sample * 100))}%`}
+                                      />
+                                    ))}
+                                  </Box>
+                                </Box>
+                              );
+                            })}
+                          </Box>
+                        );
+                      })}
+
+                      <Box
+                        className="timeline-playhead"
+                        left={`${playheadSec * TIMELINE_PX_PER_SEC}px`}
+                      />
+                    </Box>
+                  </Box>
+
+                  <Box mt={3}>
+                    <input
+                      type="range"
+                      className="timeline-slider"
+                      min={0}
+                      max={Math.max(1, Math.round(timelineEndSec * 1000))}
+                      step={1}
+                      value={Math.round(playheadSec * 1000)}
+                      onChange={(e) => handleSeek(parseInt(e.target.value, 10) / 1000)}
+                      disabled={exporting || isPlaying || timelineEndSec <= 0}
+                    />
+                  </Box>
+                </Box>
+              </Stack>
+            </Box>
+          </Flex>
+
           <Box>
             <Text color="gray.500" fontSize="xs" mb={3} fontWeight="semibold">
               MIX
             </Text>
             <Stack gap={2}>
-              {Array.from({ length: 4 }).map((_, i) => (
+              {Array.from({ length: TRACK_COUNT }).map((_, i) => (
                 <Flex key={i} align="center" gap={3}>
-                  <Text
-                    color="gray.400"
-                    fontSize="xs"
-                    w="24"
-                    flexShrink={0}
-                    lineClamp={1}
-                  >
+                  <Text color="gray.400" fontSize="xs" w="24" flexShrink={0} lineClamp={1}>
                     {PART_LABELS[i as PartIndex]}
                   </Text>
                   <Button
@@ -344,12 +1004,10 @@ export function FinalReview() {
                 </Flex>
               ))}
 
-              {/* Reverb row */}
               <Flex align="center" gap={3} mt={1}>
                 <Text color="gray.400" fontSize="xs" w="24" flexShrink={0}>
                   Reverb
                 </Text>
-                {/* spacer matching the mute button width */}
                 <Box w={7} flexShrink={0} />
                 <input
                   type="range"
@@ -370,13 +1028,12 @@ export function FinalReview() {
             </Stack>
           </Box>
 
-          {/* Redo a part */}
           <Box>
             <Text color="gray.500" fontSize="xs" mb={3} fontWeight="semibold">
               REDO A PART
             </Text>
             <Grid templateColumns="repeat(4, 1fr)" gap={2}>
-              {Array.from({ length: 4 }).map((_, i) => (
+              {Array.from({ length: TRACK_COUNT }).map((_, i) => (
                 <Button
                   key={i}
                   size="sm"
@@ -393,7 +1050,6 @@ export function FinalReview() {
             </Grid>
           </Box>
 
-          {/* Export */}
           {exporting && (
             <Box>
               <Text color="gray.400" fontSize="sm" mb={2}>
@@ -415,7 +1071,10 @@ export function FinalReview() {
               <Button
                 variant="ghost"
                 color="gray.500"
-                onClick={() => setExportedUrl(null)}
+                onClick={() => {
+                  URL.revokeObjectURL(exportedUrl);
+                  setExportedUrl(null);
+                }}
               >
                 Export Again
               </Button>
@@ -425,7 +1084,7 @@ export function FinalReview() {
               colorPalette="brand"
               size="lg"
               onClick={handleExport}
-              disabled={exporting}
+              disabled={exporting || timelineEndSec <= 0}
               loading={exporting}
               loadingText="Exporting…"
             >
@@ -472,11 +1131,111 @@ export function FinalReview() {
           cursor: pointer;
           border: none;
         }
-        .mix-slider:disabled {
+
+        .timeline-slider {
+          width: 100%;
+          appearance: none;
+          height: 4px;
+          border-radius: 2px;
+          background: #2f3745;
+          outline: none;
+          cursor: pointer;
+        }
+        .timeline-slider::-webkit-slider-thumb {
+          appearance: none;
+          width: 14px;
+          height: 14px;
+          border-radius: 50%;
+          background: #38bdf8;
+          cursor: pointer;
+        }
+        .timeline-slider::-moz-range-thumb {
+          width: 14px;
+          height: 14px;
+          border-radius: 50%;
+          background: #38bdf8;
+          border: none;
+          cursor: pointer;
+        }
+
+        .timeline-lane {
+          border-bottom: 1px solid #1f2937;
+          background: linear-gradient(180deg, rgba(17, 24, 39, 0.95), rgba(8, 14, 26, 0.95));
+          user-select: none;
+          touch-action: none;
+        }
+        .timeline-lane.is-selected-lane {
+          box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.28);
+        }
+        .timeline-beat {
+          position: absolute;
+          top: 0;
+          bottom: 0;
+          width: 1px;
+          background: rgba(107, 114, 128, 0.26);
+          pointer-events: none;
+        }
+        .timeline-segment {
+          position: absolute;
+          top: 10px;
+          bottom: 10px;
+          border: 1px solid rgba(16, 185, 129, 0.72);
+          border-radius: 8px;
+          background: linear-gradient(180deg, rgba(6, 78, 59, 0.78), rgba(6, 95, 70, 0.72));
+          display: flex;
+          align-items: center;
+          cursor: grab;
+          overflow: hidden;
+        }
+        .timeline-segment:active {
+          cursor: grabbing;
+        }
+        .timeline-segment.is-selected {
+          border-color: rgba(125, 211, 252, 0.94);
+          box-shadow: 0 0 0 1px rgba(125, 211, 252, 0.75), 0 8px 18px rgba(2, 132, 199, 0.35);
+        }
+        .segment-waveform {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 1px;
+          width: 100%;
+          height: 100%;
+          padding: 0 3px;
+          pointer-events: none;
+        }
+        .segment-bar {
+          width: 2px;
+          border-radius: 999px;
+          background: rgba(236, 253, 245, 0.85);
+          align-self: center;
+        }
+        .timeline-playhead {
+          position: absolute;
+          top: 0;
+          bottom: 0;
+          width: 2px;
+          background: rgba(248, 113, 113, 0.95);
+          box-shadow: 0 0 10px rgba(248, 113, 113, 0.45);
+          pointer-events: none;
+          z-index: 10;
+        }
+
+        .mix-slider:disabled,
+        .timeline-slider:disabled {
           opacity: 0.35;
           cursor: not-allowed;
         }
       `}</style>
     </Flex>
   );
+}
+
+function formatTime(sec: number): string {
+  if (!Number.isFinite(sec) || sec < 0) return "0:00.00";
+  const mins = Math.floor(sec / 60);
+  const rem = sec - mins * 60;
+  const whole = Math.floor(rem);
+  const hundredths = Math.floor((rem - whole) * 100);
+  return `${mins}:${String(whole).padStart(2, "0")}.${String(hundredths).padStart(2, "0")}`;
 }

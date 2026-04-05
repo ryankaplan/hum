@@ -54,7 +54,7 @@ type PlaybackClock = {
 };
 
 export function FinalReview() {
-  const tracksState = useObservable(model.tracksModel.tracks);
+  const tracksState = useObservable(model.tracks.tracks);
   const chords = useObservable(model.parsedChords);
   const tempo = useObservable(model.tempoInput);
   const ctx = useObservable(model.audioContext);
@@ -110,7 +110,8 @@ export function FinalReview() {
   }, [timelines]);
 
   const timelineContentWidthPx = useMemo(() => {
-    const minContent = Math.max(1, timelineEndSec) * TIMELINE_PX_PER_SEC + TIMELINE_RIGHT_PAD_PX;
+    const minContent =
+      Math.max(1, timelineEndSec) * TIMELINE_PX_PER_SEC + TIMELINE_RIGHT_PAD_PX;
     return Math.max(timelineViewportWidth, Math.ceil(minContent));
   }, [timelineEndSec, timelineViewportWidth]);
 
@@ -125,46 +126,49 @@ export function FinalReview() {
 
   timelinesRef.current = timelines;
 
-  const syncVideosToTimeline = useCallback((timelineSec: number, shouldPlay: boolean) => {
-    const nextMask = Array.from({ length: trackCount }, () => false);
+  const syncVideosToTimeline = useCallback(
+    (timelineSec: number, shouldPlay: boolean) => {
+      const nextMask = Array.from({ length: trackCount }, () => false);
 
-    for (let lane = 0; lane < trackCount; lane++) {
-      const track = timelinesRef.current[lane] ?? [];
-      const segment = getActiveSegmentAtTime(track, timelineSec);
-      const video = videoRefs.current[lane];
-      if (video == null || segment == null) {
-        if (video != null) {
+      for (let lane = 0; lane < trackCount; lane++) {
+        const track = timelinesRef.current[lane] ?? [];
+        const segment = getActiveSegmentAtTime(track, timelineSec);
+        const video = videoRefs.current[lane];
+        if (video == null || segment == null) {
+          if (video != null) {
+            video.pause();
+          }
+          continue;
+        }
+
+        const laneTime = timelineSec - segment.timelineStartSec;
+        const desiredSourceTime = segment.sourceStartSec + laneTime;
+        if (!Number.isFinite(desiredSourceTime)) {
+          video.pause();
+          continue;
+        }
+
+        nextMask[lane] = true;
+
+        if (Math.abs(video.currentTime - desiredSourceTime) > 0.045) {
+          try {
+            video.currentTime = desiredSourceTime;
+          } catch {
+            // Some browsers can throw while metadata is still loading.
+          }
+        }
+
+        if (shouldPlay) {
+          video.play().catch(() => {});
+        } else {
           video.pause();
         }
-        continue;
       }
 
-      const laneTime = timelineSec - segment.timelineStartSec;
-      const desiredSourceTime = segment.sourceStartSec + laneTime;
-      if (!Number.isFinite(desiredSourceTime)) {
-        video.pause();
-        continue;
-      }
-
-      nextMask[lane] = true;
-
-      if (Math.abs(video.currentTime - desiredSourceTime) > 0.045) {
-        try {
-          video.currentTime = desiredSourceTime;
-        } catch {
-          // Some browsers can throw while metadata is still loading.
-        }
-      }
-
-      if (shouldPlay) {
-        video.play().catch(() => {});
-      } else {
-        video.pause();
-      }
-    }
-
-    activeVideoMaskRef.current = nextMask;
-  }, [trackCount]);
+      activeVideoMaskRef.current = nextMask;
+    },
+    [trackCount],
+  );
 
   const stopAudio = useCallback(() => {
     for (const entry of activeSourcesRef.current) {
@@ -191,24 +195,27 @@ export function FinalReview() {
     };
   }, []);
 
-  const stopPlaybackEngine = useCallback((preservePlayhead: boolean) => {
-    stopClock();
-    stopAudio();
-    setIsPlaying(false);
+  const stopPlaybackEngine = useCallback(
+    (preservePlayhead: boolean) => {
+      stopClock();
+      stopAudio();
+      setIsPlaying(false);
 
-    for (const video of videoRefs.current) {
-      video?.pause();
-    }
-    activeVideoMaskRef.current = Array.from(
-      { length: trackCount },
-      () => false,
-    );
+      for (const video of videoRefs.current) {
+        video?.pause();
+      }
+      activeVideoMaskRef.current = Array.from(
+        { length: trackCount },
+        () => false,
+      );
 
-    if (!preservePlayhead) {
-      model.tracksModel.setPlayhead(0);
-      syncVideosToTimeline(0, false);
-    }
-  }, [stopAudio, stopClock, syncVideosToTimeline, trackCount]);
+      if (!preservePlayhead) {
+        model.tracks.setPlayhead(0);
+        syncVideosToTimeline(0, false);
+      }
+    },
+    [stopAudio, stopClock, syncVideosToTimeline, trackCount],
+  );
 
   const runPreviewTick = useCallback(() => {
     const clock = playbackClockRef.current;
@@ -218,14 +225,14 @@ export function FinalReview() {
     const timelineNow = clock.startTimelineSec + elapsed;
     const clampedNow = Math.min(timelineNow, clock.endTimelineSec);
 
-    model.tracksModel.setPlayhead(clampedNow);
+    model.tracks.setPlayhead(clampedNow);
     syncVideosToTimeline(clampedNow, true);
 
     if (timelineNow >= clock.endTimelineSec - 0.001) {
       stopAudio();
       stopClock();
       setIsPlaying(false);
-      model.tracksModel.setPlayhead(clock.endTimelineSec);
+      model.tracks.setPlayhead(clock.endTimelineSec);
       syncVideosToTimeline(clock.endTimelineSec, false);
       return;
     }
@@ -241,7 +248,7 @@ export function FinalReview() {
     const timelineNow = clock.startTimelineSec + elapsed;
     const clampedNow = Math.min(timelineNow, clock.endTimelineSec);
 
-    model.tracksModel.setPlayhead(clampedNow);
+    model.tracks.setPlayhead(clampedNow);
     syncVideosToTimeline(clampedNow, true);
 
     if (timelineNow >= clock.endTimelineSec - 0.001) {
@@ -253,73 +260,87 @@ export function FinalReview() {
     clock.rafId = requestAnimationFrame(runExportTick);
   }, [ctx, stopClock, syncVideosToTimeline]);
 
-  const startPlaybackClock = useCallback((
-    mode: "preview" | "export",
-    startCtxTime: number,
-    startTimelineSec: number,
-    endTimelineSec: number,
-  ) => {
-    stopClock();
-    playbackClockRef.current = {
-      mode,
-      startCtxTime,
-      startTimelineSec,
-      endTimelineSec,
-      rafId: null,
-    };
+  const startPlaybackClock = useCallback(
+    (
+      mode: "preview" | "export",
+      startCtxTime: number,
+      startTimelineSec: number,
+      endTimelineSec: number,
+    ) => {
+      stopClock();
+      playbackClockRef.current = {
+        mode,
+        startCtxTime,
+        startTimelineSec,
+        endTimelineSec,
+        rafId: null,
+      };
 
-    if (mode === "preview") {
-      playbackClockRef.current.rafId = requestAnimationFrame(runPreviewTick);
-    } else {
-      playbackClockRef.current.rafId = requestAnimationFrame(runExportTick);
-    }
-  }, [runExportTick, runPreviewTick, stopClock]);
-
-  const startAudioFromTimeline = useCallback((
-    startCtxTime: number,
-    startTimelineSec: number,
-    endTimelineSec: number,
-  ) => {
-    if (ctx == null || model.mixer == null) return;
-
-    stopAudio();
-
-    for (let lane = 0; lane < trackCount; lane++) {
-      const track = timelinesRef.current[lane] as Array<TimelineSegment & { takeId?: string }> | undefined;
-      if (track == null) continue;
-
-      for (const segment of track) {
-        if (segment.takeId == null) continue;
-        const buffer = model.getTakeAudioBuffer(segment.takeId);
-        if (buffer == null) continue;
-
-        const segStart = segment.timelineStartSec;
-        const segEnd = segment.timelineStartSec + segment.durationSec;
-        if (segEnd <= startTimelineSec || segStart >= endTimelineSec) continue;
-
-        const playFrom = Math.max(startTimelineSec, segStart);
-        const playTo = Math.min(endTimelineSec, segEnd);
-        const playDuration = playTo - playFrom;
-        if (playDuration <= 0) continue;
-
-        const sourceOffset = segment.sourceStartSec + (playFrom - segStart);
-        if (sourceOffset >= buffer.duration) continue;
-
-        const cappedDuration = Math.min(playDuration, buffer.duration - sourceOffset);
-        if (cappedDuration <= 0) continue;
-
-        const source = ctx.createBufferSource();
-        source.buffer = buffer;
-        model.mixer.connectSource(lane, source);
-
-        const startAt = startCtxTime + (playFrom - startTimelineSec);
-        source.start(startAt, sourceOffset, cappedDuration);
-        activeSourcesRef.current.push({ source });
+      if (mode === "preview") {
+        playbackClockRef.current.rafId = requestAnimationFrame(runPreviewTick);
+      } else {
+        playbackClockRef.current.rafId = requestAnimationFrame(runExportTick);
       }
-    }
-  }, [ctx, stopAudio, trackCount]);
+    },
+    [runExportTick, runPreviewTick, stopClock],
+  );
 
-  function findSegmentBySelection(sel: EditorSelection): TimelineSegment | null {
+  const startAudioFromTimeline = useCallback(
+    (
+      startCtxTime: number,
+      startTimelineSec: number,
+      endTimelineSec: number,
+    ) => {
+      if (ctx == null || model.mixer == null) return;
+
+      stopAudio();
+
+      for (let lane = 0; lane < trackCount; lane++) {
+        const track = timelinesRef.current[lane] as
+          | Array<TimelineSegment & { takeId?: string }>
+          | undefined;
+        if (track == null) continue;
+
+        for (const segment of track) {
+          if (segment.takeId == null) continue;
+          const buffer = model.getTakeAudioBuffer(segment.takeId);
+          if (buffer == null) continue;
+
+          const segStart = segment.timelineStartSec;
+          const segEnd = segment.timelineStartSec + segment.durationSec;
+          if (segEnd <= startTimelineSec || segStart >= endTimelineSec)
+            continue;
+
+          const playFrom = Math.max(startTimelineSec, segStart);
+          const playTo = Math.min(endTimelineSec, segEnd);
+          const playDuration = playTo - playFrom;
+          if (playDuration <= 0) continue;
+
+          const sourceOffset = segment.sourceStartSec + (playFrom - segStart);
+          if (sourceOffset >= buffer.duration) continue;
+
+          const cappedDuration = Math.min(
+            playDuration,
+            buffer.duration - sourceOffset,
+          );
+          if (cappedDuration <= 0) continue;
+
+          const source = ctx.createBufferSource();
+          source.buffer = buffer;
+          model.mixer.connectSource(lane, source);
+
+          const startAt = startCtxTime + (playFrom - startTimelineSec);
+          source.start(startAt, sourceOffset, cappedDuration);
+          activeSourcesRef.current.push({ source });
+        }
+      }
+    },
+    [ctx, stopAudio, trackCount],
+  );
+
+  function findSegmentBySelection(
+    sel: EditorSelection,
+  ): TimelineSegment | null {
     if (sel.laneIndex == null || sel.segmentId == null) return null;
     const track = timelines[sel.laneIndex] ?? [];
     return track.find((segment) => segment.id === sel.segmentId) ?? null;
@@ -334,8 +355,8 @@ export function FinalReview() {
     const activeLaneTakeIds = tracksState.laneTakeIds;
 
     model.clearRuntimeTakeMedia();
-    model.tracksModel.setPlayhead(0);
-    model.tracksModel.setSelection({ laneIndex: null, segmentId: null });
+    model.tracks.setPlayhead(0);
+    model.tracks.setSelection({ laneIndex: null, segmentId: null });
     setWaveformVersion((v) => v + 1);
 
     for (let i = 0; i < trackCount; i++) {
@@ -376,16 +397,17 @@ export function FinalReview() {
       const videoEl = videos[i];
       if (videoEl == null) continue;
 
-      void model.ingestTakeRuntimeMedia({
-        takeId,
-        laneIndex: i,
-        blob: take.blob,
-        trimOffsetSec: Math.max(0, take.trimOffsetSec),
-        ctx,
-        videoEl,
-        maxDurationSec: baseDurationSec,
-        waveformBuckets: 400,
-      })
+      void model
+        .ingestTakeRuntimeMedia({
+          takeId,
+          laneIndex: i,
+          blob: take.blob,
+          trimOffsetSec: Math.max(0, take.trimOffsetSec),
+          ctx,
+          videoEl,
+          maxDurationSec: baseDurationSec,
+          waveformBuckets: 400,
+        })
         .then((ingested) => {
           if (cancelled || !ingested) return;
           setWaveformVersion((v) => v + 1);
@@ -434,7 +456,14 @@ export function FinalReview() {
   useEffect(() => {
     if (isPlaying || exporting) return;
     syncVideosToTimeline(playheadSec, false);
-  }, [exporting, isPlaying, playheadSec, syncVideosToTimeline, timelines, waveformVersion]);
+  }, [
+    exporting,
+    isPlaying,
+    playheadSec,
+    syncVideosToTimeline,
+    timelines,
+    waveformVersion,
+  ]);
 
   // Ensure selection always points to an existing segment.
   useEffect(() => {
@@ -447,13 +476,13 @@ export function FinalReview() {
         if (selection.laneIndex === lane && selection.segmentId === first.id) {
           return;
         }
-        model.tracksModel.setSelection({ laneIndex: lane, segmentId: first.id });
+        model.tracks.setSelection({ laneIndex: lane, segmentId: first.id });
         return;
       }
     }
 
     if (selection.laneIndex != null || selection.segmentId != null) {
-      model.tracksModel.setSelection({ laneIndex: null, segmentId: null });
+      model.tracks.setSelection({ laneIndex: null, segmentId: null });
     }
   }, [selection, timelines, trackCount]);
 
@@ -488,9 +517,14 @@ export function FinalReview() {
     const startTimelineSec = playheadSec >= timelineEndSec ? 0 : playheadSec;
     const startCtxTime = ctx.currentTime + PLAYBACK_SCHEDULE_LEAD_SEC;
 
-    model.tracksModel.setPlayhead(startTimelineSec);
+    model.tracks.setPlayhead(startTimelineSec);
     startAudioFromTimeline(startCtxTime, startTimelineSec, timelineEndSec);
-    startPlaybackClock("preview", startCtxTime, startTimelineSec, timelineEndSec);
+    startPlaybackClock(
+      "preview",
+      startCtxTime,
+      startTimelineSec,
+      timelineEndSec,
+    );
     setIsPlaying(true);
   }
 
@@ -502,7 +536,7 @@ export function FinalReview() {
       stopPlaybackEngine(true);
     }
 
-    model.tracksModel.splitSelectedClipAtPlayhead();
+    model.tracks.splitSelectedClipAtPlayhead();
   }
 
   function handleDeleteSelectedSegment() {
@@ -513,10 +547,13 @@ export function FinalReview() {
       stopPlaybackEngine(true);
     }
 
-    model.tracksModel.deleteSelectedClip();
+    model.tracks.deleteSelectedClip();
   }
 
-  function handleLaneClick(e: ReactPointerEvent<HTMLDivElement>, laneIndex: number) {
+  function handleLaneClick(
+    e: ReactPointerEvent<HTMLDivElement>,
+    laneIndex: number,
+  ) {
     if (exporting) return;
     if (isPlaying) return;
 
@@ -528,8 +565,8 @@ export function FinalReview() {
     const unclampedTime = contentX / TIMELINE_PX_PER_SEC;
     const nextPlayhead = Math.max(0, Math.min(unclampedTime, timelineEndSec));
 
-    model.tracksModel.setSelection({ laneIndex, segmentId: selection.segmentId });
-    model.tracksModel.setPlayhead(nextPlayhead);
+    model.tracks.setSelection({ laneIndex, segmentId: selection.segmentId });
+    model.tracks.setPlayhead(nextPlayhead);
   }
 
   function handleSegmentPointerDown(
@@ -540,7 +577,7 @@ export function FinalReview() {
     e.stopPropagation();
     if (exporting || isPlaying) return;
 
-    model.tracksModel.setSelection({ laneIndex, segmentId: segment.id });
+    model.tracks.setSelection({ laneIndex, segmentId: segment.id });
 
     const startClientX = e.clientX;
     const originStartSec = segment.timelineStartSec;
@@ -554,7 +591,7 @@ export function FinalReview() {
         desiredStartSec = snapTimeSec(desiredStartSec, beatSec);
       }
 
-      model.tracksModel.moveClip(laneIndex, segment.id, desiredStartSec);
+      model.tracks.moveClip(laneIndex, segment.id, desiredStartSec);
     };
 
     const onUp = () => {
@@ -569,20 +606,20 @@ export function FinalReview() {
   function handleSeek(valueSec: number) {
     if (isPlaying || exporting) return;
     const next = Math.max(0, Math.min(valueSec, timelineEndSec));
-    model.tracksModel.setPlayhead(next);
+    model.tracks.setPlayhead(next);
   }
 
   function handleVolumeChange(index: number, value: number) {
-    model.tracksModel.setTrackVolume(index, value);
+    model.tracks.setTrackVolume(index, value);
   }
 
   function handleMuteToggle(index: number) {
     const nextMuted = !(muted[index] ?? false);
-    model.tracksModel.setTrackMuted(index, nextMuted);
+    model.tracks.setTrackMuted(index, nextMuted);
   }
 
   function handleReverbChange(wet: number) {
-    model.tracksModel.setReverbWet(wet);
+    model.tracks.setReverbWet(wet);
   }
 
   function handleRedoPart(index: number) {
@@ -596,7 +633,7 @@ export function FinalReview() {
     if (timelineEndSec <= 0) return;
 
     stopPlaybackEngine(false);
-    model.tracksModel.beginExport();
+    model.tracks.beginExport();
 
     const startCtxTime = ctx.currentTime + PLAYBACK_SCHEDULE_LEAD_SEC;
     startAudioFromTimeline(startCtxTime, 0, timelineEndSec);
@@ -608,14 +645,14 @@ export function FinalReview() {
         audioContext: ctx,
         mixer,
         durationMs: timelineEndSec * 1000,
-        onProgress: (progress) => model.tracksModel.updateExportProgress(progress),
+        onProgress: (progress) => model.tracks.updateExportProgress(progress),
       });
 
       const nextUrl = URL.createObjectURL(blob);
-      model.tracksModel.completeExport(nextUrl);
+      model.tracks.completeExport(nextUrl);
     } catch (err) {
       console.error("Export failed", err);
-      model.tracksModel.failOrResetExport();
+      model.tracks.failOrResetExport();
     } finally {
       stopPlaybackEngine(false);
     }
@@ -639,10 +676,18 @@ export function FinalReview() {
   const canDelete = selectedSegment != null;
   const canSplit =
     selection.laneIndex != null &&
-    getActiveSegmentAtTime(timelines[selection.laneIndex] ?? [], playheadSec) != null;
+    getActiveSegmentAtTime(timelines[selection.laneIndex] ?? [], playheadSec) !=
+      null;
 
   return (
-    <Flex minH="100vh" bg="gray.950" align="center" justify="center" px={4} py={8}>
+    <Flex
+      minH="100vh"
+      bg="gray.950"
+      align="center"
+      justify="center"
+      px={4}
+      py={8}
+    >
       <Box w="100%" maxW="980px">
         <Stack gap={6}>
           <Box>
@@ -689,7 +734,12 @@ export function FinalReview() {
                     borderBottomWidth="1px"
                     borderColor="whiteAlpha.100"
                   >
-                    <Text fontSize="xs" fontWeight="medium" color="gray.400" letterSpacing="0.02em">
+                    <Text
+                      fontSize="xs"
+                      fontWeight="medium"
+                      color="gray.400"
+                      letterSpacing="0.02em"
+                    >
                       Tracks
                     </Text>
                     <Box
@@ -767,7 +817,7 @@ export function FinalReview() {
                       borderColor="whiteAlpha.200"
                       fontSize="xs"
                       fontWeight="normal"
-                      onClick={() => model.tracksModel.setSnapToBeat(!snapToBeat)}
+                      onClick={() => model.tracks.setSnapToBeat(!snapToBeat)}
                       disabled={exporting || isPlaying}
                     >
                       Snap {snapToBeat ? "on" : "off"}
@@ -822,10 +872,13 @@ export function FinalReview() {
                       >
                         {Array.from({ length: trackCount }).map((_, lane) => {
                           const track = timelines[lane] ?? [];
-                          const laneRuntime = model.getLaneRuntimeWaveform(lane);
+                          const laneRuntime =
+                            model.getLaneRuntimeWaveform(lane);
                           const peaks = laneRuntime?.peaks ?? [];
-                          const laneStart = laneRuntime?.sourceWindow.sourceStartSec ?? 0;
-                          const laneDuration = laneRuntime?.sourceWindow.durationSec ?? 0;
+                          const laneStart =
+                            laneRuntime?.sourceWindow.sourceStartSec ?? 0;
+                          const laneDuration =
+                            laneRuntime?.sourceWindow.durationSec ?? 0;
                           const laneClass =
                             `timeline-lane ${selection.laneIndex === lane ? "is-selected-lane" : ""}` +
                             (lane % 2 === 0 ? " is-alt" : "");
@@ -850,11 +903,20 @@ export function FinalReview() {
                               ))}
 
                               {track.map((segment) => {
-                                const leftPx = segment.timelineStartSec * TIMELINE_PX_PER_SEC;
-                                const widthPx = Math.max(8, segment.durationSec * TIMELINE_PX_PER_SEC);
-                                const isSelected = selection.segmentId === segment.id;
+                                const leftPx =
+                                  segment.timelineStartSec *
+                                  TIMELINE_PX_PER_SEC;
+                                const widthPx = Math.max(
+                                  8,
+                                  segment.durationSec * TIMELINE_PX_PER_SEC,
+                                );
+                                const isSelected =
+                                  selection.segmentId === segment.id;
 
-                                const bars = Math.max(8, Math.min(220, Math.floor(widthPx / 5)));
+                                const bars = Math.max(
+                                  8,
+                                  Math.min(220, Math.floor(widthPx / 5)),
+                                );
                                 const relativeSourceStart = Math.max(
                                   0,
                                   segment.sourceStartSec - laneStart,
@@ -873,7 +935,9 @@ export function FinalReview() {
                                     className={`timeline-segment ${isSelected ? "is-selected" : ""}`}
                                     left={`${leftPx}px`}
                                     w={`${widthPx}px`}
-                                    onPointerDown={(e) => handleSegmentPointerDown(e, lane, segment)}
+                                    onPointerDown={(e) =>
+                                      handleSegmentPointerDown(e, lane, segment)
+                                    }
                                   >
                                     <Box className="segment-waveform">
                                       {samples.map((sample, idx) => (
@@ -899,7 +963,13 @@ export function FinalReview() {
                     </Box>
                   </Flex>
 
-                  <Box px={3} py={2.5} borderTopWidth="1px" borderColor="whiteAlpha.100" bg="gray.900">
+                  <Box
+                    px={3}
+                    py={2.5}
+                    borderTopWidth="1px"
+                    borderColor="whiteAlpha.100"
+                    bg="gray.900"
+                  >
                     <input
                       type="range"
                       className="timeline-slider"
@@ -907,7 +977,9 @@ export function FinalReview() {
                       max={Math.max(1, Math.round(timelineEndSec * 1000))}
                       step={1}
                       value={Math.round(playheadSec * 1000)}
-                      onChange={(e) => handleSeek(parseInt(e.target.value, 10) / 1000)}
+                      onChange={(e) =>
+                        handleSeek(parseInt(e.target.value, 10) / 1000)
+                      }
                       disabled={exporting || isPlaying || timelineEndSec <= 0}
                     />
                   </Box>
@@ -923,7 +995,13 @@ export function FinalReview() {
             <Stack gap={2}>
               {Array.from({ length: trackCount }).map((_, i) => (
                 <Flex key={i} align="center" gap={3}>
-                  <Text color="gray.400" fontSize="xs" w="24" flexShrink={0} lineClamp={1}>
+                  <Text
+                    color="gray.400"
+                    fontSize="xs"
+                    w="24"
+                    flexShrink={0}
+                    lineClamp={1}
+                  >
                     {getPartLabel(i, trackCount)}
                   </Text>
                   <Button
@@ -955,7 +1033,13 @@ export function FinalReview() {
                     }
                     disabled={exporting}
                   />
-                  <Text color="gray.600" fontSize="xs" w={8} textAlign="right" flexShrink={0}>
+                  <Text
+                    color="gray.600"
+                    fontSize="xs"
+                    w={8}
+                    textAlign="right"
+                    flexShrink={0}
+                  >
                     {Math.round((volumes[i] ?? 1) * 100)}%
                   </Text>
                 </Flex>
@@ -978,7 +1062,13 @@ export function FinalReview() {
                   }
                   disabled={exporting}
                 />
-                <Text color="gray.600" fontSize="xs" w={8} textAlign="right" flexShrink={0}>
+                <Text
+                  color="gray.600"
+                  fontSize="xs"
+                  w={8}
+                  textAlign="right"
+                  flexShrink={0}
+                >
                   {Math.round(reverbWet * 100)}%
                 </Text>
               </Flex>
@@ -1029,7 +1119,7 @@ export function FinalReview() {
                 variant="ghost"
                 color="gray.500"
                 onClick={() => {
-                  model.tracksModel.clearExportedUrl();
+                  model.tracks.clearExportedUrl();
                 }}
               >
                 Export Again

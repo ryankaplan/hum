@@ -82,7 +82,9 @@ function parseTotalPartCount(raw: unknown): TotalPartCount {
 }
 
 function createIdlePartStates(totalParts: number): PartState[] {
-  return Array.from({ length: totalParts }, () => ({ status: "idle" as const }));
+  return Array.from({ length: totalParts }, () => ({
+    status: "idle" as const,
+  }));
 }
 
 class AppModel {
@@ -135,7 +137,7 @@ class AppModel {
   mixer: Mixer | null = null;
   compositor: CompositorHandle | null = null;
 
-  readonly tracksModel = new TracksModel({
+  readonly tracks = new TracksModel({
     totalParts: this.totalPartsInput.get(),
     getMixer: () => this.mixer,
   });
@@ -220,7 +222,7 @@ class AppModel {
       trimOffsetSec,
     };
 
-    const replacedTake = this.tracksModel.stageKeptTake({
+    const replacedTake = this.tracks.stageKeptTake({
       laneIndex,
       take,
       sourceStartSec: Math.max(0, trimOffsetSec),
@@ -233,7 +235,9 @@ class AppModel {
     }
   }
 
-  async ingestTakeRuntimeMedia(input: RuntimeTakeMediaIngestInput): Promise<boolean> {
+  async ingestTakeRuntimeMedia(
+    input: RuntimeTakeMediaIngestInput,
+  ): Promise<boolean> {
     const {
       takeId,
       laneIndex,
@@ -250,12 +254,15 @@ class AppModel {
     const raw = await blob.arrayBuffer();
     const decoded = await ctx.decodeAudioData(raw);
 
-    const current = this.tracksModel.tracks.get();
+    const current = this.tracks.tracks.get();
     if (current.laneTakeIds[laneIndex] !== takeId) {
       return false;
     }
 
-    const sourceStartSec = Math.min(Math.max(0, trimOffsetSec), decoded.duration);
+    const sourceStartSec = Math.min(
+      Math.max(0, trimOffsetSec),
+      decoded.duration,
+    );
     const rawDuration = Math.max(0, decoded.duration - sourceStartSec);
     const durationSec = Math.max(
       0,
@@ -272,7 +279,7 @@ class AppModel {
       buildWaveformPeaks(decoded, sourceStartSec, durationSec, waveformBuckets),
     );
 
-    this.tracksModel.initializeTrackFromTake(
+    this.tracks.initializeTrackFromTake(
       laneIndex,
       takeId,
       sourceStartSec,
@@ -298,7 +305,7 @@ class AppModel {
   }
 
   getLaneRuntimeWaveform(laneIndex: number): LaneRuntimeWaveform {
-    const takeId = this.tracksModel.tracks.get().laneTakeIds[laneIndex];
+    const takeId = this.tracks.tracks.get().laneTakeIds[laneIndex];
     if (takeId == null) return null;
 
     const peaks = this.getTakeWaveform(takeId);
@@ -331,7 +338,7 @@ class AppModel {
     this.currentPartIndex.set(index);
     this.appScreen.set("recording");
 
-    const removedTake = this.tracksModel.clearLane(index);
+    const removedTake = this.tracks.clearLane(index);
     if (removedTake != null) {
       URL.revokeObjectURL(removedTake.url);
       this.removeTakeRuntimeMedia(removedTake.id);
@@ -339,9 +346,9 @@ class AppModel {
   }
 
   getKeptBlobs(): (Blob | null)[] {
-    return this.partStates.get().map((state) =>
-      state.status === "kept" ? state.blob : null,
-    );
+    return this.partStates
+      .get()
+      .map((state) => (state.status === "kept" ? state.blob : null));
   }
 
   resetSession(): void {
@@ -349,7 +356,7 @@ class AppModel {
     this.partStates.set(createIdlePartStates(this.totalPartsInput.get()));
     this.permissionError.set(null);
 
-    const removedTakes = this.tracksModel.reset(this.totalPartsInput.get());
+    const removedTakes = this.tracks.reset(this.totalPartsInput.get());
     for (const take of removedTakes) {
       URL.revokeObjectURL(take.url);
     }
@@ -403,7 +410,9 @@ class AppModel {
   }
 
   private resizePartCount(totalParts: number): void {
-    this.partStates.set(this.resizePartStates(this.partStates.get(), totalParts));
+    this.partStates.set(
+      this.resizePartStates(this.partStates.get(), totalParts),
+    );
 
     const clampedPartIndex = Math.min(
       Math.max(0, this.currentPartIndex.get()),
@@ -411,14 +420,17 @@ class AppModel {
     );
     this.currentPartIndex.set(clampedPartIndex);
 
-    const removedTakes = this.tracksModel.resizeForPartCount(totalParts);
+    const removedTakes = this.tracks.resizeForPartCount(totalParts);
     for (const take of removedTakes) {
       URL.revokeObjectURL(take.url);
       this.removeTakeRuntimeMedia(take.id);
     }
   }
 
-  private resizePartStates(current: PartState[], totalParts: number): PartState[] {
+  private resizePartStates(
+    current: PartState[],
+    totalParts: number,
+  ): PartState[] {
     const next = current.slice(0, totalParts);
     while (next.length < totalParts) {
       next.push({ status: "idle" });

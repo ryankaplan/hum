@@ -12,6 +12,7 @@ export type {
   TrackClip,
   TrackEditorSelection,
   TrackLane,
+  TakeRecord,
   TracksState,
 } from "./model";
 
@@ -33,13 +34,18 @@ export const parsedChords = model.parsedChords;
 export const harmonyVoicing = model.harmonyVoicing;
 
 export const partStates = model.partStates;
-export const tracks = model.tracksModel.tracks;
+export const tracks = model.tracks.tracks;
 
-export function updatePartState(index: number, state: Parameters<typeof model.updatePartState>[1]): void {
+export function updatePartState(
+  index: number,
+  state: Parameters<typeof model.updatePartState>[1],
+): void {
   model.updatePartState(index, state);
 }
 
-export function keepRecordedTake(input: Parameters<typeof model.keepRecordedTake>[0]): void {
+export function keepRecordedTake(
+  input: Parameters<typeof model.keepRecordedTake>[0],
+): void {
   model.keepRecordedTake(input);
 }
 

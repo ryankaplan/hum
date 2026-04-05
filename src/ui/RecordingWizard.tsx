@@ -4,7 +4,6 @@ import {
   Flex,
   Grid,
   Heading,
-  NativeSelect,
   Stack,
   Text,
 } from "@chakra-ui/react";
@@ -262,6 +261,7 @@ export function RecordingWizard() {
   const voicing = useObservable(model.harmonyVoicing);
   const tempo = useObservable(model.tempoInput);
   const meter = useObservable(model.meterInput);
+  const latencyCorrectionSec = useObservable(model.latencyCorrectionSec);
 
   const [phase, setPhase] = useState<RecordPhase>("pre-roll");
   const [activeChordIndex, setActiveChordIndex] = useState(0);
@@ -270,8 +270,6 @@ export function RecordingWizard() {
   const [reviewUrl, setReviewUrl] = useState<string | null>(null);
   const [guideToneEnabled, setGuideToneEnabled] = useState(true);
   const [mutedParts, setMutedParts] = useState<boolean[]>([]);
-  const [micDevices, setMicDevices] = useState<MediaDeviceInfo[]>([]);
-  const [selectedMicId, setSelectedMicId] = useState("");
 
   const reviewVideoRef = useRef<HTMLVideoElement>(null);
   const monitorPlayerRef = useRef<MonitorPlayer | null>(null);
@@ -384,34 +382,6 @@ export function RecordingWizard() {
     }
   }, [phase, reviewUrl]);
 
-  // Enumerate audio input devices; re-enumerate when devices change (e.g.
-  // headphones plugged in). Labels are only populated after permissions are
-  // granted, which has already happened by the time we reach this screen.
-  useEffect(() => {
-    function enumerate() {
-      navigator.mediaDevices
-        .enumerateDevices()
-        .then((devices) => {
-          setMicDevices(devices.filter((d) => d.kind === "audioinput"));
-        })
-        .catch(() => {});
-    }
-    enumerate();
-    navigator.mediaDevices.addEventListener("devicechange", enumerate);
-    return () => {
-      navigator.mediaDevices.removeEventListener("devicechange", enumerate);
-    };
-  }, []);
-
-  // Keep selectedMicId in sync with the active stream's audio track
-  useEffect(() => {
-    if (stream == null) return;
-    const track = stream.getAudioTracks()[0];
-    if (track != null) {
-      setSelectedMicId(track.getSettings().deviceId ?? "");
-    }
-  }, [stream]);
-
   // Reset local phase state when partIndex changes (e.g. after keep)
   useEffect(() => {
     stopAllPlayback();
@@ -518,6 +488,7 @@ export function RecordingWizard() {
         harmonyLine: guideToneEnabled ? harmonyLine : null,
         beatsPerBar,
         tempo,
+        latencyCorrectionSec,
         monitorPlayer: monitorPlayerRef.current,
         callbacks: {
           onCountInBeat: (beat) => setCountInBeat(beat + 1),
@@ -583,29 +554,7 @@ export function RecordingWizard() {
     if (partIndex > 0) {
       model.currentPartIndex.set(partIndex - 1);
     } else {
-      model.appScreen.set("setup");
-    }
-  }
-
-  async function handleMicChange(deviceId: string) {
-    if (stream == null || deviceId === selectedMicId) return;
-    try {
-      const newAudioStream = await navigator.mediaDevices.getUserMedia({
-        audio: { deviceId: { exact: deviceId } },
-      });
-      const newAudioTrack = newAudioStream.getAudioTracks()[0];
-      if (newAudioTrack == null) return;
-      for (const track of stream.getAudioTracks()) {
-        track.stop();
-      }
-      const newStream = new MediaStream([
-        ...stream.getVideoTracks(),
-        newAudioTrack,
-      ]);
-      model.mediaStream.set(newStream);
-      setSelectedMicId(deviceId);
-    } catch (err) {
-      console.error("Failed to switch microphone", err);
+      model.appScreen.set("calibration");
     }
   }
 
@@ -614,6 +563,7 @@ export function RecordingWizard() {
   const partLabel = getPartLabel(partIndex, totalParts);
   const busy = phase === "counting-in" || phase === "recording";
   const isListening = phase === "listening";
+  const activeMicLabel = stream.getAudioTracks()[0]?.label ?? "Selected microphone";
 
   return (
     <Flex
@@ -756,32 +706,10 @@ export function RecordingWizard() {
                   </Button>
                 )}
               </Flex>
+              <Text color="gray.600" fontSize="xs" textAlign="center">
+                Mic locked from calibration: {activeMicLabel}
+              </Text>
 
-              {/* Microphone selector */}
-              {micDevices.length > 0 && (
-                <Flex align="center" gap={2}>
-                  <Text color="gray.500" fontSize="xs" flexShrink={0}>
-                    Mic
-                  </Text>
-                  <NativeSelect.Root size="xs" flex={1} minW={0}>
-                    <NativeSelect.Field
-                      value={selectedMicId}
-                      onChange={(e) => handleMicChange(e.target.value)}
-                      bg="gray.800"
-                      border="1px solid"
-                      borderColor="gray.700"
-                      color="gray.300"
-                      fontSize="xs"
-                    >
-                      {micDevices.map((d, i) => (
-                        <option key={d.deviceId} value={d.deviceId}>
-                          {d.label || `Microphone ${i + 1}`}
-                        </option>
-                      ))}
-                    </NativeSelect.Field>
-                  </NativeSelect.Root>
-                </Flex>
-              )}
             </Stack>
           )}
 

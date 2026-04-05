@@ -1,7 +1,7 @@
 import { model } from "../state/model";
 
 // Called when the user clicks "Start Recording" on the setup screen.
-// Acquires camera + mic, sets up AudioContext, then transitions to recording.
+// Acquires camera + mic, sets up AudioContext, then transitions to calibration.
 export async function acquirePermissionsAndStart(): Promise<void> {
   model.permissionError.set(null);
 
@@ -47,7 +47,7 @@ export async function acquirePermissionsAndStart(): Promise<void> {
   model.audioContext.set(ctx);
 
   model.resetSession();
-  model.appScreen.set("recording");
+  model.appScreen.set("calibration");
 }
 
 function formatPermissionError(err: DOMException): string {

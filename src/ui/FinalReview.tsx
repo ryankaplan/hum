@@ -54,7 +54,7 @@ type PlaybackClock = {
 };
 
 export function FinalReview() {
-  const tracksState = useObservable(model.tracks.tracks);
+  const tracksState = useObservable(model.tracksModel.tracks);
   const chords = useObservable(model.parsedChords);
   const tempo = useObservable(model.tempoInput);
   const ctx = useObservable(model.audioContext);
@@ -210,7 +210,7 @@ export function FinalReview() {
       );
 
       if (!preservePlayhead) {
-        model.tracks.setPlayhead(0);
+        model.tracksModel.setPlayhead(0);
         syncVideosToTimeline(0, false);
       }
     },
@@ -225,14 +225,14 @@ export function FinalReview() {
     const timelineNow = clock.startTimelineSec + elapsed;
     const clampedNow = Math.min(timelineNow, clock.endTimelineSec);
 
-    model.tracks.setPlayhead(clampedNow);
+    model.tracksModel.setPlayhead(clampedNow);
     syncVideosToTimeline(clampedNow, true);
 
     if (timelineNow >= clock.endTimelineSec - 0.001) {
       stopAudio();
       stopClock();
       setIsPlaying(false);
-      model.tracks.setPlayhead(clock.endTimelineSec);
+      model.tracksModel.setPlayhead(clock.endTimelineSec);
       syncVideosToTimeline(clock.endTimelineSec, false);
       return;
     }
@@ -248,7 +248,7 @@ export function FinalReview() {
     const timelineNow = clock.startTimelineSec + elapsed;
     const clampedNow = Math.min(timelineNow, clock.endTimelineSec);
 
-    model.tracks.setPlayhead(clampedNow);
+    model.tracksModel.setPlayhead(clampedNow);
     syncVideosToTimeline(clampedNow, true);
 
     if (timelineNow >= clock.endTimelineSec - 0.001) {
@@ -355,8 +355,8 @@ export function FinalReview() {
     const activeLaneTakeIds = tracksState.laneTakeIds;
 
     model.clearRuntimeTakeMedia();
-    model.tracks.setPlayhead(0);
-    model.tracks.setSelection({ laneIndex: null, segmentId: null });
+    model.tracksModel.setPlayhead(0);
+    model.tracksModel.setSelection({ laneIndex: null, segmentId: null });
     setWaveformVersion((v) => v + 1);
 
     for (let i = 0; i < trackCount; i++) {
@@ -476,13 +476,13 @@ export function FinalReview() {
         if (selection.laneIndex === lane && selection.segmentId === first.id) {
           return;
         }
-        model.tracks.setSelection({ laneIndex: lane, segmentId: first.id });
+        model.tracksModel.setSelection({ laneIndex: lane, segmentId: first.id });
         return;
       }
     }
 
     if (selection.laneIndex != null || selection.segmentId != null) {
-      model.tracks.setSelection({ laneIndex: null, segmentId: null });
+      model.tracksModel.setSelection({ laneIndex: null, segmentId: null });
     }
   }, [selection, timelines, trackCount]);
 
@@ -517,7 +517,7 @@ export function FinalReview() {
     const startTimelineSec = playheadSec >= timelineEndSec ? 0 : playheadSec;
     const startCtxTime = ctx.currentTime + PLAYBACK_SCHEDULE_LEAD_SEC;
 
-    model.tracks.setPlayhead(startTimelineSec);
+    model.tracksModel.setPlayhead(startTimelineSec);
     startAudioFromTimeline(startCtxTime, startTimelineSec, timelineEndSec);
     startPlaybackClock(
       "preview",
@@ -536,7 +536,7 @@ export function FinalReview() {
       stopPlaybackEngine(true);
     }
 
-    model.tracks.splitSelectedClipAtPlayhead();
+    model.tracksModel.splitSelectedClipAtPlayhead();
   }
 
   function handleDeleteSelectedSegment() {
@@ -547,7 +547,7 @@ export function FinalReview() {
       stopPlaybackEngine(true);
     }
 
-    model.tracks.deleteSelectedClip();
+    model.tracksModel.deleteSelectedClip();
   }
 
   function handleLaneClick(
@@ -565,8 +565,8 @@ export function FinalReview() {
     const unclampedTime = contentX / TIMELINE_PX_PER_SEC;
     const nextPlayhead = Math.max(0, Math.min(unclampedTime, timelineEndSec));
 
-    model.tracks.setSelection({ laneIndex, segmentId: selection.segmentId });
-    model.tracks.setPlayhead(nextPlayhead);
+    model.tracksModel.setSelection({ laneIndex, segmentId: selection.segmentId });
+    model.tracksModel.setPlayhead(nextPlayhead);
   }
 
   function handleSegmentPointerDown(
@@ -577,7 +577,7 @@ export function FinalReview() {
     e.stopPropagation();
     if (exporting || isPlaying) return;
 
-    model.tracks.setSelection({ laneIndex, segmentId: segment.id });
+    model.tracksModel.setSelection({ laneIndex, segmentId: segment.id });
 
     const startClientX = e.clientX;
     const originStartSec = segment.timelineStartSec;
@@ -591,7 +591,7 @@ export function FinalReview() {
         desiredStartSec = snapTimeSec(desiredStartSec, beatSec);
       }
 
-      model.tracks.moveClip(laneIndex, segment.id, desiredStartSec);
+      model.tracksModel.moveClip(laneIndex, segment.id, desiredStartSec);
     };
 
     const onUp = () => {
@@ -606,20 +606,20 @@ export function FinalReview() {
   function handleSeek(valueSec: number) {
     if (isPlaying || exporting) return;
     const next = Math.max(0, Math.min(valueSec, timelineEndSec));
-    model.tracks.setPlayhead(next);
+    model.tracksModel.setPlayhead(next);
   }
 
   function handleVolumeChange(index: number, value: number) {
-    model.tracks.setTrackVolume(index, value);
+    model.tracksModel.setTrackVolume(index, value);
   }
 
   function handleMuteToggle(index: number) {
     const nextMuted = !(muted[index] ?? false);
-    model.tracks.setTrackMuted(index, nextMuted);
+    model.tracksModel.setTrackMuted(index, nextMuted);
   }
 
   function handleReverbChange(wet: number) {
-    model.tracks.setReverbWet(wet);
+    model.tracksModel.setReverbWet(wet);
   }
 
   function handleRedoPart(index: number) {
@@ -633,7 +633,7 @@ export function FinalReview() {
     if (timelineEndSec <= 0) return;
 
     stopPlaybackEngine(false);
-    model.tracks.beginExport();
+    model.tracksModel.beginExport();
 
     const startCtxTime = ctx.currentTime + PLAYBACK_SCHEDULE_LEAD_SEC;
     startAudioFromTimeline(startCtxTime, 0, timelineEndSec);
@@ -645,14 +645,14 @@ export function FinalReview() {
         audioContext: ctx,
         mixer,
         durationMs: timelineEndSec * 1000,
-        onProgress: (progress) => model.tracks.updateExportProgress(progress),
+        onProgress: (progress) => model.tracksModel.updateExportProgress(progress),
       });
 
       const nextUrl = URL.createObjectURL(blob);
-      model.tracks.completeExport(nextUrl);
+      model.tracksModel.completeExport(nextUrl);
     } catch (err) {
       console.error("Export failed", err);
-      model.tracks.failOrResetExport();
+      model.tracksModel.failOrResetExport();
     } finally {
       stopPlaybackEngine(false);
     }
@@ -817,7 +817,7 @@ export function FinalReview() {
                       borderColor="whiteAlpha.200"
                       fontSize="xs"
                       fontWeight="normal"
-                      onClick={() => model.tracks.setSnapToBeat(!snapToBeat)}
+                      onClick={() => model.tracksModel.setSnapToBeat(!snapToBeat)}
                       disabled={exporting || isPlaying}
                     >
                       Snap {snapToBeat ? "on" : "off"}
@@ -1119,7 +1119,7 @@ export function FinalReview() {
                 variant="ghost"
                 color="gray.500"
                 onClick={() => {
-                  model.tracks.clearExportedUrl();
+                  model.tracksModel.clearExportedUrl();
                 }}
               >
                 Export Again

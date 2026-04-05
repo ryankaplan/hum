@@ -308,7 +308,7 @@ export function SetupScreen() {
             disabled={!isValid}
             w="100%"
           >
-            Start Recording
+            Start Calibration
           </Button>
 
           {!isValid && parsed.length === 0 && (

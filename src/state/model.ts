@@ -4,6 +4,10 @@ import { parseChordProgression } from "../music/parse";
 import { progressionDurationSec } from "../music/playback";
 import { noteNameToMidi } from "../music/types";
 import type { Chord, HarmonyVoicing, Meter, PartIndex } from "../music/types";
+import type {
+  ClapCalibrationConfidence,
+  ClapCalibrationResult,
+} from "../recording/clapCalibration";
 import type { Mixer } from "../audio/mixer";
 import type { CompositorHandle } from "../video/compositor";
 import { buildWaveformPeaks } from "../ui/timeline";
@@ -20,7 +24,12 @@ export type {
   TakeRecord,
 } from "./tracksModel";
 
-export type AppScreen = "setup" | "recording" | "review";
+export type {
+  ClapCalibrationConfidence,
+  ClapCalibrationResult,
+} from "../recording/clapCalibration";
+
+export type AppScreen = "setup" | "calibration" | "recording" | "review";
 
 export type PartState =
   | { status: "idle" }
@@ -124,6 +133,13 @@ class AppModel {
   readonly audioContext = new Observable<AudioContext | null>(null);
   readonly currentPartIndex = new Observable<PartIndex>(0);
   readonly permissionError = new Observable<string | null>(null);
+  readonly clapCalibrationResult = new Observable<ClapCalibrationResult | null>(
+    null,
+  );
+  readonly latencyCorrectionSec = new Observable<number>(0);
+  readonly calibrationConfidence =
+    new Observable<ClapCalibrationConfidence | null>(null);
+  readonly isCalibrated = new Observable<boolean>(false);
 
   readonly partStates = new Observable<PartState[]>(
     createIdlePartStates(this.totalPartsInput.get()),
@@ -137,7 +153,7 @@ class AppModel {
   mixer: Mixer | null = null;
   compositor: CompositorHandle | null = null;
 
-  readonly tracks = new TracksModel({
+  readonly tracksModel = new TracksModel({
     totalParts: this.totalPartsInput.get(),
     getMixer: () => this.mixer,
   });
@@ -222,7 +238,7 @@ class AppModel {
       trimOffsetSec,
     };
 
-    const replacedTake = this.tracks.stageKeptTake({
+    const replacedTake = this.tracksModel.stageKeptTake({
       laneIndex,
       take,
       sourceStartSec: Math.max(0, trimOffsetSec),
@@ -254,7 +270,7 @@ class AppModel {
     const raw = await blob.arrayBuffer();
     const decoded = await ctx.decodeAudioData(raw);
 
-    const current = this.tracks.tracks.get();
+    const current = this.tracksModel.tracks.get();
     if (current.laneTakeIds[laneIndex] !== takeId) {
       return false;
     }
@@ -279,7 +295,7 @@ class AppModel {
       buildWaveformPeaks(decoded, sourceStartSec, durationSec, waveformBuckets),
     );
 
-    this.tracks.initializeTrackFromTake(
+    this.tracksModel.initializeTrackFromTake(
       laneIndex,
       takeId,
       sourceStartSec,
@@ -305,7 +321,7 @@ class AppModel {
   }
 
   getLaneRuntimeWaveform(laneIndex: number): LaneRuntimeWaveform {
-    const takeId = this.tracks.tracks.get().laneTakeIds[laneIndex];
+    const takeId = this.tracksModel.tracks.get().laneTakeIds[laneIndex];
     if (takeId == null) return null;
 
     const peaks = this.getTakeWaveform(takeId);
@@ -338,7 +354,7 @@ class AppModel {
     this.currentPartIndex.set(index);
     this.appScreen.set("recording");
 
-    const removedTake = this.tracks.clearLane(index);
+    const removedTake = this.tracksModel.clearLane(index);
     if (removedTake != null) {
       URL.revokeObjectURL(removedTake.url);
       this.removeTakeRuntimeMedia(removedTake.id);
@@ -351,12 +367,27 @@ class AppModel {
       .map((state) => (state.status === "kept" ? state.blob : null));
   }
 
+  setClapCalibrationResult(result: ClapCalibrationResult): void {
+    this.clapCalibrationResult.set(result);
+    this.latencyCorrectionSec.set(result.correctionSec);
+    this.calibrationConfidence.set(result.confidence);
+    this.isCalibrated.set(true);
+  }
+
+  clearClapCalibration(): void {
+    this.clapCalibrationResult.set(null);
+    this.latencyCorrectionSec.set(0);
+    this.calibrationConfidence.set(null);
+    this.isCalibrated.set(false);
+  }
+
   resetSession(): void {
     this.currentPartIndex.set(0);
     this.partStates.set(createIdlePartStates(this.totalPartsInput.get()));
     this.permissionError.set(null);
+    this.clearClapCalibration();
 
-    const removedTakes = this.tracks.reset(this.totalPartsInput.get());
+    const removedTakes = this.tracksModel.reset(this.totalPartsInput.get());
     for (const take of removedTakes) {
       URL.revokeObjectURL(take.url);
     }
@@ -420,7 +451,7 @@ class AppModel {
     );
     this.currentPartIndex.set(clampedPartIndex);
 
-    const removedTakes = this.tracks.resizeForPartCount(totalParts);
+    const removedTakes = this.tracksModel.resizeForPartCount(totalParts);
     for (const take of removedTakes) {
       URL.revokeObjectURL(take.url);
       this.removeTakeRuntimeMedia(take.id);

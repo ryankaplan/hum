@@ -5,6 +5,8 @@ export type {
   ArrangementInfo,
   LaneRuntimeWaveform,
   KeepTakeInput,
+  ClapCalibrationConfidence,
+  ClapCalibrationResult,
   PartState,
   RuntimeTakeMediaIngestInput,
   TakeSourceWindow,
@@ -21,6 +23,10 @@ export const mediaStream = model.mediaStream;
 export const audioContext = model.audioContext;
 export const currentPartIndex = model.currentPartIndex;
 export const permissionError = model.permissionError;
+export const clapCalibrationResult = model.clapCalibrationResult;
+export const latencyCorrectionSec = model.latencyCorrectionSec;
+export const calibrationConfidence = model.calibrationConfidence;
+export const isCalibrated = model.isCalibrated;
 
 export const chordsInput = model.chordsInput;
 export const tempoInput = model.tempoInput;
@@ -34,7 +40,7 @@ export const parsedChords = model.parsedChords;
 export const harmonyVoicing = model.harmonyVoicing;
 
 export const partStates = model.partStates;
-export const tracks = model.tracks.tracks;
+export const tracks = model.tracksModel.tracks;
 
 export function updatePartState(
   index: number,

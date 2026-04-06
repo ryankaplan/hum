@@ -1,4 +1,5 @@
 import type { Chord, NoteName, TriadQuality } from "./types";
+import { NOTE_NAMES } from "./types";
 
 // Parses a chord progression string like "A A F#m F#m D D E E"
 // Each token is one bar (beatsPerBar beats). Separate by spaces and/or commas.
@@ -163,6 +164,15 @@ export function triadSemitones(
   const third = quality === "major" ? r + 4 : r + 3;
   const fifth = r + 7;
   return [r, third, fifth];
+}
+
+/** Root-position triad spellings as pitch-class note names, e.g. `"C E G"`. */
+export function triadPitchClassNames(chord: Chord): string {
+  const [r, t, f] = triadSemitones(chord.root, chord.quality);
+  const a = NOTE_NAMES[((r % 12) + 12) % 12]!;
+  const b = NOTE_NAMES[((t % 12) + 12) % 12]!;
+  const c = NOTE_NAMES[((f % 12) + 12) % 12]!;
+  return `${a} ${b} ${c}`;
 }
 
 export function totalBeats(chords: Chord[]): number {

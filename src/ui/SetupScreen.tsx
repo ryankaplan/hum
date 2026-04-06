@@ -9,10 +9,12 @@ import {
   NativeSelect,
   Stack,
   Text,
+  Tooltip,
 } from "@chakra-ui/react";
 import { useEffect, useRef, useState } from "react";
 import { useObservable } from "../observable";
 import { acquirePermissionsAndStart } from "../recording/permissions";
+import { triadPitchClassNames } from "../music/parse";
 import type { Meter } from "../music/types";
 import {
   playHarmonyPreview,
@@ -274,56 +276,74 @@ function SetupCard({
               </Button>
             </Flex>
             <Flex gap={2} flexWrap="wrap">
-              {parsed.map((c, i) => (
-                <Box
-                  key={i}
-                  bg={dsColors.surfaceSubtle}
-                  borderRadius="full"
-                  px={3}
-                  py={1}
-                  fontSize="sm"
-                  color={dsColors.text}
-                  display="inline-flex"
-                  alignItems="center"
-                >
-                  {c.root}
-                  {c.quality === "minor" ? "m" : ""}
-                  {(() => {
-                    const annotation = voicing.annotations[i];
-                    const strategyLabel =
-                      annotation?.strategy === "closed"
-                        ? "Closed fallback"
-                        : "Drop-2";
-                    const badgeLabel =
-                      annotation?.strategy === "closed" ? "C" : "2";
-                    const tones =
-                      annotation?.chordTones ??
-                      (c.quality === "minor" ? "R b3 5" : "R 3 5");
-                    const hoverText = `${strategyLabel} - tones: ${tones}`;
-                    return (
+              {parsed.map((c, i) => {
+                const annotation = voicing.annotations[i];
+                const voicingKind = annotation?.strategy ?? "closed";
+                const voicingLabel =
+                  voicingKind === "closed" ? "Closed" : "Drop 2";
+                const degrees =
+                  annotation?.chordTones ??
+                  (c.quality === "minor" ? "R b3 5" : "R 3 5");
+                const notes = triadPitchClassNames(c);
+                const tooltipText = `${degrees} - ${notes}`;
+                return (
+                  <Tooltip.Root key={i} openDelay={250}>
+                    <Tooltip.Trigger asChild>
                       <Box
                         as="span"
-                        title={hoverText}
-                        aria-label={hoverText}
-                        ml={2}
-                        w="20px"
-                        h="20px"
+                        bg={dsColors.surfaceSubtle}
                         borderRadius="full"
-                        bg={dsColors.border}
-                        color={dsColors.textMuted}
-                        fontSize="xs"
-                        fontWeight="bold"
-                        lineHeight="20px"
-                        textAlign="center"
+                        px={3}
+                        py={1}
+                        fontSize="sm"
+                        color={dsColors.text}
+                        display="inline-flex"
+                        alignItems="baseline"
+                        gap={2}
                         cursor="help"
                         userSelect="none"
+                        border="1px solid"
+                        borderColor="transparent"
+                        _hover={{
+                          borderColor: dsColors.borderMuted,
+                          bg: dsColors.surfaceRaised,
+                        }}
+                        aria-label={tooltipText}
                       >
-                        {badgeLabel}
+                        <Text as="span" fontWeight="semibold">
+                          {c.root}
+                          {c.quality === "minor" ? "m" : ""}
+                        </Text>
+                        <Text
+                          as="span"
+                          fontSize="xs"
+                          color={dsColors.textMuted}
+                          fontWeight="medium"
+                          whiteSpace="nowrap"
+                        >
+                          {voicingLabel}
+                        </Text>
                       </Box>
-                    );
-                  })()}
-                </Box>
-              ))}
+                    </Tooltip.Trigger>
+                    <Tooltip.Positioner>
+                      <Tooltip.Content
+                        px={3}
+                        py={2}
+                        borderRadius="md"
+                        maxW="sm"
+                        bg={dsColors.surfaceRaised}
+                        color={dsColors.text}
+                        borderWidth="1px"
+                        borderColor={dsColors.border}
+                        boxShadow="md"
+                        fontSize="xs"
+                      >
+                        {tooltipText}
+                      </Tooltip.Content>
+                    </Tooltip.Positioner>
+                  </Tooltip.Root>
+                );
+              })}
             </Flex>
           </Box>
         )}

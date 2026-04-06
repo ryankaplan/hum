@@ -40,24 +40,33 @@ function CaptureBeatStrip({ activeBeat }: { activeBeat: number }) {
       {Array.from({ length: 8 }).map((_, i) => {
         const isTarget = i >= 4;
         const isActive = i === activeBeat;
+        const dotColor = isActive
+          ? isTarget
+            ? dsColors.accent
+            : dsColors.accentForeground
+          : isTarget
+            ? dsColors.accentHover
+            : dsColors.borderMuted;
         return (
           <Box
             key={i}
-            w={isActive ? 4 : 3}
-            h={isActive ? 4 : 3}
-            borderRadius="full"
-            bg={
-              isActive
-                ? isTarget
-                  ? dsColors.accent
-                  : dsColors.accentForeground
-                : isTarget
-                  ? dsColors.accentHover
-                  : dsColors.borderMuted
-            }
-            opacity={isActive ? 1 : 0.9}
-            transition="all 0.06s linear"
-          />
+            w={4}
+            h={4}
+            display="flex"
+            alignItems="center"
+            justifyContent="center"
+            flexShrink={0}
+          >
+            <Box
+              w={3}
+              h={3}
+              borderRadius="full"
+              bg={dotColor}
+              opacity={isActive ? 1 : 0.9}
+              transform={isActive ? "scale(1.33)" : "scale(1)"}
+              transition="transform 0.06s linear, background-color 0.06s linear, opacity 0.06s linear"
+            />
+          </Box>
         );
       })}
     </Flex>
@@ -190,9 +199,7 @@ function CalibrationTimeline({
             Math.min(100, (sec / visibleDurationSec) * 100),
           );
           const target = targetBeats.has(i);
-          const brightColor = ["#ff4d8d", "#00d8ff", "#6bff7d", "#ffd84d"][
-            i % 4
-          ];
+          const targetColor = "#00d8ff";
           return (
             <Box
               key={`beat-${i}`}
@@ -201,11 +208,11 @@ function CalibrationTimeline({
               bottom={0}
               left={`${leftPct}%`}
               w={target ? "3px" : "2px"}
-              bg={target ? brightColor : dsColors.borderMuted}
+              bg={target ? targetColor : dsColors.borderMuted}
               opacity={target ? 1 : 0.75}
               boxShadow={
                 target
-                  ? `0 0 0 1px rgba(255,255,255,0.2), 0 0 14px ${brightColor}`
+                  ? `0 0 0 1px rgba(255,255,255,0.2), 0 0 14px ${targetColor}`
                   : undefined
               }
               zIndex={3}
@@ -225,20 +232,10 @@ function CalibrationTimeline({
         </Box>
       </Box>
 
-      <Flex
-        mt={2}
-        justify="space-between"
-        color={dsColors.textMuted}
-        fontSize="xs"
-      >
-        <Text>0s</Text>
-        <Text>{visibleDurationSec.toFixed(2)}s</Text>
-      </Flex>
-
       <Flex mt={2} gap={4} color={dsColors.textMuted} fontSize="xs" wrap="wrap">
         <Flex align="center" gap={1.5}>
           <Box w={2} h={2} bg={dsColors.accent} borderRadius="sm" />
-          <Text>Target beats (bar 2)</Text>
+          <Text>Target beats</Text>
         </Flex>
         <Flex align="center" gap={1.5}>
           <Box w={2} h={2} bg={dsColors.textSubtle} borderRadius="sm" />
@@ -552,10 +549,6 @@ export function LatencyCalibrationScreen() {
               <Flex justify="space-between" align="center" wrap="wrap" gap={2}>
                 <Text color={dsColors.text} fontSize="sm" fontWeight="semibold">
                   Align Your Speech
-                </Text>
-                <Text color={dsColors.textMuted} fontSize="xs">
-                  Drag waveform left/right to line up spoken counts with bar-2
-                  beats.
                 </Text>
               </Flex>
 

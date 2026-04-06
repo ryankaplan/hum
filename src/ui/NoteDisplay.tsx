@@ -100,7 +100,10 @@ export function NoteDisplay({
     pitchRows * NOTE_ROW_HEIGHT_PX;
   const trackWidthPx = Math.max(
     280,
-    Math.ceil(totalBeats * (MEASURE_WIDTH_PX / Math.max(1, beatsPerBar)) + NOTE_TRACK_PAD_X_PX * 2),
+    Math.ceil(
+      totalBeats * (MEASURE_WIDTH_PX / Math.max(1, beatsPerBar)) +
+        NOTE_TRACK_PAD_X_PX * 2,
+    ),
   );
 
   const safeBeatsPerBar = Math.max(1, beatsPerBar);
@@ -142,7 +145,12 @@ export function NoteDisplay({
   }, [currentAbsoluteBeat, hasActiveBeat, tempo]);
 
   useEffect(() => {
-    if (!transportActive || !hasActiveBeat || !Number.isFinite(tempo) || tempo <= 0) {
+    if (
+      !transportActive ||
+      !hasActiveBeat ||
+      !Number.isFinite(tempo) ||
+      tempo <= 0
+    ) {
       return;
     }
     let rafId = 0;
@@ -161,7 +169,8 @@ export function NoteDisplay({
     return () => window.cancelAnimationFrame(rafId);
   }, [transportActive, hasActiveBeat, tempo]);
 
-  const displayBeat = transportActive && hasActiveBeat ? smoothBeat : currentAbsoluteBeat;
+  const displayBeat =
+    transportActive && hasActiveBeat ? smoothBeat : currentAbsoluteBeat;
   const playheadX = hasActiveBeat
     ? NOTE_TRACK_PAD_X_PX + Math.max(0, displayBeat) * notePxPerBeat
     : 0;
@@ -179,8 +188,13 @@ export function NoteDisplay({
   }, [playheadX, transportActive, hasActiveBeat, trackWidthPx]);
 
   return (
-    <Box w="100%" p={4} {...dsPanel}>
-      <Text color={dsColors.textMuted} fontSize="xs" mb={3} fontWeight="semibold">
+    <Box w="100%" {...dsPanel}>
+      <Text
+        color={dsColors.textMuted}
+        fontSize="xs"
+        mb={3}
+        fontWeight="semibold"
+      >
         YOUR NOTES
       </Text>
       <Box
@@ -194,7 +208,11 @@ export function NoteDisplay({
         overflowX="auto"
         overflowY="hidden"
       >
-        <Box position="relative" w={`${trackWidthPx}px`} h={`${trackHeightPx}px`}>
+        <Box
+          position="relative"
+          w={`${trackWidthPx}px`}
+          h={`${trackHeightPx}px`}
+        >
           {Array.from({ length: pitchRows }).map((_, row) => {
             const y = NOTE_TRACK_PAD_TOP_PX + row * NOTE_ROW_HEIGHT_PX;
             return (
@@ -235,8 +253,10 @@ export function NoteDisplay({
 
           {segments.map((segment) => {
             const rowFromTop = highMidi - segment.midi;
-            const y = NOTE_TRACK_PAD_TOP_PX + rowFromTop * NOTE_ROW_HEIGHT_PX + 2;
-            const x = NOTE_TRACK_PAD_X_PX + segment.startBeat * notePxPerBeat + 2;
+            const y =
+              NOTE_TRACK_PAD_TOP_PX + rowFromTop * NOTE_ROW_HEIGHT_PX + 2;
+            const x =
+              NOTE_TRACK_PAD_X_PX + segment.startBeat * notePxPerBeat + 2;
             const w = Math.max(26, segment.beats * notePxPerBeat - 4);
             const h = Math.max(16, NOTE_ROW_HEIGHT_PX - 4);
             const isActive = segment.chordIndex === activeChordIndex;

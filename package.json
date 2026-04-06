@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "build": "node build.mjs",
+    "check": "tsc --noEmit",
     "dev": "node build.mjs --watch"
   },
   "devDependencies": {

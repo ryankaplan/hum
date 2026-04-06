@@ -1,125 +1,209 @@
-import { playClick } from "../audio/synths";
+export const CALIBRATION_TOTAL_BEATS = 8;
+export const CALIBRATION_TARGET_BEAT_INDICES = [4, 5, 6, 7] as const;
+export const CORRECTION_MIN_SEC = -0.4;
+export const CORRECTION_MAX_SEC = 0.4;
 
-const CALIBRATION_TOTAL_BEATS = 8;
-const CLAP_TARGET_BEAT_INDICES = [4, 5, 6, 7] as const;
-const CLAP_MATCH_WINDOW_EARLY_SEC = 0.2;
-const CLAP_MATCH_WINDOW_LATE_SEC = 0.7;
-const CORRECTION_MIN_SEC = -0.12;
-const CORRECTION_MAX_SEC = 0.6;
-
-export type ClapCalibrationConfidence = "high" | "low";
-
-export type ClapCalibrationResult = {
-  correctionSec: number;
-  confidence: ClapCalibrationConfidence;
-  matchedCount: number;
-  expectedTimesSec: number[];
-  detectedTimesSec: number[];
-  residualsSec: number[];
-  timingScore: number;
+export type SpeechCalibrationCapture = {
+  audioBuffer: AudioBuffer;
   waveformPeaks: number[];
   durationSec: number;
+  secPerBeat: number;
+  beatTimesSec: number[];
+  targetBeatIndices: number[];
 };
 
-export type RunClapCalibrationOpts = {
+export type CaptureSpeechCalibrationOpts = {
   ctx: AudioContext;
   stream: MediaStream;
   tempo: number;
+  onBeat?: (beatIndex: number, totalBeats: number) => void;
 };
 
-type PeakCandidate = {
-  timeSec: number;
-  value: number;
+export type CalibrationPreviewSession = {
+  stop: () => void;
 };
 
-export async function runClapCalibration(
-  opts: RunClapCalibrationOpts,
-): Promise<ClapCalibrationResult> {
-  const { ctx, stream } = opts;
+export type StartCalibrationPreviewOpts = {
+  ctx: AudioContext;
+  audioBuffer: AudioBuffer;
+  tempo: number;
+  manualShiftSec: number;
+};
+
+export async function captureSpeechCalibration(
+  opts: CaptureSpeechCalibrationOpts,
+): Promise<SpeechCalibrationCapture> {
+  const { ctx, stream, onBeat } = opts;
   const tempo = Math.max(1, opts.tempo);
   const secPerBeat = 60 / tempo;
 
   const startTime = ctx.currentTime + 0.08;
   const stopTime = startTime + CALIBRATION_TOTAL_BEATS * secPerBeat + 0.7;
+  const beatTimesCtx = Array.from(
+    { length: CALIBRATION_TOTAL_BEATS },
+    (_, i) => startTime + i * secPerBeat,
+  );
 
   for (let beat = 0; beat < CALIBRATION_TOTAL_BEATS; beat++) {
     const beatTime = startTime + beat * secPerBeat;
-    playClick(ctx, beatTime, beat % 4 === 0);
+    playCalibrationClick(ctx, beatTime, beat % 4 === 0);
   }
 
+  const beatTracker =
+    onBeat != null
+      ? createBeatTracker(ctx, beatTimesCtx, (i) => onBeat(i, CALIBRATION_TOTAL_BEATS))
+      : null;
+
   const mimeType = getSupportedCalibrationMimeType();
-  const mediaRecorder = new MediaRecorder(stream, {
+  const recorder = new MediaRecorder(stream, {
     mimeType,
     videoBitsPerSecond: 1_500_000,
   });
 
   const chunks: Blob[] = [];
-  mediaRecorder.ondataavailable = (e) => {
+  recorder.ondataavailable = (e) => {
     if (e.data.size > 0) {
       chunks.push(e.data);
     }
   };
 
-  const recordingDone = new Promise<Blob>((resolve) => {
-    mediaRecorder.onstop = () => {
+  const done = new Promise<Blob>((resolve) => {
+    recorder.onstop = () => {
       resolve(new Blob(chunks, { type: mimeType }));
     };
   });
 
-  mediaRecorder.start(100);
+  recorder.start(100);
   const recorderStartCtxTime = ctx.currentTime;
 
-  await waitMs(Math.max(0, (stopTime - ctx.currentTime) * 1000));
-  mediaRecorder.stop();
+  try {
+    await waitMs(Math.max(0, (stopTime - ctx.currentTime) * 1000));
+    recorder.stop();
+  } finally {
+    beatTracker?.stop();
+  }
 
-  const blob = await recordingDone;
+  const blob = await done;
   const raw = await blob.arrayBuffer();
   const decoded = await ctx.decodeAudioData(raw);
   const mono = downmixToMono(decoded);
 
-  const peakCandidates = detectClapPeaks(mono, decoded.sampleRate);
-  const expectedTimesSec = CLAP_TARGET_BEAT_INDICES.map((beatIndex) => {
-    return (
-      startTime +
-      beatIndex * secPerBeat +
-      ctx.outputLatency -
-      recorderStartCtxTime
-    );
+  const beatTimesSec = Array.from({ length: CALIBRATION_TOTAL_BEATS }, (_, i) => {
+    return startTime + i * secPerBeat + ctx.outputLatency - recorderStartCtxTime;
   });
 
-  const matched = matchPeaksToExpected(expectedTimesSec, peakCandidates);
-  const detectedTimesSec = matched.filter((v): v is number => v != null);
-  const residualsSec = matched
-    .map((detected, i) => {
-      if (detected == null) return null;
-      return detected - expectedTimesSec[i]!;
-    })
-    .filter((v): v is number => v != null);
-
-  const matchedCount = residualsSec.length;
-  const rawCorrectionSec = matchedCount > 0 ? median(residualsSec) : 0;
-  const correctionSec = clamp(rawCorrectionSec, CORRECTION_MIN_SEC, CORRECTION_MAX_SEC);
-  const spreadSec = medianAbsoluteDeviation(residualsSec);
-  const timingScore = computeTimingScore(
-    matched,
-    expectedTimesSec,
+  return {
+    audioBuffer: decoded,
+    waveformPeaks: buildWaveformPeaks(mono, 1400),
+    durationSec: decoded.duration,
     secPerBeat,
-    CLAP_TARGET_BEAT_INDICES.length,
-  );
-  const confidence: ClapCalibrationConfidence =
-    matchedCount >= 3 && spreadSec <= 0.05 && timingScore >= 55 ? "high" : "low";
+    beatTimesSec,
+    targetBeatIndices: [...CALIBRATION_TARGET_BEAT_INDICES],
+  };
+}
+
+export function startCalibrationPreview(
+  opts: StartCalibrationPreviewOpts,
+): CalibrationPreviewSession {
+  const { ctx, audioBuffer } = opts;
+  const tempo = Math.max(1, opts.tempo);
+  const secPerBeat = 60 / tempo;
+  const loopDurationSec = CALIBRATION_TOTAL_BEATS * secPerBeat;
+  // Allow enough lead time so small negative shifts can still be scheduled.
+  const startLeadSec = 0.9;
+  const scheduleHorizonSec = 0.5;
+
+  let nextLoopStart = ctx.currentTime + startLeadSec;
+  let stopped = false;
+  const activeSources = new Set<AudioBufferSourceNode>();
+  const activeGains = new Set<GainNode>();
+  const activeClickStops = new Set<() => void>();
+
+  function stopNodes() {
+    for (const stop of activeClickStops) {
+      stop();
+    }
+    activeClickStops.clear();
+    for (const source of activeSources) {
+      try {
+        source.stop();
+      } catch {
+        // already stopped
+      }
+      source.disconnect();
+    }
+    for (const gain of activeGains) {
+      gain.disconnect();
+    }
+    activeSources.clear();
+    activeGains.clear();
+  }
+
+  function scheduleLoop(loopStartSec: number) {
+    for (let beat = 0; beat < CALIBRATION_TOTAL_BEATS; beat++) {
+      const beatTime = loopStartSec + beat * secPerBeat;
+      const stopClick = playCalibrationClick(ctx, beatTime, beat % 4 === 0);
+      activeClickStops.add(stopClick);
+    }
+
+    const source = ctx.createBufferSource();
+    source.buffer = audioBuffer;
+    const gain = ctx.createGain();
+    gain.gain.value = 0.85;
+    source.connect(gain);
+    gain.connect(ctx.destination);
+
+    const desiredStartSec = loopStartSec + opts.manualShiftSec;
+    const earliestStartSec = ctx.currentTime + 0.01;
+    const safeStartSec = Math.max(desiredStartSec, earliestStartSec);
+    const sourceOffsetSec = Math.max(0, safeStartSec - desiredStartSec);
+
+    if (sourceOffsetSec < audioBuffer.duration - 0.01) {
+      const maxPlayableSec = Math.max(
+        0,
+        Math.min(loopDurationSec, audioBuffer.duration - sourceOffsetSec),
+      );
+      if (maxPlayableSec > 0) {
+        source.start(safeStartSec, sourceOffsetSec, maxPlayableSec);
+        source.stop(loopStartSec + loopDurationSec + 0.05);
+        activeSources.add(source);
+        activeGains.add(gain);
+        source.onended = () => {
+          source.disconnect();
+          gain.disconnect();
+          activeSources.delete(source);
+          activeGains.delete(gain);
+        };
+      } else {
+        source.disconnect();
+        gain.disconnect();
+      }
+    } else {
+      source.disconnect();
+      gain.disconnect();
+    }
+  }
+
+  const tickerId = window.setInterval(() => {
+    if (stopped) return;
+    while (nextLoopStart - ctx.currentTime < scheduleHorizonSec) {
+      scheduleLoop(nextLoopStart);
+      nextLoopStart += loopDurationSec;
+    }
+  }, 120);
 
   return {
-    correctionSec,
-    confidence,
-    matchedCount,
-    expectedTimesSec,
-    detectedTimesSec,
-    residualsSec,
-    timingScore,
-    waveformPeaks: buildWaveformPeaks(mono, 280),
-    durationSec: decoded.duration,
+    stop() {
+      if (stopped) return;
+      stopped = true;
+      clearInterval(tickerId);
+      stopNodes();
+    },
   };
+}
+
+export function manualShiftToCorrectionSec(manualShiftSec: number): number {
+  return clamp(-manualShiftSec, CORRECTION_MIN_SEC, CORRECTION_MAX_SEC);
 }
 
 function getSupportedCalibrationMimeType(): string {
@@ -140,122 +224,57 @@ function waitMs(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Lower-volume click for calibration so metronome bleed does not dominate the
+// captured speech waveform (especially on speech-optimized Bluetooth routes).
+function playCalibrationClick(
+  ctx: AudioContext,
+  time: number,
+  isDownbeat: boolean,
+): () => void {
+  const gain = ctx.createGain();
+  gain.connect(ctx.destination);
+
+  const osc = ctx.createOscillator();
+  osc.type = "sine";
+  osc.connect(gain);
+
+  const startFreq = isDownbeat ? 220 : 170;
+  const endFreq = isDownbeat ? 60 : 50;
+  osc.frequency.setValueAtTime(startFreq, time);
+  osc.frequency.exponentialRampToValueAtTime(endFreq, time + 0.035);
+
+  gain.gain.setValueAtTime(0.001, time);
+  gain.gain.exponentialRampToValueAtTime(0.24, time + 0.002);
+  gain.gain.exponentialRampToValueAtTime(0.001, time + 0.09);
+
+  osc.start(time);
+  osc.stop(time + 0.11);
+  let ended = false;
+  osc.onended = () => {
+    ended = true;
+    gain.disconnect();
+  };
+  return () => {
+    if (ended) return;
+    try {
+      osc.stop();
+    } catch {
+      // already stopped
+    }
+    gain.disconnect();
+  };
+}
+
 function downmixToMono(buffer: AudioBuffer): Float32Array {
   const mono = new Float32Array(buffer.length);
   const channelCount = Math.max(1, buffer.numberOfChannels);
   for (let c = 0; c < channelCount; c++) {
     const channel = buffer.getChannelData(c);
     for (let i = 0; i < buffer.length; i++) {
-      const current = mono[i] ?? 0;
-      mono[i] = current + (channel[i] ?? 0) / channelCount;
+      mono[i] = (mono[i] ?? 0) + (channel[i] ?? 0) / channelCount;
     }
   }
   return mono;
-}
-
-function detectClapPeaks(samples: Float32Array, sampleRate: number): PeakCandidate[] {
-  if (samples.length === 0 || sampleRate <= 0) return [];
-
-  const highPassed = new Float32Array(samples.length);
-  highPassed[0] = samples[0] ?? 0;
-  for (let i = 1; i < samples.length; i++) {
-    highPassed[i] = (samples[i] ?? 0) - 0.985 * (samples[i - 1] ?? 0);
-  }
-
-  const frameSize = Math.max(128, Math.floor(sampleRate * 0.008));
-  const hop = Math.max(64, Math.floor(frameSize / 2));
-  const energies: number[] = [];
-  for (let start = 0; start + frameSize < highPassed.length; start += hop) {
-    let sumAbs = 0;
-    for (let i = start; i < start + frameSize; i++) {
-      sumAbs += Math.abs(highPassed[i] ?? 0);
-    }
-    energies.push(sumAbs / frameSize);
-  }
-
-  if (energies.length < 3) return [];
-
-  for (let i = 1; i < energies.length; i++) {
-    const curr = energies[i] ?? 0;
-    const prev = energies[i - 1] ?? 0;
-    energies[i] = 0.65 * curr + 0.35 * prev;
-  }
-
-  const baseline = percentile(energies, 0.55);
-  const p90 = percentile(energies, 0.9);
-  const threshold = Math.max(0.006, baseline * 2.7, baseline + (p90 - baseline) * 0.45);
-
-  const rawPeaks: PeakCandidate[] = [];
-  for (let i = 1; i < energies.length - 1; i++) {
-    const prev = energies[i - 1] ?? 0;
-    const curr = energies[i] ?? 0;
-    const next = energies[i + 1] ?? 0;
-    if (curr > threshold && curr >= prev && curr > next) {
-      const frameCenterSample = i * hop + Math.floor(frameSize / 2);
-      rawPeaks.push({
-        timeSec: frameCenterSample / sampleRate,
-        value: curr,
-      });
-    }
-  }
-
-  if (rawPeaks.length === 0) return [];
-
-  const refractorySec = 0.09;
-  const filtered: PeakCandidate[] = [];
-  for (const candidate of rawPeaks) {
-    const last = filtered[filtered.length - 1];
-    if (
-      last != null &&
-      candidate.timeSec - last.timeSec < refractorySec
-    ) {
-      if (candidate.value > last.value) {
-        filtered[filtered.length - 1] = candidate;
-      }
-      continue;
-    }
-    filtered.push(candidate);
-  }
-
-  return filtered;
-}
-
-function matchPeaksToExpected(
-  expectedTimesSec: number[],
-  peaks: PeakCandidate[],
-): Array<number | null> {
-  const used = new Set<number>();
-  const matched: Array<number | null> = [];
-
-  for (const expected of expectedTimesSec) {
-    let bestIndex = -1;
-    let bestDistance = Number.POSITIVE_INFINITY;
-
-    for (let i = 0; i < peaks.length; i++) {
-      if (used.has(i)) continue;
-      const peak = peaks[i];
-      if (peak == null) continue;
-      const delta = peak.timeSec - expected;
-      if (delta < -CLAP_MATCH_WINDOW_EARLY_SEC || delta > CLAP_MATCH_WINDOW_LATE_SEC) {
-        continue;
-      }
-      const distance = Math.abs(delta);
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        bestIndex = i;
-      }
-    }
-
-    if (bestIndex === -1) {
-      matched.push(null);
-      continue;
-    }
-
-    used.add(bestIndex);
-    matched.push(peaks[bestIndex]?.timeSec ?? null);
-  }
-
-  return matched;
 }
 
 function buildWaveformPeaks(samples: Float32Array, buckets: number): number[] {
@@ -270,77 +289,57 @@ function buildWaveformPeaks(samples: Float32Array, buckets: number): number[] {
       continue;
     }
     const to = Math.min(samples.length, from + window);
-    let peak = 0;
+    let sumSquares = 0;
+    let maxAbs = 0;
     for (let s = from; s < to; s++) {
-      const value = Math.abs(samples[s] ?? 0);
-      if (value > peak) peak = value;
+      const value = samples[s] ?? 0;
+      const abs = Math.abs(value);
+      sumSquares += value * value;
+      if (abs > maxAbs) maxAbs = abs;
     }
-    peaks.push(peak);
+    const sampleCount = Math.max(1, to - from);
+    const rms = Math.sqrt(sumSquares / sampleCount);
+    // Mix RMS + peak to retain consonants while keeping speech body visible.
+    peaks.push(0.7 * rms + 0.3 * maxAbs);
   }
 
-  const max = peaks.reduce((m, v) => (v > m ? v : m), 0);
-  if (max <= 1e-6) return peaks.map(() => 0);
-  return peaks.map((v) => v / max);
-}
-
-function median(values: number[]): number {
-  if (values.length === 0) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  if (sorted.length % 2 === 1) return sorted[mid] ?? 0;
-  return ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2;
-}
-
-function medianAbsoluteDeviation(values: number[]): number {
-  if (values.length === 0) return Number.POSITIVE_INFINITY;
-  const med = median(values);
-  const abs = values.map((v) => Math.abs(v - med));
-  return median(abs);
-}
-
-function percentile(values: number[], p: number): number {
-  if (values.length === 0) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  const index = Math.max(0, Math.min(sorted.length - 1, Math.floor(p * (sorted.length - 1))));
-  return sorted[index] ?? 0;
+  const p95 = percentile(peaks, 0.95);
+  if (p95 <= 1e-6) return peaks.map(() => 0);
+  // Compress dynamic range so a few hot transients do not flatten everything else.
+  return peaks.map((v) => Math.pow(clamp(v / p95, 0, 1), 0.65));
 }
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-function computeTimingScore(
-  matched: Array<number | null>,
-  expectedTimesSec: number[],
-  secPerBeat: number,
-  targetCount: number,
-): number {
-  const matchedCount = matched.filter((v): v is number => v != null).length;
-  if (targetCount <= 0) return 0;
+function percentile(values: number[], p: number): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const index = Math.max(
+    0,
+    Math.min(sorted.length - 1, Math.floor(p * (sorted.length - 1))),
+  );
+  return sorted[index] ?? 0;
+}
 
-  const completeness = matchedCount / targetCount;
-  if (matchedCount <= 1) {
-    return Math.round(clamp(completeness * 100, 0, 100));
-  }
-
-  const intervalErrors: number[] = [];
-  for (let i = 1; i < matched.length; i++) {
-    const prev = matched[i - 1];
-    const curr = matched[i];
-    if (prev == null || curr == null) continue;
-    const expectedDelta = (expectedTimesSec[i] ?? 0) - (expectedTimesSec[i - 1] ?? 0);
-    const actualDelta = curr - prev;
-    const idealDelta = expectedDelta > 0 ? expectedDelta : secPerBeat;
-    intervalErrors.push(Math.abs(actualDelta - idealDelta));
-  }
-
-  if (intervalErrors.length === 0) {
-    return Math.round(clamp(completeness * 100, 0, 100));
-  }
-
-  const meanAbsIntervalError =
-    intervalErrors.reduce((sum, e) => sum + e, 0) / intervalErrors.length;
-  const evenness = clamp(1 - meanAbsIntervalError / 0.12, 0, 1);
-  const score = 100 * completeness * (0.4 + 0.6 * evenness);
-  return Math.round(clamp(score, 0, 100));
+function createBeatTracker(
+  ctx: AudioContext,
+  beatTimes: number[],
+  onBeat: (index: number) => void,
+): { stop: () => void } {
+  let lastFired = -1;
+  const id = setInterval(() => {
+    const now = ctx.currentTime;
+    for (let i = lastFired + 1; i < beatTimes.length; i++) {
+      const t = beatTimes[i];
+      if (t != null && now >= t) {
+        lastFired = i;
+        onBeat(i);
+      } else {
+        break;
+      }
+    }
+  }, 16);
+  return { stop: () => clearInterval(id) };
 }

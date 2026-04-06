@@ -1,192 +1,143 @@
 # Latency Correction Approaches
 
-This document summarizes practical approaches for timing-latency correction in browser-based multitrack recording, including the approach currently implemented in this repo.
+This document summarizes practical approaches for latency correction in browser-based multitrack recording, including the manual speech-alignment flow currently used in this repo.
 
-## Why This Matters
+## Why this matters
 
-In a layered recording workflow, the first take is recorded against a metronome and later takes are recorded against prior takes plus the metronome. If the first take is captured late (or early) relative to beat 1, every subsequent take inherits that misalignment.
+Layered vocal recording depends on beat-accurate alignment. If take 1 is captured late/early relative to beat 1, all later takes can feel offset.
 
-Latency is not one value. It is a combination of:
-- output/render latency (headphones/speakers, especially Bluetooth),
-- input/capture latency (mic path + browser audio pipeline),
+In browsers, latency is a combination of:
+- output/render latency (headphones, especially Bluetooth),
+- input/capture latency (mic + browser pipeline),
 - DSP effects (AEC/noise suppression/AGC),
 - scheduling and codec/container behavior.
 
 ## Approaches
 
-### 1) Browser-Reported Latency Only (`outputLatency`, etc.)
-
+### 1) Browser-reported latency only (`outputLatency`, etc.)
 How it works:
-- Use Web Audio clock scheduling and adjust beat-1 timing using reported device latencies.
+- Use Web Audio scheduling and reported device latency fields.
 
 Pros:
-- Zero extra UX.
-- Fast and simple.
+- No extra UX.
+- Easy to implement.
 
 Cons:
-- Reported values are often incomplete/inaccurate across devices.
-- Usually does not model full input/capture path.
-- Weak on Bluetooth edge cases.
+- Often incomplete/inaccurate across devices.
+- Usually misses full capture-path delay.
 
-Best for:
-- Baseline correction, not full correction.
-
-### 2) Fixed Heuristic Offsets by Device Class
-
+### 2) Fixed heuristic offsets by device class
 How it works:
-- Apply hardcoded offsets (for example, different defaults for wired vs Bluetooth).
+- Apply defaults for wired/Bluetooth classes.
 
 Pros:
-- Easy to ship.
-- Better than no correction on obvious classes.
+- Fast to ship.
 
 Cons:
-- Fragile and coarse.
-- Device-to-device variance remains large.
+- Coarse and brittle.
+- Device variance remains high.
 
-Best for:
-- Temporary fallback, not primary strategy.
-
-### 3) One-Time User Calibration (Clap/Tap) Per Session
-
+### 3) One-time user calibration (speech/manual)
 How it works:
-- Run a short calibration pass where the user performs rhythmic transients against known beat times.
-- Detect those transients and estimate an offset from expected beat timestamps.
+- Record user speech against metronome beats.
+- Show waveform + beat markers.
+- User manually aligns waveform and verifies by playback.
 
 Pros:
-- Device- and environment-specific.
-- Usually much better than static heuristics.
-- Low runtime cost after one calibration.
+- Works even when clap transients are suppressed (for example AirPods speech tuning).
+- Device/session specific.
+- Transparent and user-verifiable.
 
 Cons:
-- Requires extra onboarding step.
-- Human timing variability can reduce confidence.
+- Adds an onboarding step.
+- Depends on user alignment quality.
 
-Best for:
-- Consumer-facing recording apps with diverse hardware routes.
-
-### 4) Per-Take Calibration
-
+### 4) Per-take calibration
 How it works:
-- Repeat clap/tap alignment before each take.
+- Repeat calibration before each take.
 
 Pros:
-- Can track drift across route changes.
+- Tracks drift and route changes tightly.
 
 Cons:
-- High UX friction.
-- More likely to annoy users than help.
+- High friction for normal users.
 
-Best for:
-- Specialized workflows where precision is critical and users accept overhead.
-
-### 5) Programmatic Audio Correlation / Content-Based Alignment
-
+### 5) Content-based auto alignment (correlation/reference)
 How it works:
-- Align tracks by cross-correlating guide/click leakage or known reference signals in captured audio.
+- Auto-align from recovered reference signals in captured audio.
 
 Pros:
-- Potentially automatic and very accurate when reference is recoverable.
+- Can be very accurate in favorable conditions.
 
 Cons:
-- Complex and brittle with clean isolation, voice-dominant content, or aggressive DSP.
-- Harder to explain/debug for users.
+- Complex and brittle with clean isolation or heavy DSP.
 
-Best for:
-- Advanced pipelines with strong signal engineering and QA budget.
-
-### 6) Physical/Acoustic Loopback Calibration Tone
-
+### 6) Loopback chirp/tone calibration
 How it works:
-- Emit known chirp/click from output, detect return in mic, estimate round-trip latency.
+- Emit known output signal and detect mic return to estimate round-trip latency.
 
 Pros:
-- Measures real end-to-end behavior directly.
+- Measures end-to-end path directly.
 
 Cons:
-- Sensitive to room acoustics and leakage path.
-- Can fail with headphones isolation.
-- Requires careful UX and signal design.
+- Environment- and hardware-sensitive.
+- Can fail with strong isolation/headphones.
 
-Best for:
-- Controlled environments or optional advanced calibration.
-
-### 7) Manual Nudge Controls (User-Driven)
-
+### 7) Manual nudge controls (editor-level)
 How it works:
-- Let users shift track start offsets manually in milliseconds/beats.
+- Let users shift tracks in ms/beats after recording.
 
 Pros:
-- Robust fallback.
-- Transparent and recoverable.
+- Reliable fallback.
 
 Cons:
-- Requires user effort/ear training.
-- Not ideal as the only solution.
+- Extra user effort.
 
-Best for:
-- Final fallback and power-user control.
+### 8) Hybrid (common practical strategy)
+Typical stack:
+1. Web Audio scheduling baseline.
+2. One-time calibration per session.
+3. Preview/verification UX.
+4. Manual fallback when needed.
 
-### 8) Hybrid (Recommended in Practice)
-
-Typical order:
-1. Web Audio scheduling + browser-reported latency baseline.
-2. One-time calibration to estimate per-session correction.
-3. Confidence gating + visualization.
-4. Manual fallback if needed.
-
-This usually gives the best quality/UX balance.
-
-## What Is Implemented In This Repo
+## What is implemented in this repo
 
 Current flow:
 - `Setup -> Calibration -> Recording`
-- Mic selection happens in calibration (not in recording wizard).
+- Mic selection happens in calibration.
 - Calibration is session-scoped.
 
 Calibration UX:
 - User hears 2 bars (8 clicks).
-- First bar: listen.
-- Second bar: clap every beat (4 target claps).
-- Result view shows:
-  - correction in ms,
-  - confidence (`high`/`low`),
-  - matched clap count,
-  - timing score (`0-100`),
-  - visualization (waveform + expected beat markers + detected clap markers).
-
-Calibration algorithm (high level):
-- Record calibration pass with `MediaRecorder`.
-- Decode to PCM.
-- Downmix to mono, high-pass, compute short-frame energy envelope.
-- Detect transient peaks.
-- Match peaks to expected clap beats in a constrained window.
-- Compute residuals (`detected - expected`), use median residual as correction.
-- Clamp correction to safe bounds.
-- Compute a timing score based on clap completeness and interval evenness.
-- Derive confidence from matched count, residual spread, and timing score.
+- Bar 1: listen.
+- Bar 2: say “one, two, three, four” on each beat.
+- App shows:
+  - speech waveform,
+  - fixed beat markers (bar-2 targets emphasized),
+  - draggable horizontal alignment.
+- User can play a looped 2-bar preview (metronome + shifted speech) to verify alignment.
+- Derived correction is computed from drag shift:
+  - `latencyCorrectionSec = clamp(-manualShiftSec, min, max)`.
 
 Recording integration:
-- Existing trim offset is still computed from Web Audio clock timing.
-- Session `latencyCorrectionSec` is added to that base trim offset before take storage.
-- All downstream playback/export already relies on stored `trimOffsetSec`, so calibration propagates naturally.
+- Recording still computes base trim from Web Audio clock timing.
+- Session `latencyCorrectionSec` is added to base trim before take storage.
+- Existing playback/export paths already use `trimOffsetSec`, so correction propagates naturally.
 
 Key files:
-- `src/recording/clapCalibration.ts`
-- `src/ui/ClapCalibrationScreen.tsx`
-- `src/recording/recorder.ts`
-- `src/state/model.ts`
+- `src/recording/clapCalibration.ts` (capture + preview + shift conversion)
+- `src/ui/ClapCalibrationScreen.tsx` (manual alignment UI)
+- `src/recording/recorder.ts` (applies correction to trim offset)
+- `src/state/model.ts` (session calibration state)
 
-## Known Limitations
+## Known limitations
 
-- Human claps are imperfect; bad timing lowers confidence.
-- Noise suppression/AEC can smear transients.
-- Bluetooth latency can still vary during a session.
-- Confidence is heuristic, not absolute truth.
+- Alignment quality is user-dependent.
+- Speech waveform can still be shaped by AEC/noise suppression.
+- Bluetooth latency can vary during a session.
 
-## Potential Next Steps
+## Potential next steps
 
-- Persist calibration by route fingerprint (mic + output device) for optional auto-skip.
-- Add optional “quick recalibrate” trigger on route/device change detection.
-- Add manual fine-nudge control in recording/review for low-confidence cases.
-- Add offline synthetic tests for clap detection robustness at varying SNR.
+- Persist calibration by route fingerprint (mic + output device).
+- Add quick recalibration prompts on device/route change.
+- Add optional fine nudge in recording/review screens.

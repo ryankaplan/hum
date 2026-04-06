@@ -4,10 +4,6 @@ import { parseChordProgression } from "../music/parse";
 import { progressionDurationSec } from "../music/playback";
 import { noteNameToMidi } from "../music/types";
 import type { Chord, HarmonyVoicing, Meter, PartIndex } from "../music/types";
-import type {
-  ClapCalibrationConfidence,
-  ClapCalibrationResult,
-} from "../recording/clapCalibration";
 import type { Mixer } from "../audio/mixer";
 import type { CompositorHandle } from "../video/compositor";
 import { buildWaveformPeaks } from "../ui/timeline";
@@ -23,11 +19,6 @@ export type {
   TracksState,
   TakeRecord,
 } from "./tracksModel";
-
-export type {
-  ClapCalibrationConfidence,
-  ClapCalibrationResult,
-} from "../recording/clapCalibration";
 
 export type AppScreen = "setup" | "calibration" | "recording" | "review";
 
@@ -133,12 +124,7 @@ class AppModel {
   readonly audioContext = new Observable<AudioContext | null>(null);
   readonly currentPartIndex = new Observable<PartIndex>(0);
   readonly permissionError = new Observable<string | null>(null);
-  readonly clapCalibrationResult = new Observable<ClapCalibrationResult | null>(
-    null,
-  );
   readonly latencyCorrectionSec = new Observable<number>(0);
-  readonly calibrationConfidence =
-    new Observable<ClapCalibrationConfidence | null>(null);
   readonly isCalibrated = new Observable<boolean>(false);
 
   readonly partStates = new Observable<PartState[]>(
@@ -367,17 +353,13 @@ class AppModel {
       .map((state) => (state.status === "kept" ? state.blob : null));
   }
 
-  setClapCalibrationResult(result: ClapCalibrationResult): void {
-    this.clapCalibrationResult.set(result);
-    this.latencyCorrectionSec.set(result.correctionSec);
-    this.calibrationConfidence.set(result.confidence);
+  setCalibrationOffset(correctionSec: number): void {
+    this.latencyCorrectionSec.set(correctionSec);
     this.isCalibrated.set(true);
   }
 
-  clearClapCalibration(): void {
-    this.clapCalibrationResult.set(null);
+  clearCalibration(): void {
     this.latencyCorrectionSec.set(0);
-    this.calibrationConfidence.set(null);
     this.isCalibrated.set(false);
   }
 
@@ -385,7 +367,7 @@ class AppModel {
     this.currentPartIndex.set(0);
     this.partStates.set(createIdlePartStates(this.totalPartsInput.get()));
     this.permissionError.set(null);
-    this.clearClapCalibration();
+    this.clearCalibration();
 
     const removedTakes = this.tracksModel.reset(this.totalPartsInput.get());
     for (const take of removedTakes) {

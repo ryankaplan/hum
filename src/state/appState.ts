@@ -36,7 +36,7 @@ export const parsedChords = model.parsedChords;
 export const harmonyVoicing = model.harmonyVoicing;
 
 export const partStates = model.partStates;
-export const tracks = model.tracksModel.tracks;
+export const tracks = model.tracks.tracks;
 
 export function updatePartState(
   index: number,

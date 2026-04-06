@@ -139,7 +139,7 @@ class AppModel {
   mixer: Mixer | null = null;
   compositor: CompositorHandle | null = null;
 
-  readonly tracksModel = new TracksModel({
+  readonly tracks = new TracksModel({
     totalParts: this.totalPartsInput.get(),
     getMixer: () => this.mixer,
   });
@@ -224,7 +224,7 @@ class AppModel {
       trimOffsetSec,
     };
 
-    const replacedTake = this.tracksModel.stageKeptTake({
+    const replacedTake = this.tracks.stageKeptTake({
       laneIndex,
       take,
       sourceStartSec: Math.max(0, trimOffsetSec),
@@ -256,7 +256,7 @@ class AppModel {
     const raw = await blob.arrayBuffer();
     const decoded = await ctx.decodeAudioData(raw);
 
-    const current = this.tracksModel.tracks.get();
+    const current = this.tracks.tracks.get();
     if (current.laneTakeIds[laneIndex] !== takeId) {
       return false;
     }
@@ -281,7 +281,7 @@ class AppModel {
       buildWaveformPeaks(decoded, sourceStartSec, durationSec, waveformBuckets),
     );
 
-    this.tracksModel.initializeTrackFromTake(
+    this.tracks.initializeTrackFromTake(
       laneIndex,
       takeId,
       sourceStartSec,
@@ -307,7 +307,7 @@ class AppModel {
   }
 
   getLaneRuntimeWaveform(laneIndex: number): LaneRuntimeWaveform {
-    const takeId = this.tracksModel.tracks.get().laneTakeIds[laneIndex];
+    const takeId = this.tracks.tracks.get().laneTakeIds[laneIndex];
     if (takeId == null) return null;
 
     const peaks = this.getTakeWaveform(takeId);
@@ -340,7 +340,7 @@ class AppModel {
     this.currentPartIndex.set(index);
     this.appScreen.set("recording");
 
-    const removedTake = this.tracksModel.clearLane(index);
+    const removedTake = this.tracks.clearLane(index);
     if (removedTake != null) {
       URL.revokeObjectURL(removedTake.url);
       this.removeTakeRuntimeMedia(removedTake.id);
@@ -369,7 +369,7 @@ class AppModel {
     this.permissionError.set(null);
     this.clearCalibration();
 
-    const removedTakes = this.tracksModel.reset(this.totalPartsInput.get());
+    const removedTakes = this.tracks.reset(this.totalPartsInput.get());
     for (const take of removedTakes) {
       URL.revokeObjectURL(take.url);
     }
@@ -433,7 +433,7 @@ class AppModel {
     );
     this.currentPartIndex.set(clampedPartIndex);
 
-    const removedTakes = this.tracksModel.resizeForPartCount(totalParts);
+    const removedTakes = this.tracks.resizeForPartCount(totalParts);
     for (const take of removedTakes) {
       URL.revokeObjectURL(take.url);
       this.removeTakeRuntimeMedia(take.id);

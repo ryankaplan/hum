@@ -1,12 +1,18 @@
 import { Derived, Observable, PersistedObservable } from "../observable";
-import { generateHarmony } from "../music/harmony";
-import { parseChordProgression } from "../music/parse";
-import { progressionDurationSec } from "../music/playback";
-import { noteNameToMidi } from "../music/types";
-import type { Chord, HarmonyVoicing, Meter, PartIndex } from "../music/types";
+import type { Chord, HarmonyVoicing, PartIndex } from "../music/types";
 import type { Mixer } from "../audio/mixer";
 import type { CompositorHandle } from "../video/compositor";
 import { buildWaveformPeaks } from "../ui/timeline";
+import {
+  computeArrangementInfo,
+  createDefaultArrangementDocState,
+  parseArrangementDocState,
+} from "./arrangementModel";
+import type {
+  ArrangementDocState,
+  ArrangementInfo,
+  TotalPartCount,
+} from "./arrangementModel";
 import {
   TracksDocumentModel,
   TracksEditorModel,
@@ -18,7 +24,7 @@ import {
 type WaveformPeaks = number[];
 
 export type {
-  ApplyClipAutomationBrushInput,
+  ApplyClipVolumeBrushInput,
   TrackClip,
   TrackLane,
   TakeRecord,
@@ -27,6 +33,12 @@ export type {
   TracksEditorState,
   TracksMixState,
 } from "./tracksModel";
+
+export type {
+  ArrangementDocState,
+  ArrangementInfo,
+  TotalPartCount,
+} from "./arrangementModel";
 
 export type ExportVideoFormat = "mp4" | "webm";
 
@@ -45,26 +57,6 @@ export type PartState =
   | { status: "recording" }
   | { status: "review"; blob: Blob; url: string }
   | { status: "kept"; blob: Blob; url: string; trimOffsetSec: number };
-
-export type TotalPartCount = 2 | 4;
-
-export type ArrangementInput = {
-  chordsInput: string;
-  tempo: number;
-  meter: Meter;
-  vocalRangeLow: string;
-  vocalRangeHigh: string;
-  totalParts: TotalPartCount;
-};
-
-export type ArrangementInfo = {
-  input: ArrangementInput;
-  parsedChords: Chord[];
-  harmonyVoicing: HarmonyVoicing | null;
-  beatSec: number;
-  progressionDurationSec: number;
-  isValid: boolean;
-};
 
 export type KeepTakeInput = {
   laneIndex: number;
@@ -96,10 +88,6 @@ export type LaneRuntimeWaveform = {
   sourceWindow: TakeSourceWindow;
 } | null;
 
-function parseTotalPartCount(raw: unknown): TotalPartCount {
-  return raw === 2 ? 2 : 4;
-}
-
 function createIdlePartStates(totalParts: number): PartState[] {
   return Array.from({ length: totalParts }, () => ({
     status: "idle" as const,
@@ -123,29 +111,10 @@ class AppModel {
   private videoElByTakeId = new Map<string, HTMLVideoElement>();
   private takeSourceWindowByTakeId = new Map<string, TakeSourceWindow>();
 
-  readonly chordsInput = new PersistedObservable<string>(
-    "hum.chords",
-    "A A F#m F#m D D E E",
-  );
-
-  readonly tempoInput = new PersistedObservable<number>("hum.tempo", 80);
-
-  readonly meterInput = new PersistedObservable<Meter>("hum.meter", [4, 4]);
-
-  readonly vocalRangeLow = new PersistedObservable<string>(
-    "hum.vocalRangeLow",
-    "C3",
-  );
-
-  readonly vocalRangeHigh = new PersistedObservable<string>(
-    "hum.vocalRangeHigh",
-    "C5",
-  );
-
-  readonly totalPartsInput = new PersistedObservable<TotalPartCount>(
-    "hum.totalParts",
-    4,
-    { schema: parseTotalPartCount },
+  readonly arrangementDocument = new PersistedObservable<ArrangementDocState>(
+    "hum.arrangementDoc",
+    createDefaultArrangementDocState(),
+    { schema: parseArrangementDocState },
   );
 
   readonly appScreen = new Observable<AppScreen>("setup");
@@ -157,11 +126,13 @@ class AppModel {
   readonly isCalibrated = new Observable<boolean>(false);
 
   readonly partStates = new Observable<PartState[]>(
-    createIdlePartStates(this.totalPartsInput.get()),
+    createIdlePartStates(this.arrangementDocument.get().totalParts),
   );
 
-  readonly arrangementInfo = new Observable<ArrangementInfo>(
-    this.computeArrangementInfo(),
+  readonly arrangementInfo = new Derived<ArrangementInfo>(
+    () => computeArrangementInfo(this.arrangementDocument.get()),
+    [this.arrangementDocument],
+    { checkForEqualityOnNotify: false },
   );
 
   readonly tracksExport = new Observable<ExportState>(createEmptyExportState());
@@ -171,7 +142,7 @@ class AppModel {
   compositor: CompositorHandle | null = null;
 
   readonly tracksDocument = new TracksDocumentModel({
-    totalParts: this.totalPartsInput.get(),
+    totalParts: this.arrangementDocument.get().totalParts,
     getMixer: () => this.mixer,
   });
 
@@ -190,42 +161,19 @@ class AppModel {
   );
 
   constructor() {
-    this.chordsInput.register(this.recomputeArrangement);
-    this.tempoInput.register(this.recomputeArrangement);
-    this.meterInput.register(this.recomputeArrangement);
-    this.vocalRangeLow.register(this.recomputeArrangement);
-    this.vocalRangeHigh.register(this.recomputeArrangement);
-
-    this.totalPartsInput.register(() => {
-      this.recomputeArrangement();
-      this.resizePartCount(this.totalPartsInput.get());
+    this.arrangementDocument.onAfterChange((prev, next) => {
+      if (prev.totalParts !== next.totalParts) {
+        this.resizePartCount(next.totalParts);
+      }
     });
   }
 
-  setArrangementInput(patch: Partial<ArrangementInput>): void {
-    if (patch.chordsInput != null) {
-      this.chordsInput.set(patch.chordsInput);
-    }
-    if (patch.tempo != null) {
-      this.tempoInput.set(patch.tempo);
-    }
-    if (patch.meter != null) {
-      this.meterInput.set(patch.meter);
-    }
-    if (patch.vocalRangeLow != null) {
-      this.vocalRangeLow.set(patch.vocalRangeLow);
-    }
-    if (patch.vocalRangeHigh != null) {
-      this.vocalRangeHigh.set(patch.vocalRangeHigh);
-    }
-    if (patch.totalParts != null) {
-      this.totalPartsInput.set(patch.totalParts);
-    }
+  setArrangementInput(patch: Partial<ArrangementDocState>): void {
+    this.arrangementDocument.set({
+      ...this.arrangementDocument.get(),
+      ...patch,
+    });
   }
-
-  recomputeArrangement = (): void => {
-    this.arrangementInfo.set(this.computeArrangementInfo());
-  };
 
   updatePartState(index: number, state: PartState): void {
     const current = this.partStates.get();
@@ -547,7 +495,7 @@ class AppModel {
   }
 
   resetSession(): void {
-    const totalParts = this.totalPartsInput.get();
+    const totalParts = this.arrangementDocument.get().totalParts;
 
     this.currentPartIndex.set(0);
     this.partStates.set(createIdlePartStates(totalParts));
@@ -568,45 +516,6 @@ class AppModel {
 
     this.compositor?.stop();
     this.compositor = null;
-  }
-
-  private computeArrangementInfo(): ArrangementInfo {
-    const input: ArrangementInput = {
-      chordsInput: this.chordsInput.get(),
-      tempo: this.tempoInput.get(),
-      meter: this.meterInput.get(),
-      vocalRangeLow: this.vocalRangeLow.get(),
-      vocalRangeHigh: this.vocalRangeHigh.get(),
-      totalParts: this.totalPartsInput.get(),
-    };
-
-    const parsed = parseChordProgression(input.chordsInput, input.meter[0]);
-
-    let voicing: HarmonyVoicing | null = null;
-    try {
-      const low = noteNameToMidi(input.vocalRangeLow);
-      const high = noteNameToMidi(input.vocalRangeHigh);
-      if (high > low && parsed.length > 0) {
-        const harmonyPartCount = Math.max(1, input.totalParts - 1);
-        voicing = generateHarmony(parsed, { low, high }, harmonyPartCount);
-      }
-    } catch {
-      voicing = null;
-    }
-
-    const beatSec = input.tempo > 0 ? 60 / input.tempo : 0;
-
-    return {
-      input,
-      parsedChords: parsed,
-      harmonyVoicing: voicing,
-      beatSec,
-      progressionDurationSec:
-        parsed.length > 0 && input.tempo > 0
-          ? progressionDurationSec(parsed, input.tempo)
-          : 0,
-      isValid: parsed.length > 0 && voicing != null,
-    };
   }
 
   private resizePartCount(totalParts: number): void {

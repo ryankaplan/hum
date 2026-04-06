@@ -234,10 +234,9 @@ export function RecordingWizard() {
   const stream = useObservable(model.mediaStream);
   const partIndex = useObservable(model.currentPartIndex);
   const states = useObservable(model.partStates);
+  const arrangement = useObservable(model.arrangementDocument);
   const chords = useObservable(model.parsedChords);
   const voicing = useObservable(model.harmonyVoicing);
-  const tempo = useObservable(model.tempoInput);
-  const meter = useObservable(model.meterInput);
   const latencyCorrectionSec = useObservable(model.latencyCorrectionSec);
 
   const [phase, setPhase] = useState<RecordPhase>("pre-roll");
@@ -264,7 +263,7 @@ export function RecordingWizard() {
   const isLastPart = partIndex === totalParts - 1;
   const isMelodyPart = partIndex >= harmonyPartCount;
   const hasPriorHarmonyMonitorControl = partIndex > 0 && !isMelodyPart;
-  const beatsPerBar = meter[0];
+  const beatsPerBar = arrangement.meter[0];
 
   const harmonyLine =
     voicing != null && partIndex < harmonyPartCount
@@ -411,7 +410,7 @@ export function RecordingWizard() {
       chords,
       harmonyLine: guideToneEnabled ? harmonyLine : null,
       beatsPerBar,
-      tempo,
+      tempo: arrangement.tempo,
       monitorPlayer: monitorPlayerRef.current,
       onBeat: (beat) => {
         setCurrentAbsoluteBeat(beat);
@@ -432,7 +431,11 @@ export function RecordingWizard() {
 
     // Auto-stop after progression ends
     const durationMs =
-      chords.reduce((sum, c) => sum + c.beats, 0) * (60 / tempo) * 1000 + 400;
+      chords.reduce((sum, c) => sum + c.beats, 0) *
+        (60 / arrangement.tempo) *
+        1000 +
+      400;
+
 
     setTimeout(() => {
       // Only stop if we're still in the listening phase from this call
@@ -477,7 +480,7 @@ export function RecordingWizard() {
         chords,
         harmonyLine: guideToneEnabled ? harmonyLine : null,
         beatsPerBar,
-        tempo,
+        tempo: arrangement.tempo,
         latencyCorrectionSec,
         monitorPlayer: monitorPlayerRef.current,
         callbacks: {
@@ -655,7 +658,7 @@ export function RecordingWizard() {
               activeChordIndex={activeChordIndex}
               currentAbsoluteBeat={currentAbsoluteBeat}
               beatsPerBar={beatsPerBar}
-              tempo={tempo}
+              tempo={arrangement.tempo}
               transportActive={transportActive}
             />
           )}

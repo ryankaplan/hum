@@ -2,6 +2,7 @@ import { model } from "./model";
 
 export type {
   AppScreen,
+  ArrangementDocState,
   ArrangementInfo,
   ExportState,
   KeepTakeInput,
@@ -27,13 +28,7 @@ export const permissionError = model.permissionError;
 export const latencyCorrectionSec = model.latencyCorrectionSec;
 export const isCalibrated = model.isCalibrated;
 
-export const chordsInput = model.chordsInput;
-export const tempoInput = model.tempoInput;
-export const meterInput = model.meterInput;
-export const vocalRangeLow = model.vocalRangeLow;
-export const vocalRangeHigh = model.vocalRangeHigh;
-export const totalPartsInput = model.totalPartsInput;
-
+export const arrangementDocument = model.arrangementDocument;
 export const arrangementInfo = model.arrangementInfo;
 export const parsedChords = model.parsedChords;
 export const harmonyVoicing = model.harmonyVoicing;

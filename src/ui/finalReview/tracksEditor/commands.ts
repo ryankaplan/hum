@@ -10,7 +10,7 @@ export type TracksEditorCommand =
       laneIndex: number;
       clipId: string;
       centerSec: number;
-      deltaValue: number;
+      deltaGainMultiplier: number;
       radiusSec: number;
     }
   | { type: "seek"; valueSec: number }

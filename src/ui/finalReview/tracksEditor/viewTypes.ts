@@ -1,4 +1,4 @@
-import type { ClipAutomation } from "../../../state/clipAutomation";
+import type { ClipVolumeEnvelope } from "../../../state/clipAutomation";
 import type { EditorSelection, WaveformPeaks } from "../../timeline";
 
 export type TracksEditorSegmentView = {
@@ -6,7 +6,7 @@ export type TracksEditorSegmentView = {
   timelineStartSec: number;
   sourceStartSec: number;
   durationSec: number;
-  automation: ClipAutomation;
+  volumeEnvelope: ClipVolumeEnvelope;
 };
 
 export type TracksEditorLaneView = {

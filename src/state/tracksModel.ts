@@ -1,15 +1,10 @@
 import { Observable } from "../observable";
 import type { Mixer } from "../audio/mixer";
 import {
-  type ClipAutomation,
-  type ClipAutomationLane,
-  type AutomationParam,
-  VOLUME_AUTOMATION_PARAM,
-  applyAutomationBrush,
-  createDefaultClipAutomation,
-  getVolumeAutomationLane,
-  splitClipAutomationAtTime,
-  withUpdatedVolumeLane,
+  type ClipVolumeEnvelope,
+  applyClipVolumeBrush,
+  createDefaultClipVolumeEnvelope,
+  splitClipVolumeEnvelopeAtTime,
 } from "./clipAutomation";
 
 export type TrackClip = {
@@ -27,7 +22,7 @@ export type TrackClip = {
   sourceStartSec: number;
 
   durationSec: number;
-  automation: ClipAutomation;
+  volumeEnvelope: ClipVolumeEnvelope;
 };
 
 export type TrackLane = {
@@ -64,12 +59,11 @@ export type TakeRecord = {
   trimOffsetSec: number;
 };
 
-export type ApplyClipAutomationBrushInput = {
+export type ApplyClipVolumeBrushInput = {
   laneIndex: number;
   clipId: string;
-  param: AutomationParam;
   centerSec: number;
-  deltaValue: number;
+  deltaGainMultiplier: number;
   radiusSec: number;
 };
 
@@ -174,7 +168,7 @@ export class TracksDocumentModel {
                   timelineStartSec: 0,
                   sourceStartSec: Math.max(0, sourceStartSec),
                   durationSec: Math.max(0, durationSec),
-                  automation: createDefaultClipAutomation(
+                  volumeEnvelope: createDefaultClipVolumeEnvelope(
                     Math.max(0, durationSec),
                   ),
                 },
@@ -213,7 +207,7 @@ export class TracksDocumentModel {
         timelineStartSec: 0,
         sourceStartSec,
         durationSec,
-        automation: createDefaultClipAutomation(durationSec),
+        volumeEnvelope: createDefaultClipVolumeEnvelope(durationSec),
       };
 
       const firstClip = lane.clips[0];
@@ -231,7 +225,7 @@ export class TracksDocumentModel {
                 ...firstClip,
                 sourceStartSec,
                 durationSec,
-                automation: createDefaultClipAutomation(durationSec),
+                volumeEnvelope: createDefaultClipVolumeEnvelope(durationSec),
               },
             ],
           }
@@ -284,8 +278,8 @@ export class TracksDocumentModel {
       const leftDuration = splitTimeSec - clipStart;
       const rightDuration = clipEnd - splitTimeSec;
       if (leftDuration <= EPSILON || rightDuration <= EPSILON) return current;
-      const splitAutomation = splitClipAutomationAtTime(
-        clip.automation,
+      const splitVolumeEnvelope = splitClipVolumeEnvelopeAtTime(
+        clip.volumeEnvelope,
         leftDuration,
         clip.durationSec,
       );
@@ -294,7 +288,7 @@ export class TracksDocumentModel {
         ...clip,
         id: this.makeClipId(),
         durationSec: leftDuration,
-        automation: splitAutomation.left,
+        volumeEnvelope: splitVolumeEnvelope.left,
       };
 
       const right: TrackClip = {
@@ -303,7 +297,7 @@ export class TracksDocumentModel {
         timelineStartSec: splitTimeSec,
         sourceStartSec: clip.sourceStartSec + leftDuration,
         durationSec: rightDuration,
-        automation: splitAutomation.right,
+        volumeEnvelope: splitVolumeEnvelope.right,
       };
 
       const nextClips = [
@@ -403,9 +397,10 @@ export class TracksDocumentModel {
     return { deleted };
   }
 
-  applyClipAutomationBrush(input: ApplyClipAutomationBrushInput): void {
-    if (input.param !== VOLUME_AUTOMATION_PARAM) return;
-    if (Math.abs(input.deltaValue) <= 1e-6 || input.radiusSec <= 0) return;
+  applyClipVolumeBrush(input: ApplyClipVolumeBrushInput): void {
+    if (Math.abs(input.deltaGainMultiplier) <= 1e-6 || input.radiusSec <= 0) {
+      return;
+    }
 
     this.setDocument((current) => {
       const lane = current.lanes[input.laneIndex];
@@ -416,29 +411,22 @@ export class TracksDocumentModel {
       const clip = lane.clips[clipIndex];
       if (clip == null || clip.durationSec <= 0) return current;
 
-      const currentLane = getVolumeAutomationLane(
-        clip.automation,
-        clip.durationSec,
-      );
-      const nextLane = applyAutomationBrush({
-        lane: currentLane,
+      const currentEnvelope = clip.volumeEnvelope;
+      const nextEnvelope = applyClipVolumeBrush({
+        envelope: currentEnvelope,
         durationSec: clip.durationSec,
         centerSec: input.centerSec,
-        deltaValue: input.deltaValue,
+        deltaGainMultiplier: input.deltaGainMultiplier,
         radiusSec: input.radiusSec,
       });
 
-      if (isSameVolumeLane(currentLane, nextLane)) {
+      if (isSameVolumeEnvelope(currentEnvelope, nextEnvelope)) {
         return current;
       }
 
       const nextClip: TrackClip = {
         ...clip,
-        automation: withUpdatedVolumeLane(
-          clip.automation,
-          nextLane,
-          clip.durationSec,
-        ),
+        volumeEnvelope: nextEnvelope,
       };
 
       const nextClips = [...lane.clips];
@@ -667,9 +655,9 @@ export class TracksEditorModel {
   }
 }
 
-function isSameVolumeLane(
-  a: ClipAutomationLane,
-  b: ClipAutomationLane,
+function isSameVolumeEnvelope(
+  a: ClipVolumeEnvelope,
+  b: ClipVolumeEnvelope,
 ): boolean {
   if (a.points.length !== b.points.length) return false;
   for (let i = 0; i < a.points.length; i++) {
@@ -677,7 +665,11 @@ function isSameVolumeLane(
     const right = b.points[i];
     if (left == null || right == null) return false;
     if (Math.abs(left.timeSec - right.timeSec) > 1e-6) return false;
-    if (Math.abs(left.value - right.value) > 1e-6) return false;
+    if (
+      Math.abs(left.gainMultiplier - right.gainMultiplier) > 1e-6
+    ) {
+      return false;
+    }
   }
   return true;
 }

@@ -25,9 +25,8 @@ import {
   FRAME_READY_TIMEOUT_MS,
 } from "../transport/core";
 import {
-  type ClipAutomationLane,
-  evaluateAutomationLaneAtTime,
-  getVolumeAutomationLane,
+  type ClipVolumeEnvelope,
+  evaluateClipVolumeAtTime,
 } from "../state/clipAutomation";
 import { getActiveSegmentAtTime, getTimelineEndSec } from "./timeline";
 import type { EditorSelection } from "./timeline";
@@ -52,8 +51,8 @@ export function FinalReview() {
   const documentState = useObservable(model.tracksDocument.document);
   const editorState = useObservable(model.tracksEditor.editor);
   const exportState = useObservable(model.tracksExport);
+  const arrangement = useObservable(model.arrangementDocument);
   const chords = useObservable(model.parsedChords);
-  const tempo = useObservable(model.tempoInput);
   const ctx = useObservable(model.audioContext);
   const trackCount = documentState.lanes.length;
 
@@ -91,8 +90,8 @@ export function FinalReview() {
   const ctaExportFormat = exportedFormat ?? preferredExportFormat;
   const showWebmFallbackMessage = preferredExportFormat === "webm";
 
-  const baseDurationSec = progressionDurationSec(chords, tempo);
-  const beatSec = tempo > 0 ? 60 / tempo : 0;
+  const baseDurationSec = progressionDurationSec(chords, arrangement.tempo);
+  const beatSec = arrangement.tempo > 0 ? 60 / arrangement.tempo : 0;
 
   const timelineEndSec = useMemo(() => getTimelineEndSec(timelines), [timelines]);
 
@@ -178,7 +177,7 @@ export function FinalReview() {
           const localSegmentStartSec = Math.max(0, playFrom - segStart);
           scheduleClipVolumeGain({
             gain: clipGain.gain,
-            lane: getVolumeAutomationLane(segment.automation, segment.durationSec),
+            volumeEnvelope: segment.volumeEnvelope,
             segmentDurationSec: segment.durationSec,
             segmentStartSec: localSegmentStartSec,
             playDurationSec: cappedDuration,
@@ -450,12 +449,11 @@ export function FinalReview() {
       }
       case "apply_volume_brush": {
         if (exporting || isSyncingFrames || isPlaying) return;
-        model.tracksDocument.applyClipAutomationBrush({
+        model.tracksDocument.applyClipVolumeBrush({
           laneIndex: command.laneIndex,
           clipId: command.clipId,
-          param: "volume",
           centerSec: command.centerSec,
-          deltaValue: command.deltaValue,
+          deltaGainMultiplier: command.deltaGainMultiplier,
           radiusSec: command.radiusSec,
         });
         return;
@@ -781,7 +779,7 @@ export function FinalReview() {
 
 function scheduleClipVolumeGain(input: {
   gain: AudioParam;
-  lane: ClipAutomationLane;
+  volumeEnvelope: ClipVolumeEnvelope;
   segmentDurationSec: number;
   segmentStartSec: number;
   playDurationSec: number;
@@ -789,7 +787,7 @@ function scheduleClipVolumeGain(input: {
 }): void {
   const {
     gain,
-    lane,
+    volumeEnvelope,
     segmentDurationSec,
     segmentStartSec,
     playDurationSec,
@@ -804,27 +802,30 @@ function scheduleClipVolumeGain(input: {
     segmentDurationSec,
   );
 
-  const startValue = evaluateAutomationLaneAtTime(
-    lane,
+  const startGainMultiplier = evaluateClipVolumeAtTime(
+    volumeEnvelope,
     localStartSec,
     segmentDurationSec,
   );
-  gain.setValueAtTime(startValue, startAtSec);
+  gain.setValueAtTime(startGainMultiplier, startAtSec);
 
-  for (const point of lane.points) {
+  for (const point of volumeEnvelope.points) {
     if (point.timeSec <= localStartSec || point.timeSec >= localEndSec) continue;
     gain.linearRampToValueAtTime(
-      point.value,
+      point.gainMultiplier,
       startAtSec + (point.timeSec - localStartSec),
     );
   }
 
-  const endValue = evaluateAutomationLaneAtTime(
-    lane,
+  const endGainMultiplier = evaluateClipVolumeAtTime(
+    volumeEnvelope,
     localEndSec,
     segmentDurationSec,
   );
-  gain.linearRampToValueAtTime(endValue, startAtSec + playDurationSec);
+  gain.linearRampToValueAtTime(
+    endGainMultiplier,
+    startAtSec + playDurationSec,
+  );
 }
 
 function formatLabel(format: "mp4" | "webm"): string {

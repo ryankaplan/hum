@@ -1,6 +1,6 @@
 import { model } from "../state/model";
 
-// Called when the user clicks "Start Calibration" on the setup screen.
+// Called when the user clicks "Calibrate Microphone" on the setup screen.
 // Acquires camera + mic, sets up AudioContext, then transitions to calibration.
 export async function acquirePermissionsAndStart(): Promise<void> {
   model.permissionError.set(null);

@@ -136,7 +136,7 @@ Typical stack:
 Current flow:
 
 - `Setup -> Calibration -> Recording -> Review`.
-- `Start Calibration` acquires camera/mic, resets session state, and routes to calibration.
+- `Calibrate Microphone` acquires camera/mic, resets session state, and routes to calibration.
 - Mic selection is owned by calibration (recording view is mic-locked/read-only).
 - Calibration is session-scoped only (`latencyCorrectionSec`, `isCalibrated`).
 

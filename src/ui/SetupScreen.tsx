@@ -147,9 +147,7 @@ function SetupCard({
 
         <Stack gap={4}>
           <Field.Root>
-            <Field.Label color={dsColors.text}>
-              Chord Progression
-            </Field.Label>
+            <Field.Label color={dsColors.text}>Chord Progression</Field.Label>
             <Input
               value={chords}
               onChange={(e) => onChordsChange(e.target.value)}
@@ -369,7 +367,7 @@ function SetupCard({
           disabled={!isValid || starting}
           w="100%"
         >
-          {starting ? "Starting..." : "Start Calibration"}
+          {starting ? "Starting..." : "Calibrate Microphone"}
         </Button>
 
         {!isValid && parsed.length === 0 && (
@@ -515,10 +513,7 @@ export function SetupScreen() {
   };
 
   return (
-    <Flex
-      {...dsScreenShell}
-      py={8}
-    >
+    <Flex {...dsScreenShell} py={8}>
       <Box w="100%" maxW="560px">
         <SetupCard {...sharedCardProps} />
       </Box>

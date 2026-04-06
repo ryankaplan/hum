@@ -190,7 +190,9 @@ function CalibrationTimeline({
             Math.min(100, (sec / visibleDurationSec) * 100),
           );
           const target = targetBeats.has(i);
-          const brightColor = ["#ff4d8d", "#00d8ff", "#6bff7d", "#ffd84d"][i % 4];
+          const brightColor = ["#ff4d8d", "#00d8ff", "#6bff7d", "#ffd84d"][
+            i % 4
+          ];
           return (
             <Box
               key={`beat-${i}`}
@@ -250,7 +252,7 @@ function CalibrationTimeline({
 export function LatencyCalibrationScreen() {
   const stream = useObservable(model.mediaStream);
   const ctx = useObservable(model.audioContext);
-  const tempo = useObservable(model.tempoInput);
+  const arrangement = useObservable(model.arrangementDocument);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -308,7 +310,7 @@ export function LatencyCalibrationScreen() {
       audioBuffer: capture.audioBuffer,
       sourceStartSec: capture.sourceStartSec,
       durationSec: capture.durationSec,
-      tempo,
+      tempo: arrangement.tempo,
       manualShiftSec,
       previewSpeechGain: capture.previewSpeechGain,
       previewClickGain: capture.previewClickGain,
@@ -320,7 +322,7 @@ export function LatencyCalibrationScreen() {
     if (previewSessionRef.current == null) return;
     startPreview();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [manualShiftSec, tempo]);
+  }, [arrangement.tempo, manualShiftSec]);
 
   async function handleMicChange(deviceId: string) {
     if (busy) return;
@@ -374,7 +376,7 @@ export function LatencyCalibrationScreen() {
         await runBestEffortAutoCalibration({
           ctx,
           stream,
-          tempo,
+          tempo: arrangement.tempo,
           onBeat: (beat) => setCaptureBeat(beat),
         });
       setCaptureBeat(-1);
@@ -446,8 +448,43 @@ export function LatencyCalibrationScreen() {
               Speech Sync Calibration
             </Heading>
             <Text color={dsColors.textMuted} fontSize="sm" mt={1}>
-              Choose your mic, then press Record. You will hear 2 bars: listen
-              during bar 1, then say “one, two, three, four” on bar 2.
+              Choose your mic, then press Record. You'll hear 2 measures worth
+              of beats: listen during measure 1, then count along to measure 2.
+            </Text>
+          </Box>
+
+          <Box
+            role="note"
+            bg={dsColors.surfaceSubtle}
+            border="1px solid"
+            borderColor={dsColors.borderMuted}
+            borderRadius="xl"
+            px={4}
+            py={3}
+          >
+            <Text
+              color={dsColors.text}
+              fontSize="xs"
+              fontWeight="semibold"
+              letterSpacing="0.02em"
+              textTransform="uppercase"
+              mb={2}
+            >
+              Don't use AirPods for your mic
+            </Text>
+            <Text
+              color={dsColors.textMuted}
+              fontSize="sm"
+              lineHeight="tall"
+              mt={2}
+            >
+              AirPods (and some other fancy microphones) have built-in
+              processing that is optimized for speech. When you hold a note
+              while singing, they start to think it's background noise and cut
+              it out.
+              <br /> <br />
+              Using your airpods to listen while you sing into another mic is
+              fine.
             </Text>
           </Box>
 

@@ -7,9 +7,8 @@ import {
   useState,
 } from "react";
 import {
-  evaluateAutomationLaneAtTime,
-  getVolumeAutomationLane,
-  type ClipAutomationLane,
+  evaluateClipVolumeAtTime,
+  type ClipVolumeEnvelope,
 } from "../../../state/clipAutomation";
 import { dsColors, dsPanel } from "../../designSystem";
 import { samplePeaksForSegment, snapTimeSec } from "../../timeline";
@@ -96,7 +95,7 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
     clipId: string,
     segmentStartSec: number,
     segmentDurationSec: number,
-    segmentAutomation: ClipAutomationLane,
+    segmentVolumeEnvelope: ClipVolumeEnvelope,
   ) {
     e.stopPropagation();
     if (view.exporting || view.isPlaying || view.isSyncingFrames) return;
@@ -113,13 +112,13 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
     };
 
     const pointerDownLocalSec = toLocalTimeSec(e.clientX);
-    const pointerDownGain = evaluateAutomationLaneAtTime(
-      segmentAutomation,
+    const pointerDownGainMultiplier = evaluateClipVolumeAtTime(
+      segmentVolumeEnvelope,
       pointerDownLocalSec,
       segmentDurationSec,
     );
     const pointerDownY = e.clientY - rect.top;
-    const volumeLineY = gainToLineYPx(pointerDownGain, heightPx);
+    const volumeLineY = gainToLineYPx(pointerDownGainMultiplier, heightPx);
     const isVolumeGesture =
       Math.abs(pointerDownY - volumeLineY) <= VOLUME_LINE_HIT_RADIUS_PX;
 
@@ -135,16 +134,17 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
 
       const onBrushMove = (event: PointerEvent) => {
         const centerSec = toLocalTimeSec(event.clientX);
-        const deltaValue = (lastClientY - event.clientY) * VOLUME_BRUSH_GAIN_PER_PX;
+        const deltaGainMultiplier =
+          (lastClientY - event.clientY) * VOLUME_BRUSH_GAIN_PER_PX;
         lastClientY = event.clientY;
 
-        if (Math.abs(deltaValue) > 1e-6) {
+        if (Math.abs(deltaGainMultiplier) > 1e-6) {
           onCommand({
             type: "apply_volume_brush",
             laneIndex,
             clipId,
             centerSec,
-            deltaValue,
+            deltaGainMultiplier,
             radiusSec: VOLUME_BRUSH_RADIUS_SEC,
           });
         }
@@ -477,12 +477,9 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
                       segment.durationSec,
                       bars,
                     );
-                    const volumeLane = getVolumeAutomationLane(
-                      segment.automation,
-                      segment.durationSec,
-                    );
+                    const volumeEnvelope = segment.volumeEnvelope;
                     const volumeLine = buildVolumePolylinePoints(
-                      volumeLane,
+                      volumeEnvelope,
                       segment.durationSec,
                     );
                     const activeBrush =
@@ -514,7 +511,7 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
                             segment.id,
                             segment.timelineStartSec,
                             segment.durationSec,
-                            volumeLane,
+                            volumeEnvelope,
                           )
                         }
                       >
@@ -583,15 +580,15 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
 }
 
 function buildVolumePolylinePoints(
-  lane: ClipAutomationLane,
+  volumeEnvelope: ClipVolumeEnvelope,
   durationSec: number,
 ): string {
   if (durationSec <= 0) return "0,50";
-  const sorted = [...lane.points].sort((a, b) => a.timeSec - b.timeSec);
+  const sorted = [...volumeEnvelope.points].sort((a, b) => a.timeSec - b.timeSec);
   return sorted
     .map((point) => {
       const x = clamp((point.timeSec / durationSec) * 100, 0, 100);
-      const y = clamp((1 - point.value / 2) * 100, 2, 98);
+      const y = clamp((1 - point.gainMultiplier / 2) * 100, 2, 98);
       return `${x},${y}`;
     })
     .join(" ");

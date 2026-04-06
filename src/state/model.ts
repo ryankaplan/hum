@@ -10,7 +10,7 @@ import {
 } from "./arrangementModel";
 import type {
   ArrangementDocState,
-  ArrangementInfo,
+  ArrangementInfo as DerivedArrangementInfo,
   TotalPartCount,
 } from "./arrangementModel";
 import {
@@ -129,7 +129,7 @@ class AppModel {
     createIdlePartStates(this.arrangementDocument.get().totalParts),
   );
 
-  readonly arrangementInfo = new Derived<ArrangementInfo>(
+  readonly derivedArrangementInfo = new Derived<DerivedArrangementInfo>(
     () => computeArrangementInfo(this.arrangementDocument.get()),
     [this.arrangementDocument],
     { checkForEqualityOnNotify: false },
@@ -149,14 +149,14 @@ class AppModel {
   readonly tracksEditor = new TracksEditorModel();
 
   readonly parsedChords = new Derived<Chord[]>(
-    () => this.arrangementInfo.get().parsedChords,
-    [this.arrangementInfo],
+    () => this.derivedArrangementInfo.get().parsedChords,
+    [this.derivedArrangementInfo],
     { checkForEqualityOnNotify: false },
   );
 
   readonly harmonyVoicing = new Derived<HarmonyVoicing | null>(
-    () => this.arrangementInfo.get().harmonyVoicing,
-    [this.arrangementInfo],
+    () => this.derivedArrangementInfo.get().harmonyVoicing,
+    [this.derivedArrangementInfo],
     { checkForEqualityOnNotify: false },
   );
 
@@ -195,7 +195,7 @@ class AppModel {
     });
 
     const takeId = this.makeTakeId();
-    const arrangement = this.arrangementInfo.get();
+    const arrangement = this.derivedArrangementInfo.get();
 
     const take: TakeRecord = {
       id: takeId,
@@ -265,10 +265,15 @@ class AppModel {
       sourceStartSec,
       durationSec,
     });
-    const computedBuckets = waveformBuckets ?? Math.max(
-      64,
-      Math.min(4096, Math.round(durationSec * Math.max(16, waveformBucketsPerSec))),
-    );
+    const computedBuckets =
+      waveformBuckets ??
+      Math.max(
+        64,
+        Math.min(
+          4096,
+          Math.round(durationSec * Math.max(16, waveformBucketsPerSec)),
+        ),
+      );
     this.waveformPeaksByTakeId.set(
       takeId,
       buildWaveformPeaks(decoded, sourceStartSec, durationSec, computedBuckets),

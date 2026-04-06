@@ -30,7 +30,7 @@ export function createDefaultArrangementDocState(): ArrangementDocState {
     tempo: 80,
     meter: [4, 4],
     vocalRangeLow: "C3",
-    vocalRangeHigh: "C5",
+    vocalRangeHigh: "A4",
     totalParts: 4,
   };
 }

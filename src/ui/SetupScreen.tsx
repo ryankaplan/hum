@@ -34,42 +34,19 @@ import {
   dsScreenShell,
 } from "./designSystem";
 
-const NOTE_OPTIONS = [
-  "C2",
-  "D2",
-  "E2",
-  "F2",
-  "G2",
-  "A2",
-  "B2",
-  "C3",
-  "D3",
-  "E3",
-  "F3",
-  "G3",
-  "A3",
-  "B3",
-  "C4",
-  "D4",
-  "E4",
-  "F4",
-  "G4",
-  "A4",
-  "B4",
-  "C5",
-  "D5",
-  "E5",
-  "F5",
-  "G5",
-  "A5",
-  "B5",
-];
-
 const METER_OPTIONS: { label: string; value: Meter }[] = [
   { label: "4/4", value: [4, 4] },
   { label: "3/4", value: [3, 4] },
   { label: "6/8", value: [6, 8] },
 ];
+
+const RANGE_OPTIONS = [
+  { label: "Bass", low: "F2", high: "D4" },
+  { label: "Baritone", low: "A2", high: "F4" },
+  { label: "Tenor", low: "C3", high: "A4" },
+  { label: "Alto", low: "A3", high: "D5" },
+  { label: "Soprano", low: "D4", high: "G5" },
+] as const;
 
 type SetupCardProps = {
   arrangement: ArrangementInfo;
@@ -82,8 +59,7 @@ type SetupCardProps = {
   onTempoInputChange: (value: string) => void;
   onTempoInputBlur: () => void;
   onMeterLabelChange: (label: string) => void;
-  onRangeLowChange: (value: string) => void;
-  onRangeHighChange: (value: string) => void;
+  onRangePresetChange: (value: string) => void;
   onPartCountChange: (value: "2" | "4") => void;
   onPreview: () => void;
   onStopPreview: () => void;
@@ -101,8 +77,7 @@ function SetupCard({
   onTempoInputChange,
   onTempoInputBlur,
   onMeterLabelChange,
-  onRangeLowChange,
-  onRangeHighChange,
+  onRangePresetChange,
   onPartCountChange,
   onPreview,
   onStopPreview,
@@ -120,6 +95,10 @@ function SetupCard({
     vocalRangeHigh: rangeHigh,
     totalParts,
   } = input;
+  const selectedRangeValue =
+    RANGE_OPTIONS.find(
+      (option) => option.low === rangeLow && option.high === rangeHigh,
+    )?.label ?? "";
 
   const controlStyles = {
     ...dsInputControl,
@@ -147,21 +126,63 @@ function SetupCard({
 
         <Stack gap={4}>
           <Field.Root>
-            <Field.Label color={dsColors.text}>Chord Progression</Field.Label>
+            <Flex align="center" justify="space-between" gap={3}>
+              <Field.Label color={dsColors.text} mb={0}>
+                Chord progression
+              </Field.Label>
+              <Tooltip.Root openDelay={250}>
+                <Tooltip.Trigger asChild>
+                  <Box
+                    as="button"
+                    type="button"
+                    aria-label="Chord progression help"
+                    display="inline-flex"
+                    alignItems="center"
+                    justifyContent="center"
+                    w={5}
+                    h={5}
+                    borderRadius="full"
+                    border="1px solid"
+                    borderColor={dsColors.borderMuted}
+                    color={dsColors.textMuted}
+                    fontSize="xs"
+                    fontWeight="bold"
+                    cursor="help"
+                    bg={dsColors.surfaceSubtle}
+                    _hover={{ bg: dsColors.surfaceRaised, color: dsColors.text }}
+                  >
+                    i
+                  </Box>
+                </Tooltip.Trigger>
+                <Tooltip.Positioner>
+                  <Tooltip.Content
+                    px={3}
+                    py={2}
+                    borderRadius="md"
+                    maxW="sm"
+                    bg={dsColors.surfaceRaised}
+                    color={dsColors.text}
+                    borderWidth="1px"
+                    borderColor={dsColors.border}
+                    boxShadow="md"
+                    fontSize="xs"
+                  >
+                    One chord per bar, space separated - repeat a chord to hold
+                    it: "Am Am G F F E". Use brackets for shared bars: "[A E]"
+                    = two chords in one bar.
+                  </Tooltip.Content>
+                </Tooltip.Positioner>
+              </Tooltip.Root>
+            </Flex>
             <Input
               value={chords}
               onChange={(e) => onChordsChange(e.target.value)}
               placeholder="A A F#m F#m D D E E"
               {...controlStyles}
             />
-            <Field.HelperText color={dsColors.textMuted} fontSize="xs">
-              One chord per bar, space separated - repeat a chord to hold it:
-              "Am Am G F F E". Use brackets for shared bars: "[A E]" = two
-              chords in one bar.
-            </Field.HelperText>
           </Field.Root>
 
-          <Grid templateColumns="1fr 1fr" gap={4}>
+          <Grid templateColumns={{ base: "1fr", md: "1fr 1fr 1fr" }} gap={4}>
             <Field.Root>
               <Field.Label color={dsColors.text}>Tempo (BPM)</Field.Label>
               <Input
@@ -191,37 +212,21 @@ function SetupCard({
                 </NativeSelect.Field>
               </NativeSelect.Root>
             </Field.Root>
-          </Grid>
-
-          <Grid templateColumns="1fr 1fr" gap={4}>
-            <Field.Root>
-              <Field.Label color={dsColors.text}>Lowest Note</Field.Label>
-              <NativeSelect.Root>
-                <NativeSelect.Field
-                  value={rangeLow}
-                  onChange={(e) => onRangeLowChange(e.target.value)}
-                  {...controlStyles}
-                >
-                  {NOTE_OPTIONS.map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </NativeSelect.Field>
-              </NativeSelect.Root>
-            </Field.Root>
 
             <Field.Root>
-              <Field.Label color={dsColors.text}>Highest Note</Field.Label>
+              <Field.Label color={dsColors.text}>Range</Field.Label>
               <NativeSelect.Root>
                 <NativeSelect.Field
-                  value={rangeHigh}
-                  onChange={(e) => onRangeHighChange(e.target.value)}
+                  value={selectedRangeValue}
+                  onChange={(e) => onRangePresetChange(e.target.value)}
                   {...controlStyles}
                 >
-                  {NOTE_OPTIONS.map((n) => (
-                    <option key={n} value={n}>
-                      {n}
+                  <option value="" disabled>
+                    Select range
+                  </option>
+                  {RANGE_OPTIONS.map((option) => (
+                    <option key={option.label} value={option.label}>
+                      {option.label}: {option.low}-{option.high}
                     </option>
                   ))}
                 </NativeSelect.Field>
@@ -381,7 +386,7 @@ function SetupCard({
 }
 
 export function SetupScreen() {
-  const arrangement = useObservable(model.arrangementInfo);
+  const arrangement = useObservable(model.derivedArrangementInfo);
   const error = useObservable(model.permissionError);
 
   const [previewing, setPreviewing] = useState(false);
@@ -502,10 +507,14 @@ export function SetupScreen() {
     onTempoInputChange: handleTempoInputChange,
     onTempoInputBlur: handleTempoInputBlur,
     onMeterLabelChange: handleMeterLabelChange,
-    onRangeLowChange: (value: string) =>
-      model.setArrangementInput({ vocalRangeLow: value }),
-    onRangeHighChange: (value: string) =>
-      model.setArrangementInput({ vocalRangeHigh: value }),
+    onRangePresetChange: (value: string) => {
+      const range = RANGE_OPTIONS.find((option) => option.label === value);
+      if (range == null) return;
+      model.setArrangementInput({
+        vocalRangeLow: range.low,
+        vocalRangeHigh: range.high,
+      });
+    },
     onPartCountChange: handlePartCountChange,
     onPreview: handlePreview,
     onStopPreview: handleStopPreview,

@@ -29,7 +29,7 @@ export const latencyCorrectionSec = model.latencyCorrectionSec;
 export const isCalibrated = model.isCalibrated;
 
 export const arrangementDocument = model.arrangementDocument;
-export const arrangementInfo = model.arrangementInfo;
+export const arrangementInfo = model.derivedArrangementInfo;
 export const parsedChords = model.parsedChords;
 export const harmonyVoicing = model.harmonyVoicing;
 

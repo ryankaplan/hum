@@ -187,6 +187,10 @@ const config = defineConfig({
     ".record-note-timeline": {
       background:
         "linear-gradient(180deg, color-mix(in srgb, var(--app-surface) 34%, transparent), color-mix(in srgb, var(--app-surface-subtle) 55%, transparent))",
+      scrollbarWidth: "none",
+      "&::-webkit-scrollbar": {
+        display: "none",
+      },
     },
     ".record-note-pitch-line": {
       height: "1px",

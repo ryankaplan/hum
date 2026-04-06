@@ -64,7 +64,7 @@ export function startCompositor(
           drawCoverFit(cache.ctx, video, 0, 0, cellW, cellH);
           cache.hasFrame = true;
         }
-      } else if (active && cache?.hasFrame) {
+      } else if (cache?.hasFrame) {
         ctx.drawImage(cache.canvas, pos[0], pos[1], cellW, cellH);
       } else {
         ctx.fillStyle = "#111";

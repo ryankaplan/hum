@@ -33,6 +33,7 @@ import {
   dsPrimaryButton,
   dsScreenShell,
 } from "./designSystem";
+import { InfoIcon, PlayIcon, StopIcon } from "./icons";
 
 const METER_OPTIONS: { label: string; value: Meter }[] = [
   { label: "4/4", value: [4, 4] },
@@ -126,7 +127,7 @@ function SetupCard({
 
         <Stack gap={4}>
           <Field.Root>
-            <Flex align="center" justify="space-between" gap={3}>
+            <Flex align="center" justify="space-between" gap={3} width="100%">
               <Field.Label color={dsColors.text} mb={0}>
                 Chord progression
               </Field.Label>
@@ -142,22 +143,13 @@ function SetupCard({
                     display="inline-flex"
                     alignItems="center"
                     justifyContent="center"
-                    w={7}
-                    h={7}
-                    borderRadius="full"
-                    border="1px solid"
-                    borderColor={dsColors.borderMuted}
                     color={dsColors.textMuted}
-                    fontSize="xs"
-                    fontWeight="bold"
                     cursor="help"
-                    bg={dsColors.surfaceSubtle}
                     _hover={{
-                      bg: dsColors.surfaceRaised,
                       color: dsColors.text,
                     }}
                   >
-                    i
+                    <InfoIcon size={20} strokeWidth={1.9} />
                   </Box>
                 </Tooltip.Trigger>
                 <Tooltip.Positioner>
@@ -274,14 +266,23 @@ function SetupCard({
                 h={7}
                 px={2.5}
                 borderRadius="full"
-                borderColor={previewing ? dsColors.focusRing : dsColors.outline}
+                borderColor="transparent"
                 color={previewing ? dsColors.accent : dsColors.textMuted}
+                _hover={{
+                  bg: dsColors.surfaceSubtle,
+                  color: previewing ? dsColors.accent : dsColors.text,
+                }}
                 onClick={previewing ? onStopPreview : onPreview}
                 aria-label={
                   previewing ? "Stop harmony preview" : "Play harmony preview"
                 }
-              >
-                {previewing ? "■" : "▶"}
+                  lineHeight={0}
+                >
+                  {previewing ? (
+                  <StopIcon size={16} strokeWidth={2.1} />
+                ) : (
+                  <PlayIcon size={16} strokeWidth={2.1} />
+                )}
               </Button>
             </Flex>
             <Flex gap={2} flexWrap="wrap">

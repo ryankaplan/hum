@@ -31,6 +31,7 @@ import {
   dsPrimaryButton,
   dsScreenShell,
 } from "./designSystem";
+import { PlayIcon, StopIcon, VolumeOffIcon, VolumeOnIcon } from "./icons";
 import { NoteDisplay } from "./NoteDisplay";
 
 // "listening" = playing guide tones without recording (pre-roll practice)
@@ -40,21 +41,6 @@ type RecordPhase =
   | "counting-in"
   | "recording"
   | "review";
-
-function MuteIcon({ muted }: { muted: boolean }) {
-  if (muted) {
-    return (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" />
-      </svg>
-    );
-  }
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
-    </svg>
-  );
-}
 
 type RecordingListProps = {
   stream: MediaStream;
@@ -150,7 +136,11 @@ function RecordingList({
                     justify="center"
                     bg={dsColors.mediaBg}
                   >
-                    <Text color={dsColors.textSubtle} fontSize="xs" fontWeight="semibold">
+                    <Text
+                      color={dsColors.textSubtle}
+                      fontSize="xs"
+                      fontWeight="semibold"
+                    >
                       {getPartLabel(i, totalParts)}
                     </Text>
                   </Flex>
@@ -222,8 +212,14 @@ function KeptCell({ url, muted, onToggleMute }: KeptCellProps) {
         onClick={onToggleMute}
         style={{ cursor: "pointer", border: "none", lineHeight: 0 }}
         _hover={{ bg: "rgba(12, 12, 14, 0.9)" }}
+        aria-label={muted ? "Unmute track monitor" : "Mute track monitor"}
+        title={muted ? "Unmute track monitor" : "Mute track monitor"}
       >
-        <MuteIcon muted={muted} />
+        {muted ? (
+          <VolumeOffIcon size={16} strokeWidth={2} />
+        ) : (
+          <VolumeOnIcon size={16} strokeWidth={2} />
+        )}
       </Box>
     </>
   );
@@ -272,7 +268,8 @@ export function RecordingWizard() {
   const ctx = useObservable(model.audioContext);
   const orderedTrackIds = tracksDocument.trackOrder;
   const keptUrls = orderedTrackIds.map((trackId) => {
-    const recordingId = model.tracksDocument.getPrimaryRecordingIdForTrack(trackId);
+    const recordingId =
+      model.tracksDocument.getPrimaryRecordingIdForTrack(trackId);
     return recordingId != null ? model.getRecordingUrl(recordingId) : null;
   });
 
@@ -293,7 +290,8 @@ export function RecordingWizard() {
     for (let i = 0; i < partIndex; i++) {
       const trackId = orderedTrackIds[i];
       if (trackId == null) continue;
-      const recordingId = model.tracksDocument.getPrimaryRecordingIdForTrack(trackId);
+      const recordingId =
+        model.tracksDocument.getPrimaryRecordingIdForTrack(trackId);
       if (recordingId == null) continue;
       const recording = model.tracksDocument.getRecording(recordingId);
       const blob = model.getRecordingBlob(recordingId);
@@ -332,7 +330,10 @@ export function RecordingWizard() {
     let audioIdx = 0;
     for (let i = 0; i < partIndex; i++) {
       const trackId = orderedTrackIds[i];
-      if (trackId != null && model.tracksDocument.getPrimaryRecordingIdForTrack(trackId) != null) {
+      if (
+        trackId != null &&
+        model.tracksDocument.getPrimaryRecordingIdForTrack(trackId) != null
+      ) {
         player.setMuted(audioIdx, mutedParts[i] ?? false);
         audioIdx++;
       }
@@ -443,7 +444,6 @@ export function RecordingWizard() {
         (60 / arrangement.tempo) *
         1000 +
       400;
-
 
     setTimeout(() => {
       // Only stop if we're still in the listening phase from this call
@@ -605,12 +605,11 @@ export function RecordingWizard() {
       ? `Beat ${activeBeatInBar + 1}/${beatsPerBar}`
       : `Beat -/${beatsPerBar}`;
   const beatIsDownbeat = activeBeatInBar === 0;
-  const activeMicLabel = stream.getAudioTracks()[0]?.label ?? "Selected microphone";
+  const activeMicLabel =
+    stream.getAudioTracks()[0]?.label ?? "Selected microphone";
 
   return (
-    <Flex
-      {...dsScreenShell}
-    >
+    <Flex {...dsScreenShell}>
       <Box w="100%" maxW="420px" p={6} {...dsPanel}>
         <Stack gap={3}>
           {/* Header */}
@@ -645,12 +644,12 @@ export function RecordingWizard() {
 
           {/* Recording list */}
           <RecordingList
-              stream={stream}
-              totalParts={totalParts}
-              partIndex={partIndex}
-              keptUrls={keptUrls}
-              phase={phase}
-              reviewUrl={reviewUrl}
+            stream={stream}
+            totalParts={totalParts}
+            partIndex={partIndex}
+            keptUrls={keptUrls}
+            phase={phase}
+            reviewUrl={reviewUrl}
             reviewVideoRef={reviewVideoRef}
             mutedParts={mutedParts}
             onToggleMute={handleToggleMute}
@@ -673,7 +672,11 @@ export function RecordingWizard() {
           {phase !== "review" && hasPriorHarmonyMonitorControl && (
             <Box bg={dsColors.surfaceRaised} borderRadius="xl" px={4} py={3}>
               <Flex justify="space-between" align="center" mb={2}>
-                <Text color={dsColors.textMuted} fontSize="xs" fontWeight="semibold">
+                <Text
+                  color={dsColors.textMuted}
+                  fontSize="xs"
+                  fontWeight="semibold"
+                >
                   PREVIOUS HARMONIES VOLUME
                 </Text>
                 <Text color={dsColors.text} fontSize="xs" fontWeight="semibold">
@@ -707,12 +710,20 @@ export function RecordingWizard() {
             <Box bg={dsColors.surfaceRaised} borderRadius="xl" px={4} py={3}>
               <Flex align="center" justify="space-between" mb={2}>
                 {phase === "counting-in" && (
-                  <Text color={dsColors.textMuted} fontSize="xs" fontWeight="semibold">
+                  <Text
+                    color={dsColors.textMuted}
+                    fontSize="xs"
+                    fontWeight="semibold"
+                  >
                     COUNT-IN
                   </Text>
                 )}
                 {phase === "listening" && (
-                  <Text color={dsColors.accent} fontSize="xs" fontWeight="semibold">
+                  <Text
+                    color={dsColors.accent}
+                    fontSize="xs"
+                    fontWeight="semibold"
+                  >
                     LISTENING
                   </Text>
                 )}
@@ -726,7 +737,11 @@ export function RecordingWizard() {
                         bg={dsColors.errorBorder}
                         animation="recPulse 1s ease-in-out infinite"
                       />
-                      <Text color={dsColors.errorText} fontSize="xs" fontWeight="semibold">
+                      <Text
+                        color={dsColors.errorText}
+                        fontSize="xs"
+                        fontWeight="semibold"
+                      >
                         RECORDING
                       </Text>
                     </Flex>
@@ -743,8 +758,9 @@ export function RecordingWizard() {
                       onClick={handleStopRecording}
                       aria-label="Stop recording"
                       title="Stop recording"
+                      lineHeight={0}
                     >
-                      ■
+                      <StopIcon size={16} strokeWidth={2.1} />
                     </Button>
                   </>
                 )}
@@ -773,7 +789,9 @@ export function RecordingWizard() {
                     }
                   />
                   <Text
-                    color={beatIsDownbeat ? dsColors.accent : dsColors.textMuted}
+                    color={
+                      beatIsDownbeat ? dsColors.accent : dsColors.textMuted
+                    }
                     fontSize="xs"
                     fontWeight="semibold"
                   >
@@ -794,8 +812,19 @@ export function RecordingWizard() {
                   borderColor={isListening ? dsColors.accent : dsColors.outline}
                   color={isListening ? dsColors.accent : dsColors.textMuted}
                   onClick={isListening ? handleStopListening : handleListen}
+                  gap={2}
                 >
-                  {isListening ? "Stop" : "Listen"}
+                  {isListening ? (
+                    <>
+                      <StopIcon size={16} strokeWidth={2.1} />
+                      Stop
+                    </>
+                  ) : (
+                    <>
+                      <PlayIcon size={16} strokeWidth={2} />
+                      Listen
+                    </>
+                  )}
                 </Button>
                 <Button
                   {...dsPrimaryButton}
@@ -812,27 +841,21 @@ export function RecordingWizard() {
                   <Button
                     variant="ghost"
                     size="xs"
-                    color={guideToneEnabled ? dsColors.accent : dsColors.textSubtle}
+                    color={
+                      guideToneEnabled ? dsColors.accent : dsColors.textSubtle
+                    }
                     onClick={() => setGuideToneEnabled((v) => !v)}
                   >
                     Guide tones: {guideToneEnabled ? "on" : "off"}
                   </Button>
                 )}
               </Flex>
-              <Text color={dsColors.textSubtle} fontSize="xs" textAlign="center">
-                Mic locked from calibration: {activeMicLabel}
-              </Text>
-
             </Stack>
           )}
 
           {phase === "review" && (
             <Grid templateColumns="1fr 1fr" gap={3}>
-              <Button
-                {...dsOutlineButton}
-                size="lg"
-                onClick={handleRedo}
-              >
+              <Button {...dsOutlineButton} size="lg" onClick={handleRedo}>
                 Redo
               </Button>
               <Button {...dsPrimaryButton} size="lg" onClick={handleKeep}>

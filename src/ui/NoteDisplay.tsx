@@ -43,7 +43,7 @@ export function NoteDisplay({
 }: Props) {
   if (harmonyLine == null) {
     return (
-      <Box p={4} {...dsPanel}>
+      <Box w="100%" p={4} {...dsPanel}>
         <Text color={dsColors.textMuted} fontSize="sm" textAlign="center">
           Melody — sing freely over the harmonies
         </Text>
@@ -76,7 +76,7 @@ export function NoteDisplay({
 
   if (segments.length === 0 || totalBeats <= 0) {
     return (
-      <Box p={4} {...dsPanel}>
+      <Box w="100%" p={4} {...dsPanel}>
         <Text color={dsColors.textMuted} fontSize="sm" textAlign="center">
           No harmony notes available for this part yet.
         </Text>
@@ -179,11 +179,12 @@ export function NoteDisplay({
   }, [playheadX, transportActive, hasActiveBeat, trackWidthPx]);
 
   return (
-    <Box p={4} {...dsPanel}>
+    <Box w="100%" p={4} {...dsPanel}>
       <Text color={dsColors.textMuted} fontSize="xs" mb={3} fontWeight="semibold">
         YOUR NOTES
       </Text>
       <Box
+        w="100%"
         ref={scrollViewportRef}
         className="record-note-timeline"
         borderRadius="xl"

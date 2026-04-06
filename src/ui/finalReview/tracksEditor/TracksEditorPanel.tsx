@@ -11,6 +11,7 @@ import {
   type ClipVolumeEnvelope,
 } from "../../../state/clipAutomation";
 import { dsColors, dsPanel } from "../../designSystem";
+import { VolumeOffIcon, VolumeOnIcon } from "../../icons";
 import { samplePeaksForSegment } from "../../timeline";
 import type { TracksEditorCommand } from "./commands";
 import type { TracksEditorView } from "./viewTypes";
@@ -217,49 +218,24 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
         >
           Tracks
         </Text>
-        <Flex align="center" gap={3}>
-          <Flex align="center" gap={2} minW={{ base: "140px", md: "190px" }}>
-            <Text fontSize="xs" color="appTextMuted" whiteSpace="nowrap">
-              Reverb
-            </Text>
-            <input
-              type="range"
-              className="mix-slider"
-              min={0}
-              max={100}
-              step={1}
-              value={Math.round(view.reverbWet * 100)}
-              onChange={(e) => onReverbChange(parseInt(e.target.value, 10) / 100)}
-              disabled={view.exporting || view.isSyncingFrames}
-              style={{ width: "100%" }}
-            />
-            <Text
-              fontSize="xs"
-              color="appTextSubtle"
-              minW="34px"
-              textAlign="right"
-              fontVariantNumeric="tabular-nums"
-            >
-              {Math.round(view.reverbWet * 100)}%
-            </Text>
-          </Flex>
-          <Box
-            as="span"
-            fontSize="xs"
-            color="appTextMuted"
-            fontFamily="mono"
-            fontVariantNumeric="tabular-nums"
-          >
-            {formatTime(view.playheadSec)}
-            <Box as="span" color="appTextSubtle">
-              {" "}
-              / {formatTime(view.timelineEndSec)}
-            </Box>
+        <Box
+          as="span"
+          fontSize="xs"
+          color="appTextMuted"
+          fontFamily="mono"
+          fontVariantNumeric="tabular-nums"
+        >
+          {formatTime(view.playheadSec)}
+          <Box as="span" color="appTextSubtle">
+            {" "}
+            / {formatTime(view.timelineEndSec)}
           </Box>
-        </Flex>
+        </Box>
       </Flex>
 
       <Flex
+        align="center"
+        justify="space-between"
         gap={1.5}
         flexWrap="wrap"
         px={3}
@@ -267,56 +243,83 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
         borderBottomWidth="1px"
         borderColor="appBorderMuted"
       >
-        <Button
-          variant={view.isPlaying ? "outline" : "solid"}
-          size="sm"
-          h={8}
-          px={3}
-          fontSize="xs"
-          fontWeight="medium"
-          onClick={onPlayPause}
-          disabled={view.exporting || view.isSyncingFrames || view.timelineEndSec <= 0}
-          loading={view.isSyncingFrames}
-          loadingText="Syncing…"
-          borderColor={view.isPlaying ? dsColors.outline : dsColors.accent}
-          bg={view.isPlaying ? "transparent" : dsColors.accent}
-          color={view.isPlaying ? dsColors.textMuted : dsColors.accentForeground}
-          _hover={{
-            bg: view.isPlaying ? dsColors.surfaceRaised : dsColors.accentHover,
-          }}
-        >
-          {view.isPlaying ? "Pause" : "Play"}
-        </Button>
-        <Button
-          size="sm"
-          h={8}
-          px={3}
-          variant="outline"
-          borderColor="appBorderMuted"
-          color="appText"
-          _hover={{ bg: dsColors.surfaceRaised }}
-          fontSize="xs"
-          fontWeight="normal"
-          onClick={() => onCommand({ type: "split_selected" })}
-          disabled={view.exporting || view.isSyncingFrames || !view.canSplit}
-        >
-          Split
-        </Button>
-        <Button
-          size="sm"
-          h={8}
-          px={3}
-          variant="outline"
-          borderColor="appBorderMuted"
-          color="appText"
-          _hover={{ bg: dsColors.surfaceRaised }}
-          fontSize="xs"
-          fontWeight="normal"
-          onClick={() => onCommand({ type: "delete_selected" })}
-          disabled={view.exporting || view.isSyncingFrames || !view.canDelete}
-        >
-          Delete
-        </Button>
+        <Flex gap={1.5} flexWrap="wrap">
+          <Button
+            variant={view.isPlaying ? "outline" : "solid"}
+            size="sm"
+            h={8}
+            px={3}
+            fontSize="xs"
+            fontWeight="medium"
+            onClick={onPlayPause}
+            disabled={view.exporting || view.isSyncingFrames || view.timelineEndSec <= 0}
+            loading={view.isSyncingFrames}
+            loadingText="Syncing…"
+            borderColor={view.isPlaying ? dsColors.outline : dsColors.accent}
+            bg={view.isPlaying ? "transparent" : dsColors.accent}
+            color={view.isPlaying ? dsColors.textMuted : dsColors.accentForeground}
+            _hover={{
+              bg: view.isPlaying ? dsColors.surfaceRaised : dsColors.accentHover,
+            }}
+          >
+            {view.isPlaying ? "Pause" : "Play"}
+          </Button>
+          <Button
+            size="sm"
+            h={8}
+            px={3}
+            variant="outline"
+            borderColor="appBorderMuted"
+            color="appText"
+            _hover={{ bg: dsColors.surfaceRaised }}
+            fontSize="xs"
+            fontWeight="normal"
+            onClick={() => onCommand({ type: "split_selected" })}
+            disabled={view.exporting || view.isSyncingFrames || !view.canSplit}
+          >
+            Split
+          </Button>
+          <Button
+            size="sm"
+            h={8}
+            px={3}
+            variant="outline"
+            borderColor="appBorderMuted"
+            color="appText"
+            _hover={{ bg: dsColors.surfaceRaised }}
+            fontSize="xs"
+            fontWeight="normal"
+            onClick={() => onCommand({ type: "delete_selected" })}
+            disabled={view.exporting || view.isSyncingFrames || !view.canDelete}
+          >
+            Delete
+          </Button>
+        </Flex>
+        <Flex align="center" gap={2} minW={{ base: "180px", md: "220px" }} flex="1" justify="end">
+          <Text fontSize="xs" color="appTextMuted" whiteSpace="nowrap">
+            Reverb
+          </Text>
+          <input
+            type="range"
+            className="mix-slider"
+            min={0}
+            max={100}
+            step={1}
+            value={Math.round(view.reverbWet * 100)}
+            onChange={(e) => onReverbChange(parseInt(e.target.value, 10) / 100)}
+            disabled={view.exporting || view.isSyncingFrames}
+            style={{ width: "100%", maxWidth: "180px" }}
+          />
+          <Text
+            fontSize="xs"
+            color="appTextSubtle"
+            minW="34px"
+            textAlign="right"
+            fontVariantNumeric="tabular-nums"
+          >
+            {Math.round(view.reverbWet * 100)}%
+          </Text>
+        </Flex>
       </Flex>
 
       {(view.isSyncingFrames || view.syncWarning != null) && (
@@ -387,11 +390,17 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
                   h={6}
                   minW={7}
                   p={0}
-                  fontSize="11px"
+                  lineHeight={0}
                   flexShrink={0}
                   disabled={view.exporting || view.isSyncingFrames}
+                  aria-label={lane.muted ? `Unmute ${lane.label}` : `Mute ${lane.label}`}
+                  title={lane.muted ? `Unmute ${lane.label}` : `Mute ${lane.label}`}
                 >
-                  M
+                  {lane.muted ? (
+                    <VolumeOffIcon size={15} strokeWidth={2} />
+                  ) : (
+                    <VolumeOnIcon size={15} strokeWidth={2} />
+                  )}
                 </Button>
                 <input
                   type="range"

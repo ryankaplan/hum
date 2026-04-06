@@ -103,38 +103,51 @@ Typical stack:
 ## What is implemented in this repo
 
 Current flow:
-- `Setup -> Calibration -> Recording`
-- Mic selection happens in calibration.
-- Calibration is session-scoped.
+- `Setup -> Calibration -> Recording -> Review`.
+- `Start Calibration` acquires camera/mic, resets session state, and routes to calibration.
+- Mic selection is owned by calibration (recording view is mic-locked/read-only).
+- Calibration is session-scoped only (`latencyCorrectionSec`, `isCalibrated`).
 
-Calibration UX:
-- User hears 2 bars (8 clicks).
+Calibration capture UX:
+- User hears 2 bars (8 beats) at current tempo.
 - Bar 1: listen.
-- Bar 2: say “one, two, three, four” on each beat.
-- App shows:
-  - speech waveform,
-  - fixed beat markers (bar-2 targets emphasized),
-  - draggable horizontal alignment.
-- User can play a looped 2-bar preview (metronome + shifted speech) to verify alignment.
-- Derived correction is computed from drag shift:
-  - `latencyCorrectionSec = clamp(-manualShiftSec, min, max)`.
+- Bar 2: say “one, two, three, four” on the beats.
+- While capturing, the UI shows a live 8-beat indicator (`LISTEN` for bar 1, `SPEAK` for bar 2).
+- Changing microphone replaces the active audio track and clears any existing calibration.
+
+Manual alignment + verification UX:
+- Alignment view uses only bar 2 (the speaking bar), not bar 1.
+- UI shows:
+  - bar-2 speech waveform in gray,
+  - fixed bar-2 beat lines,
+  - draggable horizontal waveform shift.
+- Drag is physically bounded to correction limits (no out-of-range drag state).
+- Correction mapping:
+  - `latencyCorrectionSec = clamp(-manualShiftSec, -0.4, 0.4)` (±400 ms).
+- Preview loop plays bar 2 only (4 beats): metronome clicks + shifted speech.
+- If shift/tempo changes during preview, playback is rescheduled so only one preview transport is active.
+- `Continue to Recording` is enabled after a successful capture, even if drag is left at `0 ms`.
 
 Recording integration:
-- Recording still computes base trim from Web Audio clock timing.
-- Session `latencyCorrectionSec` is added to base trim before take storage.
-- Existing playback/export paths already use `trimOffsetSec`, so correction propagates naturally.
+- Recording computes a clock-based baseline trim:
+  - `baseTrimOffsetSec = recordingStartTime - recorderStartCtxTime`.
+- Final per-take trim applies session correction:
+  - `trimOffsetSec = baseTrimOffsetSec + latencyCorrectionSec`.
+- Stored `trimOffsetSec` drives multitrack alignment in later takes/review/export.
 
 Key files:
-- `src/recording/clapCalibration.ts` (capture + preview + shift conversion)
-- `src/ui/ClapCalibrationScreen.tsx` (manual alignment UI)
-- `src/recording/recorder.ts` (applies correction to trim offset)
-- `src/state/model.ts` (session calibration state)
+- `src/recording/latencyCalibration.ts` (capture, waveform extraction, preview loop, shift->correction conversion)
+- `src/ui/LatencyCalibrationScreen.tsx` (mic picker, capture flow, manual alignment UI, preview controls)
+- `src/recording/recorder.ts` (applies correction into final take trim)
+- `src/recording/permissions.ts` (setup->calibration transition and session reset)
+- `src/state/model.ts` (session calibration state + clear/set APIs)
 
 ## Known limitations
 
 - Alignment quality is user-dependent.
 - Speech waveform can still be shaped by AEC/noise suppression.
 - Bluetooth latency can vary during a session.
+- The alignment window is only one bar, so rushed or very sparse speech can make visual alignment harder.
 
 ## Potential next steps
 

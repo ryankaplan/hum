@@ -184,6 +184,56 @@ const config = defineConfig({
       zIndex: "10",
     },
 
+    ".record-note-timeline": {
+      background:
+        "linear-gradient(180deg, color-mix(in srgb, var(--app-surface) 34%, transparent), color-mix(in srgb, var(--app-surface-subtle) 55%, transparent))",
+    },
+    ".record-note-pitch-line": {
+      height: "1px",
+      background:
+        "color-mix(in srgb, var(--app-border-muted) 12%, transparent)",
+      pointerEvents: "none",
+    },
+    ".record-note-beat-line": {
+      width: "1px",
+      background:
+        "color-mix(in srgb, var(--app-border-muted) 14%, transparent)",
+      pointerEvents: "none",
+    },
+    ".record-note-playhead": {
+      width: "1px",
+      marginLeft: "-0.5px",
+      background: "var(--app-accent)",
+      boxShadow:
+        "0 0 0 1px color-mix(in srgb, var(--app-accent) 28%, transparent)",
+      pointerEvents: "none",
+      zIndex: "3",
+    },
+    ".record-note-block": {
+      border: "1px solid color-mix(in srgb, var(--app-border-muted) 70%, transparent)",
+      background:
+        "color-mix(in srgb, var(--app-surface) 84%, transparent)",
+      cursor: "pointer",
+      transition: "background 0.14s ease, border-color 0.14s ease, transform 0.08s ease",
+      boxShadow:
+        "0 1px 3px color-mix(in srgb, var(--app-text) 10%, transparent)",
+      zIndex: "2",
+    },
+    ".record-note-block:hover": {
+      background:
+        "color-mix(in srgb, var(--app-surface) 82%, var(--app-border))",
+    },
+    ".record-note-block:active": {
+      transform: "scale(0.985)",
+    },
+    ".record-note-block.is-active": {
+      borderColor: "color-mix(in srgb, var(--app-accent) 62%, transparent)",
+      background: "var(--app-accent)",
+      boxShadow:
+        "0 0 0 1px color-mix(in srgb, var(--app-accent) 35%, transparent), 0 0 12px color-mix(in srgb, var(--app-accent) 32%, transparent)",
+      zIndex: "4",
+    },
+
     ".mix-slider:disabled, .timeline-slider:disabled": {
       opacity: "0.35",
       cursor: "not-allowed",
@@ -191,6 +241,11 @@ const config = defineConfig({
   },
   theme: {
     keyframes: {
+      beatPulse: {
+        "0%": { transform: "scale(0.86)", opacity: 0.45 },
+        "60%": { transform: "scale(1.1)", opacity: 1 },
+        "100%": { transform: "scale(1)", opacity: 0.86 },
+      },
       recPulse: {
         "0%, 100%": { opacity: 1 },
         "50%": { opacity: 0.25 },

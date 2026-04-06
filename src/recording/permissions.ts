@@ -47,7 +47,29 @@ export async function acquirePermissionsAndStart(): Promise<void> {
   model.audioContext.set(ctx);
 
   model.resetSession();
+  if (shouldSkipCalibrationFromUrl()) {
+    // Debug path: bypass calibration and use zero correction.
+    model.setCalibrationOffset(0);
+    model.appScreen.set("recording");
+    return;
+  }
   model.appScreen.set("calibration");
+}
+
+function shouldSkipCalibrationFromUrl(): boolean {
+  const params = new URLSearchParams(window.location.search);
+  if (!params.has("skip-calibration")) return false;
+
+  const raw = params.get("skip-calibration");
+  if (raw == null || raw.trim() === "") return true;
+
+  const normalized = raw.trim().toLowerCase();
+  return !(
+    normalized === "0" ||
+    normalized === "false" ||
+    normalized === "no" ||
+    normalized === "off"
+  );
 }
 
 function formatPermissionError(err: DOMException): string {

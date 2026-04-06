@@ -42,45 +42,6 @@ type RecordPhase =
   | "recording"
   | "review";
 
-type BeatDotsProps = {
-  beatsPerBar: number;
-  // 0-indexed active beat within the bar; -1 = none lit
-  activeBeat: number;
-};
-
-function BeatDots({ beatsPerBar, activeBeat }: BeatDotsProps) {
-  return (
-    <Flex gap={2} justify="center">
-      {Array.from({ length: beatsPerBar }).map((_, i) => {
-        const isDownbeat = i === 0;
-        const isActive = i === activeBeat;
-        return (
-          <Box
-            key={i}
-            borderRadius="full"
-            bg={
-              isActive
-                ? (isDownbeat ? dsColors.accent : dsColors.accentHover)
-                : dsColors.borderMuted
-            }
-            w={isDownbeat ? 4 : 3}
-            h={isDownbeat ? 4 : 3}
-            transition="background 0.06s"
-            style={
-              isActive
-                ? {
-                    boxShadow:
-                      "0 0 8px var(--chakra-colors-app-focus-ring, var(--chakra-colors-appFocusRing, #4d44e3))",
-                  }
-                : undefined
-            }
-          />
-        );
-      })}
-    </Flex>
-  );
-}
-
 function MuteIcon({ muted }: { muted: boolean }) {
   if (muted) {
     return (
@@ -621,6 +582,19 @@ export function RecordingWizard() {
   const partLabel = getPartLabel(partIndex, totalParts);
   const busy = phase === "counting-in" || phase === "recording";
   const isListening = phase === "listening";
+  const transportActive = phase === "listening" || phase === "recording";
+  const activeBeatInBarRaw =
+    phase === "counting-in"
+      ? countInBeat - 1
+      : currentAbsoluteBeat >= 0
+        ? currentAbsoluteBeat % beatsPerBar
+        : -1;
+  const activeBeatInBar = activeBeatInBarRaw >= 0 ? activeBeatInBarRaw : -1;
+  const beatLabel =
+    activeBeatInBar >= 0
+      ? `Beat ${activeBeatInBar + 1}/${beatsPerBar}`
+      : `Beat -/${beatsPerBar}`;
+  const beatIsDownbeat = activeBeatInBar === 0;
   const activeMicLabel = stream.getAudioTracks()[0]?.label ?? "Selected microphone";
 
   return (
@@ -679,6 +653,10 @@ export function RecordingWizard() {
               chords={chords}
               harmonyLine={harmonyLine}
               activeChordIndex={activeChordIndex}
+              currentAbsoluteBeat={currentAbsoluteBeat}
+              beatsPerBar={beatsPerBar}
+              tempo={tempo}
+              transportActive={transportActive}
             />
           )}
 
@@ -761,14 +739,38 @@ export function RecordingWizard() {
                   </>
                 )}
               </Flex>
-              <BeatDots
-                beatsPerBar={beatsPerBar}
-                activeBeat={
-                  phase === "counting-in"
-                    ? countInBeat - 1
-                    : currentAbsoluteBeat % beatsPerBar
-                }
-              />
+              <Flex align="center" justify="space-between">
+                <Flex align="center" gap={2}>
+                  <Box
+                    key={`beat-pulse-${phase}-${activeBeatInBar}`}
+                    w={beatIsDownbeat ? 2.5 : 2}
+                    h={beatIsDownbeat ? 2.5 : 2}
+                    borderRadius="full"
+                    bg={beatIsDownbeat ? dsColors.accent : dsColors.accentHover}
+                    opacity={activeBeatInBar >= 0 ? 1 : 0.45}
+                    animation={
+                      activeBeatInBar >= 0
+                        ? "beatPulse 260ms ease-out 1"
+                        : undefined
+                    }
+                    style={
+                      beatIsDownbeat
+                        ? {
+                            boxShadow:
+                              "0 0 6px color-mix(in srgb, var(--app-accent) 42%, transparent)",
+                          }
+                        : undefined
+                    }
+                  />
+                  <Text
+                    color={beatIsDownbeat ? dsColors.accent : dsColors.textMuted}
+                    fontSize="xs"
+                    fontWeight="semibold"
+                  >
+                    {beatLabel}
+                  </Text>
+                </Flex>
+              </Flex>
             </Box>
           )}
 

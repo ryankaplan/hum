@@ -20,13 +20,47 @@ import {
   stopAllPlayback,
 } from "../music/playback";
 import type { PlaybackSession } from "../music/playback";
+import type { ArrangementInfo } from "../state/model";
 import { model } from "../state/model";
+import {
+  dsColors,
+  dsFocusRing,
+  dsInputControl,
+  dsOutlineButton,
+  dsPanel,
+  dsPrimaryButton,
+  dsScreenShell,
+} from "./designSystem";
 
 const NOTE_OPTIONS = [
-  "C2", "D2", "E2", "F2", "G2", "A2", "B2",
-  "C3", "D3", "E3", "F3", "G3", "A3", "B3",
-  "C4", "D4", "E4", "F4", "G4", "A4", "B4",
-  "C5", "D5", "E5", "F5", "G5", "A5", "B5",
+  "C2",
+  "D2",
+  "E2",
+  "F2",
+  "G2",
+  "A2",
+  "B2",
+  "C3",
+  "D3",
+  "E3",
+  "F3",
+  "G3",
+  "A3",
+  "B3",
+  "C4",
+  "D4",
+  "E4",
+  "F4",
+  "G4",
+  "A4",
+  "B4",
+  "C5",
+  "D5",
+  "E5",
+  "F5",
+  "G5",
+  "A5",
+  "B5",
 ];
 
 const METER_OPTIONS: { label: string; value: Meter }[] = [
@@ -35,26 +69,315 @@ const METER_OPTIONS: { label: string; value: Meter }[] = [
   { label: "6/8", value: [6, 8] },
 ];
 
-export function SetupScreen() {
-  const arrangement = useObservable(model.arrangementInfo);
-  const { input, parsedChords: parsed, harmonyVoicing: voicing, isValid } = arrangement;
+type SetupCardProps = {
+  arrangement: ArrangementInfo;
+  meterLabel: string;
+  previewing: boolean;
+  starting: boolean;
+  error: string | null;
+  onChordsChange: (value: string) => void;
+  onTempoChange: (value: number) => void;
+  onMeterLabelChange: (label: string) => void;
+  onRangeLowChange: (value: string) => void;
+  onRangeHighChange: (value: string) => void;
+  onPartCountChange: (value: "2" | "4") => void;
+  onPreview: () => void;
+  onStopPreview: () => void;
+  onStart: () => void;
+};
+
+function SetupCard({
+  arrangement,
+  meterLabel,
+  previewing,
+  starting,
+  error,
+  onChordsChange,
+  onTempoChange,
+  onMeterLabelChange,
+  onRangeLowChange,
+  onRangeHighChange,
+  onPartCountChange,
+  onPreview,
+  onStopPreview,
+  onStart,
+}: SetupCardProps) {
+  const {
+    input,
+    parsedChords: parsed,
+    harmonyVoicing: voicing,
+    isValid,
+  } = arrangement;
   const {
     chordsInput: chords,
     tempo,
-    meter,
     vocalRangeLow: rangeLow,
     vocalRangeHigh: rangeHigh,
     totalParts,
   } = input;
+
+  const controlStyles = {
+    ...dsInputControl,
+    _focus: {
+      borderColor: dsColors.focusRing,
+      boxShadow: dsFocusRing,
+    },
+  };
+
+  return (
+    <Box w="100%" p={{ base: 6, md: 8 }} overflow="hidden" {...dsPanel}>
+      <Stack gap={6}>
+        <Box>
+          <Heading
+            color={dsColors.accent}
+            fontSize={{ base: "3.1rem", md: "3.35rem" }}
+            lineHeight="0.95"
+            letterSpacing="-0.02em"
+            fontFamily="'Quicksand', 'Manrope', 'Avenir Next', sans-serif"
+            fontWeight="500"
+          >
+            hum
+          </Heading>
+        </Box>
+
+        <Stack gap={4}>
+          <Field.Root>
+            <Field.Label color={dsColors.text}>
+              Chord Progression
+            </Field.Label>
+            <Input
+              value={chords}
+              onChange={(e) => onChordsChange(e.target.value)}
+              placeholder="A A F#m F#m D D E E"
+              {...controlStyles}
+            />
+            <Field.HelperText color={dsColors.textMuted} fontSize="xs">
+              One chord per bar, space separated - repeat a chord to hold it:
+              "Am Am G F F E"
+            </Field.HelperText>
+          </Field.Root>
+
+          <Grid templateColumns="1fr 1fr" gap={4}>
+            <Field.Root>
+              <Field.Label color={dsColors.text}>Tempo (BPM)</Field.Label>
+              <Input
+                type="number"
+                value={tempo}
+                min={40}
+                max={240}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value, 10);
+                  if (!isNaN(v)) onTempoChange(v);
+                }}
+                {...controlStyles}
+              />
+            </Field.Root>
+
+            <Field.Root>
+              <Field.Label color={dsColors.text}>Meter</Field.Label>
+              <NativeSelect.Root>
+                <NativeSelect.Field
+                  value={meterLabel}
+                  onChange={(e) => onMeterLabelChange(e.target.value)}
+                  {...controlStyles}
+                >
+                  {METER_OPTIONS.map((o) => (
+                    <option key={o.label} value={o.label}>
+                      {o.label}
+                    </option>
+                  ))}
+                </NativeSelect.Field>
+              </NativeSelect.Root>
+            </Field.Root>
+          </Grid>
+
+          <Grid templateColumns="1fr 1fr" gap={4}>
+            <Field.Root>
+              <Field.Label color={dsColors.text}>Lowest Note</Field.Label>
+              <NativeSelect.Root>
+                <NativeSelect.Field
+                  value={rangeLow}
+                  onChange={(e) => onRangeLowChange(e.target.value)}
+                  {...controlStyles}
+                >
+                  {NOTE_OPTIONS.map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </NativeSelect.Field>
+              </NativeSelect.Root>
+            </Field.Root>
+
+            <Field.Root>
+              <Field.Label color={dsColors.text}>Highest Note</Field.Label>
+              <NativeSelect.Root>
+                <NativeSelect.Field
+                  value={rangeHigh}
+                  onChange={(e) => onRangeHighChange(e.target.value)}
+                  {...controlStyles}
+                >
+                  {NOTE_OPTIONS.map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </NativeSelect.Field>
+              </NativeSelect.Root>
+            </Field.Root>
+          </Grid>
+
+          <Field.Root>
+            <Field.Label color={dsColors.text}>Arrangement</Field.Label>
+            <NativeSelect.Root>
+              <NativeSelect.Field
+                value={String(totalParts)}
+                onChange={(e) =>
+                  onPartCountChange(e.target.value === "2" ? "2" : "4")
+                }
+                {...controlStyles}
+              >
+                <option value="4">4-part (3 harmony + melody)</option>
+                <option value="2">2-part (harmony + melody)</option>
+              </NativeSelect.Field>
+            </NativeSelect.Root>
+          </Field.Root>
+        </Stack>
+
+        {parsed.length > 0 && voicing != null && (
+          <Box bg={dsColors.surfaceRaised} borderRadius="xl" p={4}>
+            <Text
+              color={dsColors.textMuted}
+              fontSize="xs"
+              mb={2}
+              fontWeight="semibold"
+            >
+              ARRANGEMENT - {parsed.length} chord
+              {parsed.length !== 1 ? "s" : ""}
+            </Text>
+            <Flex gap={2} flexWrap="wrap">
+              {parsed.map((c, i) => (
+                <Box
+                  key={i}
+                  bg={dsColors.surfaceSubtle}
+                  borderRadius="full"
+                  px={3}
+                  py={1}
+                  fontSize="sm"
+                  color={dsColors.text}
+                  display="inline-flex"
+                  alignItems="center"
+                >
+                  {c.root}
+                  {c.quality === "minor" ? "m" : ""}
+                  {(() => {
+                    const annotation = voicing.annotations[i];
+                    const strategyLabel =
+                      annotation?.strategy === "closed"
+                        ? "Closed fallback"
+                        : "Drop-2";
+                    const badgeLabel =
+                      annotation?.strategy === "closed" ? "C" : "2";
+                    const tones =
+                      annotation?.chordTones ??
+                      (c.quality === "minor" ? "R b3 5" : "R 3 5");
+                    const hoverText = `${strategyLabel} - tones: ${tones}`;
+                    return (
+                      <Box
+                        as="span"
+                        title={hoverText}
+                        aria-label={hoverText}
+                        ml={2}
+                        w="20px"
+                        h="20px"
+                        borderRadius="full"
+                        bg={dsColors.border}
+                        color={dsColors.textMuted}
+                        fontSize="xs"
+                        fontWeight="bold"
+                        lineHeight="20px"
+                        textAlign="center"
+                        cursor="help"
+                        userSelect="none"
+                      >
+                        {badgeLabel}
+                      </Box>
+                    );
+                  })()}
+                </Box>
+              ))}
+            </Flex>
+          </Box>
+        )}
+
+        {isValid && (
+          <Button
+            {...dsOutlineButton}
+            size="md"
+            borderColor={previewing ? dsColors.focusRing : dsColors.outline}
+            color={previewing ? dsColors.accent : dsColors.textMuted}
+            onClick={previewing ? onStopPreview : onPreview}
+            w="100%"
+          >
+            {previewing ? "Stop Preview" : "Preview Harmony"}
+          </Button>
+        )}
+
+        {error != null && (
+          <Box
+            bg={dsColors.errorBg}
+            border="1px solid"
+            borderColor={dsColors.errorBorder}
+            borderRadius="lg"
+            p={4}
+          >
+            <Text color={dsColors.errorText} fontSize="sm">
+              {error}
+            </Text>
+          </Box>
+        )}
+
+        <Button
+          {...dsPrimaryButton}
+          size="lg"
+          onClick={onStart}
+          disabled={!isValid || starting}
+          w="100%"
+        >
+          {starting ? "Starting..." : "Start Calibration"}
+        </Button>
+
+        {!isValid && parsed.length === 0 && (
+          <Text color={dsColors.textSubtle} fontSize="xs" textAlign="center">
+            Enter a valid chord progression to continue
+          </Text>
+        )}
+      </Stack>
+    </Box>
+  );
+}
+
+export function SetupScreen() {
+  const arrangement = useObservable(model.arrangementInfo);
   const error = useObservable(model.permissionError);
 
   const [previewing, setPreviewing] = useState(false);
   const [starting, setStarting] = useState(false);
   const previewSessionRef = useRef<PlaybackSession | null>(null);
 
+  const meter = arrangement.input.meter;
+  const meterLabel =
+    METER_OPTIONS.find(
+      (o) => o.value[0] === meter[0] && o.value[1] === meter[1],
+    )?.label ?? "4/4";
+
   async function handlePreview() {
+    const parsed = arrangement.parsedChords;
+    const voicing = arrangement.harmonyVoicing;
+    const tempo = arrangement.input.tempo;
+
     if (voicing == null || parsed.length === 0) return;
-    // Create or resume the AudioContext — a user gesture is in scope here.
+
     let ctx = model.audioContext.get();
     if (ctx == null) {
       ctx = new AudioContext();
@@ -63,9 +386,17 @@ export function SetupScreen() {
     if (ctx.state === "suspended") {
       await ctx.resume();
     }
+
     setPreviewing(true);
-    const session = playHarmonyPreview(ctx, parsed, voicing.lines, meter[0], tempo);
+    const session = playHarmonyPreview(
+      ctx,
+      parsed,
+      voicing.lines,
+      arrangement.input.meter[0],
+      tempo,
+    );
     previewSessionRef.current = session;
+
     const durationMs = progressionDurationSec(parsed, tempo) * 1000 + 400;
     setTimeout(() => {
       if (previewSessionRef.current === session) {
@@ -82,15 +413,15 @@ export function SetupScreen() {
     setPreviewing(false);
   }
 
-  function handleMeterChange(e: React.ChangeEvent<HTMLSelectElement>) {
-    const found = METER_OPTIONS.find((o) => o.label === e.target.value);
+  function handleMeterLabelChange(label: string) {
+    const found = METER_OPTIONS.find((o) => o.label === label);
     if (found != null) {
       model.setArrangementInput({ meter: found.value });
     }
   }
 
-  function handlePartCountChange(e: React.ChangeEvent<HTMLSelectElement>) {
-    model.setArrangementInput({ totalParts: e.target.value === "2" ? 2 : 4 });
+  function handlePartCountChange(value: "2" | "4") {
+    model.setArrangementInput({ totalParts: value === "2" ? 2 : 4 });
   }
 
   async function handleStart() {
@@ -103,269 +434,34 @@ export function SetupScreen() {
     }
   }
 
-  const meterLabel =
-    METER_OPTIONS.find(
-      (o) => o.value[0] === meter[0] && o.value[1] === meter[1],
-    )?.label ?? "4/4";
+  const sharedCardProps = {
+    arrangement,
+    meterLabel,
+    previewing,
+    starting,
+    error,
+    onChordsChange: (value: string) =>
+      model.setArrangementInput({ chordsInput: value }),
+    onTempoChange: (value: number) =>
+      model.setArrangementInput({ tempo: value }),
+    onMeterLabelChange: handleMeterLabelChange,
+    onRangeLowChange: (value: string) =>
+      model.setArrangementInput({ vocalRangeLow: value }),
+    onRangeHighChange: (value: string) =>
+      model.setArrangementInput({ vocalRangeHigh: value }),
+    onPartCountChange: handlePartCountChange,
+    onPreview: handlePreview,
+    onStopPreview: handleStopPreview,
+    onStart: handleStart,
+  };
 
   return (
     <Flex
-      minH="100vh"
-      align="center"
-      justify="center"
-      bg="gray.950"
-      px={4}
+      {...dsScreenShell}
+      py={8}
     >
-      <Box
-        w="100%"
-        maxW="520px"
-        bg="gray.900"
-        borderRadius="2xl"
-        p={8}
-        boxShadow="xl"
-      >
-        <Stack gap={6}>
-          <Box>
-            <Heading size="2xl" color="brand.300" letterSpacing="tight">
-              hum
-            </Heading>
-            <Text color="gray.400" mt={1} fontSize="sm">
-              {totalParts}-part harmony video creator
-            </Text>
-          </Box>
-
-          <Stack gap={4}>
-            <Field.Root>
-              <Field.Label color="gray.300">Chord Progression</Field.Label>
-              <Input
-                value={chords}
-                onChange={(e) => model.setArrangementInput({ chordsInput: e.target.value })}
-                placeholder="A A F#m F#m D D E E"
-                bg="gray.800"
-                border="1px solid"
-                borderColor="gray.700"
-                color="white"
-                _placeholder={{ color: "gray.500" }}
-                _focus={{ borderColor: "brand.400", boxShadow: "none" }}
-              />
-              <Field.HelperText color="gray.500" fontSize="xs">
-                One chord per bar, space separated — repeat a chord to hold it: "Am Am G F F E"
-              </Field.HelperText>
-            </Field.Root>
-
-            <Grid templateColumns="1fr 1fr" gap={4}>
-              <Field.Root>
-                <Field.Label color="gray.300">Tempo (BPM)</Field.Label>
-                <Input
-                  type="number"
-                  value={tempo}
-                  min={40}
-                  max={240}
-                  onChange={(e) => {
-                    const v = parseInt(e.target.value, 10);
-                    if (!isNaN(v)) model.setArrangementInput({ tempo: v });
-                  }}
-                  bg="gray.800"
-                  border="1px solid"
-                  borderColor="gray.700"
-                  color="white"
-                  _focus={{ borderColor: "brand.400", boxShadow: "none" }}
-                />
-              </Field.Root>
-
-              <Field.Root>
-                <Field.Label color="gray.300">Meter</Field.Label>
-                <NativeSelect.Root>
-                  <NativeSelect.Field
-                    value={meterLabel}
-                    onChange={handleMeterChange}
-                    bg="gray.800"
-                    border="1px solid"
-                    borderColor="gray.700"
-                    color="white"
-                    _focus={{ borderColor: "brand.400", boxShadow: "none" }}
-                  >
-                    {METER_OPTIONS.map((o) => (
-                      <option key={o.label} value={o.label}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </NativeSelect.Field>
-                </NativeSelect.Root>
-              </Field.Root>
-            </Grid>
-
-            <Grid templateColumns="1fr 1fr" gap={4}>
-              <Field.Root>
-                <Field.Label color="gray.300">Lowest Note</Field.Label>
-                <NativeSelect.Root>
-                  <NativeSelect.Field
-                    value={rangeLow}
-                    onChange={(e) => model.setArrangementInput({ vocalRangeLow: e.target.value })}
-                    bg="gray.800"
-                    border="1px solid"
-                    borderColor="gray.700"
-                    color="white"
-                    _focus={{ borderColor: "brand.400", boxShadow: "none" }}
-                  >
-                    {NOTE_OPTIONS.map((n) => (
-                      <option key={n} value={n}>
-                        {n}
-                      </option>
-                    ))}
-                  </NativeSelect.Field>
-                </NativeSelect.Root>
-              </Field.Root>
-
-              <Field.Root>
-                <Field.Label color="gray.300">Highest Note</Field.Label>
-                <NativeSelect.Root>
-                  <NativeSelect.Field
-                    value={rangeHigh}
-                    onChange={(e) => model.setArrangementInput({ vocalRangeHigh: e.target.value })}
-                    bg="gray.800"
-                    border="1px solid"
-                    borderColor="gray.700"
-                    color="white"
-                    _focus={{ borderColor: "brand.400", boxShadow: "none" }}
-                  >
-                    {NOTE_OPTIONS.map((n) => (
-                      <option key={n} value={n}>
-                        {n}
-                      </option>
-                    ))}
-                  </NativeSelect.Field>
-                </NativeSelect.Root>
-              </Field.Root>
-            </Grid>
-
-            <Field.Root>
-              <Field.Label color="gray.300">Arrangement</Field.Label>
-              <NativeSelect.Root>
-                <NativeSelect.Field
-                  value={String(totalParts)}
-                  onChange={handlePartCountChange}
-                  bg="gray.800"
-                  border="1px solid"
-                  borderColor="gray.700"
-                  color="white"
-                  _focus={{ borderColor: "brand.400", boxShadow: "none" }}
-                >
-                  <option value="4">4-part (3 harmony + melody)</option>
-                  <option value="2">2-part (harmony + melody)</option>
-                </NativeSelect.Field>
-              </NativeSelect.Root>
-            </Field.Root>
-          </Stack>
-
-          {parsed.length > 0 && voicing != null && (
-            <Box bg="gray.800" borderRadius="lg" p={4}>
-              <Text color="gray.400" fontSize="xs" mb={2} fontWeight="semibold">
-                ARRANGEMENT — {parsed.length} chord{parsed.length !== 1 ? "s" : ""}
-              </Text>
-              <Flex gap={2} flexWrap="wrap">
-                {parsed.map((c, i) => (
-                  <Box
-                    key={i}
-                    bg="gray.700"
-                    borderRadius="md"
-                    px={3}
-                    py={1}
-                    fontSize="sm"
-                    color="white"
-                    display="inline-flex"
-                    alignItems="center"
-                  >
-                    {c.root}
-                    {c.quality === "minor" ? "m" : ""}
-                    {(() => {
-                      const annotation = voicing.annotations[i];
-                      const strategyLabel =
-                        annotation?.strategy === "closed" ? "Closed fallback" : "Drop-2";
-                      const badgeLabel = annotation?.strategy === "closed" ? "C" : "2";
-                      const tones =
-                        annotation?.chordTones ??
-                        (c.quality === "minor" ? "R b3 5" : "R 3 5");
-                      const hoverText = `${strategyLabel} - tones: ${tones}`;
-                      return (
-                        <Box
-                          as="span"
-                          title={hoverText}
-                          aria-label={hoverText}
-                          ml={2}
-                          w="20px"
-                          h="20px"
-                          borderRadius="full"
-                          bg="gray.600"
-                          color="gray.100"
-                          fontSize="xs"
-                          fontWeight="bold"
-                          lineHeight="20px"
-                          textAlign="center"
-                          cursor="help"
-                          userSelect="none"
-                        >
-                          {badgeLabel}
-                        </Box>
-                      );
-                    })()}
-                  </Box>
-                ))}
-              </Flex>
-            </Box>
-          )}
-
-          {isValid && (
-            <Button
-              variant="outline"
-              size="md"
-              borderColor={previewing ? "brand.600" : "gray.600"}
-              color={previewing ? "brand.300" : "gray.300"}
-              onClick={previewing ? handleStopPreview : handlePreview}
-              w="100%"
-            >
-              {previewing ? "Stop Preview" : "Preview Harmony"}
-            </Button>
-          )}
-
-          {error != null && (
-            <Box
-              bg="red.900"
-              border="1px solid"
-              borderColor="red.700"
-              borderRadius="lg"
-              p={4}
-            >
-              <Text color="red.300" fontSize="sm">
-                {error}
-              </Text>
-            </Box>
-          )}
-
-          <Button
-            colorPalette="brand"
-            size="lg"
-            onClick={handleStart}
-            disabled={!isValid || starting}
-            loading={starting}
-            loadingText="Starting calibration…"
-            w="100%"
-          >
-            Start Calibration
-          </Button>
-
-          {starting && (
-            <Text color="gray.500" fontSize="xs" textAlign="center">
-              Listen for bar 1, then say “one, two, three, four” on bar 2.
-            </Text>
-          )}
-
-          {!isValid && parsed.length === 0 && (
-            <Text color="gray.600" fontSize="xs" textAlign="center">
-              Enter a valid chord progression to continue
-            </Text>
-          )}
-        </Stack>
+      <Box w="100%" maxW="560px">
+        <SetupCard {...sharedCardProps} />
       </Box>
     </Flex>
   );

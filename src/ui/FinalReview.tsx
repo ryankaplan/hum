@@ -42,6 +42,13 @@ import type {
   TimelineSegment,
   TrackTimeline,
 } from "./timeline";
+import {
+  dsColors,
+  dsOutlineButton,
+  dsPanel,
+  dsPrimaryButton,
+  dsScreenShell,
+} from "./designSystem";
 
 const TIMELINE_PX_PER_SEC = 110;
 const TIMELINE_RIGHT_PAD_PX = 48;
@@ -637,21 +644,14 @@ export function FinalReview() {
       null;
 
   return (
-    <Flex
-      minH="100vh"
-      bg="gray.950"
-      align="center"
-      justify="center"
-      px={4}
-      py={8}
-    >
+    <Flex {...dsScreenShell} py={8}>
       <Box w="100%" maxW="980px">
         <Stack gap={6}>
           <Box>
-            <Heading size="xl" color="white">
+            <Heading size="xl" color="appText">
               Final Review
             </Heading>
-            <Text color="gray.500" fontSize="sm" mt={1}>
+            <Text color="appTextMuted" fontSize="sm" mt={1}>
               Edit synced A/V tracks before exporting
             </Text>
           </Box>
@@ -660,7 +660,7 @@ export function FinalReview() {
             <Box
               borderRadius="xl"
               overflow="hidden"
-              bg="black"
+              bg="appMediaBg"
               w={{ base: "min(100%, 340px)", lg: "min(46%, calc(70vh * 9 / 16))" }}
               aspectRatio="9/16"
               flexShrink={0}
@@ -675,12 +675,8 @@ export function FinalReview() {
             <Box flex="1" minW={0}>
               <Stack gap={0}>
                 <Box
-                  borderRadius="md"
-                  borderWidth="1px"
-                  borderColor="whiteAlpha.200"
-                  bg="gray.900"
                   overflow="hidden"
-                  boxShadow="0 1px 2px rgba(0, 0, 0, 0.35)"
+                  {...dsPanel}
                 >
                   <Flex
                     align="center"
@@ -689,12 +685,12 @@ export function FinalReview() {
                     px={3}
                     py={2}
                     borderBottomWidth="1px"
-                    borderColor="whiteAlpha.100"
+                    borderColor="appBorderMuted"
                   >
                     <Text
                       fontSize="xs"
                       fontWeight="medium"
-                      color="gray.400"
+                      color="appTextMuted"
                       letterSpacing="0.02em"
                     >
                       Tracks
@@ -702,12 +698,12 @@ export function FinalReview() {
                     <Box
                       as="span"
                       fontSize="xs"
-                      color="gray.500"
+                      color="appTextMuted"
                       fontFamily="mono"
                       fontVariantNumeric="tabular-nums"
                     >
                       {formatTime(playheadSec)}
-                      <Box as="span" color="gray.600">
+                      <Box as="span" color="appTextSubtle">
                         {" "}
                         / {formatTime(timelineEndSec)}
                       </Box>
@@ -720,10 +716,9 @@ export function FinalReview() {
                     px={3}
                     py={2}
                     borderBottomWidth="1px"
-                    borderColor="whiteAlpha.100"
+                    borderColor="appBorderMuted"
                   >
                     <Button
-                      colorPalette={isPlaying ? "gray" : "brand"}
                       variant={isPlaying ? "outline" : "solid"}
                       size="sm"
                       h={8}
@@ -736,6 +731,12 @@ export function FinalReview() {
                       }
                       loading={isSyncingFrames}
                       loadingText="Syncing…"
+                      borderColor={isPlaying ? dsColors.outline : dsColors.accent}
+                      bg={isPlaying ? "transparent" : dsColors.accent}
+                      color={isPlaying ? dsColors.textMuted : dsColors.accentForeground}
+                      _hover={{
+                        bg: isPlaying ? dsColors.surfaceRaised : dsColors.accentHover,
+                      }}
                     >
                       {isPlaying ? "Pause" : "Play"}
                     </Button>
@@ -744,9 +745,9 @@ export function FinalReview() {
                       h={8}
                       px={3}
                       variant="outline"
-                      borderColor="whiteAlpha.200"
-                      color="gray.300"
-                      _hover={{ bg: "whiteAlpha.50" }}
+                      borderColor="appBorderMuted"
+                      color="appText"
+                      _hover={{ bg: dsColors.surfaceRaised }}
                       fontSize="xs"
                       fontWeight="normal"
                       onClick={handleSplitAtPlayhead}
@@ -759,9 +760,9 @@ export function FinalReview() {
                       h={8}
                       px={3}
                       variant="outline"
-                      borderColor="whiteAlpha.200"
-                      color="gray.300"
-                      _hover={{ bg: "whiteAlpha.50" }}
+                      borderColor="appBorderMuted"
+                      color="appText"
+                      _hover={{ bg: dsColors.surfaceRaised }}
                       fontSize="xs"
                       fontWeight="normal"
                       onClick={handleDeleteSelectedSegment}
@@ -774,8 +775,12 @@ export function FinalReview() {
                       h={8}
                       px={3}
                       variant={snapToBeat ? "solid" : "outline"}
-                      colorPalette={snapToBeat ? "brand" : "gray"}
-                      borderColor="whiteAlpha.200"
+                      borderColor={snapToBeat ? dsColors.accent : dsColors.outline}
+                      bg={snapToBeat ? dsColors.accent : "transparent"}
+                      color={snapToBeat ? dsColors.accentForeground : dsColors.textMuted}
+                      _hover={{
+                        bg: snapToBeat ? dsColors.accentHover : dsColors.surfaceRaised,
+                      }}
                       fontSize="xs"
                       fontWeight="normal"
                       onClick={() => model.tracks.setSnapToBeat(!snapToBeat)}
@@ -790,16 +795,16 @@ export function FinalReview() {
                       px={3}
                       py={2}
                       borderBottomWidth="1px"
-                      borderColor="whiteAlpha.100"
-                      bg="blackAlpha.200"
+                      borderColor="appBorderMuted"
+                      bg="appSurfaceSubtle"
                     >
                       {isSyncingFrames && (
-                        <Text color="gray.300" fontSize="xs">
+                        <Text color="appText" fontSize="xs">
                           Syncing frames…
                         </Text>
                       )}
                       {syncWarning != null && (
-                        <Text color="orange.300" fontSize="xs">
+                        <Text color="appWarning" fontSize="xs">
                           {syncWarning}
                         </Text>
                       )}
@@ -811,8 +816,8 @@ export function FinalReview() {
                       flexShrink={0}
                       w={`${TRACK_RAIL_WIDTH_PX}px`}
                       borderRightWidth="1px"
-                      borderColor="whiteAlpha.100"
-                      bg="blackAlpha.300"
+                      borderColor="appBorderMuted"
+                      bg="appSurfaceSubtle"
                     >
                       {Array.from({ length: trackCount }).map((_, lane) => (
                         <Flex
@@ -821,13 +826,13 @@ export function FinalReview() {
                           align="center"
                           justify="center"
                           borderBottomWidth="1px"
-                          borderColor="whiteAlpha.50"
+                          borderColor="appBorderMuted"
                           px={2}
                         >
                           <Text
                             fontSize="10px"
                             fontWeight="medium"
-                            color="gray.500"
+                            color="appTextMuted"
                             textAlign="center"
                             lineHeight="1.25"
                             textTransform="uppercase"
@@ -845,7 +850,7 @@ export function FinalReview() {
                       overflowY="hidden"
                       flex={1}
                       minW={0}
-                      bg="#0c0c0e"
+                      bg={dsColors.surfaceSubtle}
                     >
                       <Box
                         position="relative"
@@ -949,8 +954,8 @@ export function FinalReview() {
                     px={3}
                     py={2.5}
                     borderTopWidth="1px"
-                    borderColor="whiteAlpha.100"
-                    bg="gray.900"
+                    borderColor="appBorderMuted"
+                    bg="appSurface"
                   >
                     <input
                       type="range"
@@ -976,14 +981,14 @@ export function FinalReview() {
           </Flex>
 
           <Box>
-            <Text color="gray.500" fontSize="xs" mb={3} fontWeight="semibold">
+            <Text color="appTextMuted" fontSize="xs" mb={3} fontWeight="semibold">
               MIX
             </Text>
             <Stack gap={2}>
               {Array.from({ length: trackCount }).map((_, i) => (
                 <Flex key={i} align="center" gap={3}>
                   <Text
-                    color="gray.400"
+                    color="appTextMuted"
                     fontSize="xs"
                     w="24"
                     flexShrink={0}
@@ -994,8 +999,8 @@ export function FinalReview() {
                   <Button
                     size="xs"
                     variant="ghost"
-                    color={muted[i] ? "red.400" : "gray.600"}
-                    bg={muted[i] ? "red.950" : "transparent"}
+                    color={muted[i] ? dsColors.errorText : dsColors.textSubtle}
+                    bg={muted[i] ? dsColors.errorBg : "transparent"}
                     fontWeight="bold"
                     onClick={() => handleMuteToggle(i)}
                     w={7}
@@ -1021,7 +1026,7 @@ export function FinalReview() {
                     disabled={exporting || isSyncingFrames}
                   />
                   <Text
-                    color="gray.600"
+                    color="appTextSubtle"
                     fontSize="xs"
                     w={8}
                     textAlign="right"
@@ -1033,7 +1038,7 @@ export function FinalReview() {
               ))}
 
               <Flex align="center" gap={3} mt={1}>
-                <Text color="gray.400" fontSize="xs" w="24" flexShrink={0}>
+                <Text color="appTextMuted" fontSize="xs" w="24" flexShrink={0}>
                   Reverb
                 </Text>
                 <Box w={7} flexShrink={0} />
@@ -1050,7 +1055,7 @@ export function FinalReview() {
                   disabled={exporting || isSyncingFrames}
                 />
                 <Text
-                  color="gray.600"
+                  color="appTextSubtle"
                   fontSize="xs"
                   w={8}
                   textAlign="right"
@@ -1063,7 +1068,7 @@ export function FinalReview() {
           </Box>
 
           <Box>
-            <Text color="gray.500" fontSize="xs" mb={3} fontWeight="semibold">
+            <Text color="appTextMuted" fontSize="xs" mb={3} fontWeight="semibold">
               REDO A PART
             </Text>
             <Grid templateColumns={`repeat(${trackCount}, 1fr)`} gap={2}>
@@ -1071,9 +1076,7 @@ export function FinalReview() {
                 <Button
                   key={i}
                   size="sm"
-                  variant="outline"
-                  borderColor="gray.700"
-                  color="gray.400"
+                  {...dsOutlineButton}
                   fontSize="xs"
                   onClick={() => handleRedoPart(i)}
                   disabled={exporting || isSyncingFrames}
@@ -1086,7 +1089,7 @@ export function FinalReview() {
 
           {exporting && (
             <Box>
-              <Text color="gray.400" fontSize="sm" mb={2}>
+              <Text color="appTextMuted" fontSize="sm" mb={2}>
                 Exporting… {Math.round(exportProgress * 100)}%
               </Text>
               <Progress.Root value={exportProgress * 100} colorPalette="brand">
@@ -1099,12 +1102,12 @@ export function FinalReview() {
 
           {exportedUrl != null ? (
             <Stack gap={3}>
-              <Button colorPalette="brand" size="lg" onClick={handleDownload}>
+              <Button {...dsPrimaryButton} size="lg" onClick={handleDownload}>
                 Download {formatLabel(ctaExportFormat)}
               </Button>
               <Button
                 variant="ghost"
-                color="gray.500"
+                color="appTextMuted"
                 onClick={() => {
                   model.tracks.clearExportedUrl();
                 }}
@@ -1114,7 +1117,7 @@ export function FinalReview() {
             </Stack>
           ) : (
             <Button
-              colorPalette="brand"
+              {...dsPrimaryButton}
               size="lg"
               onClick={handleExport}
               disabled={exporting || isSyncingFrames || timelineEndSec <= 0}
@@ -1126,14 +1129,14 @@ export function FinalReview() {
           )}
 
           {showWebmFallbackMessage && (
-            <Text color="gray.500" fontSize="xs" mt={-3}>
+            <Text color="appTextMuted" fontSize="xs" mt={-3}>
               MP4 is not supported in this browser, so export will use WebM.
             </Text>
           )}
 
           <Button
             variant="ghost"
-            color="gray.600"
+            color="appTextSubtle"
             size="sm"
             onClick={handleStartOver}
             disabled={exporting || isSyncingFrames}
@@ -1150,7 +1153,7 @@ export function FinalReview() {
           appearance: none;
           height: 4px;
           border-radius: 2px;
-          background: #374151;
+          background: var(--chakra-colors-app-border-muted, var(--chakra-colors-appBorderMuted, #aeb0c9));
           outline: none;
           cursor: pointer;
         }
@@ -1159,14 +1162,14 @@ export function FinalReview() {
           width: 14px;
           height: 14px;
           border-radius: 50%;
-          background: #818cf8;
+          background: var(--chakra-colors-app-accent, var(--chakra-colors-appAccent, #4d44e3));
           cursor: pointer;
         }
         .mix-slider::-moz-range-thumb {
           width: 14px;
           height: 14px;
           border-radius: 50%;
-          background: #818cf8;
+          background: var(--chakra-colors-app-accent, var(--chakra-colors-appAccent, #4d44e3));
           cursor: pointer;
           border: none;
         }
@@ -1176,7 +1179,7 @@ export function FinalReview() {
           appearance: none;
           height: 4px;
           border-radius: 999px;
-          background: rgba(255, 255, 255, 0.08);
+          background: var(--chakra-colors-app-border, var(--chakra-colors-appBorder, #dfe1fb));
           outline: none;
           cursor: pointer;
         }
@@ -1185,49 +1188,56 @@ export function FinalReview() {
           width: 13px;
           height: 13px;
           border-radius: 50%;
-          background: #fafafa;
-          border: 1px solid rgba(255, 255, 255, 0.12);
-          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+          background: var(--chakra-colors-app-surface, var(--chakra-colors-appSurface, #f3f2ff));
+          border: 1px solid var(--chakra-colors-app-border-muted, var(--chakra-colors-appBorderMuted, #aeb0c9));
+          box-shadow: 0 1px 2px rgba(46, 49, 69, 0.24);
           cursor: pointer;
         }
         .timeline-slider::-moz-range-thumb {
           width: 13px;
           height: 13px;
           border-radius: 50%;
-          background: #fafafa;
-          border: 1px solid rgba(255, 255, 255, 0.12);
-          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+          background: var(--chakra-colors-app-surface, var(--chakra-colors-appSurface, #f3f2ff));
+          border: 1px solid var(--chakra-colors-app-border-muted, var(--chakra-colors-appBorderMuted, #aeb0c9));
+          box-shadow: 0 1px 2px rgba(46, 49, 69, 0.24);
           cursor: pointer;
         }
 
         .timeline-lane {
-          border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+          border-bottom: 1px solid rgba(118, 121, 144, 0.28);
+          border-bottom: 1px solid color-mix(in srgb, var(--chakra-colors-app-border-muted, var(--chakra-colors-appBorderMuted, #aeb0c9)) 42%, transparent);
           background: transparent;
           user-select: none;
           touch-action: none;
         }
         .timeline-lane.is-alt {
-          background: rgba(255, 255, 255, 0.02);
+          background: rgba(223, 225, 251, 0.35);
+          background: color-mix(in srgb, var(--chakra-colors-app-surface-subtle, var(--chakra-colors-appSurfaceSubtle, #ececff)) 35%, transparent);
         }
         .timeline-lane.is-selected-lane {
-          background: rgba(129, 140, 248, 0.06);
-          box-shadow: inset 0 0 0 1px rgba(129, 140, 248, 0.18);
+          background: rgba(77, 68, 227, 0.11);
+          background: color-mix(in srgb, var(--chakra-colors-app-accent, var(--chakra-colors-appAccent, #4d44e3)) 11%, transparent);
+          box-shadow: inset 0 0 0 1px rgba(77, 68, 227, 0.22);
+          box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--chakra-colors-app-accent, var(--chakra-colors-appAccent, #4d44e3)) 28%, transparent);
         }
         .timeline-beat {
           position: absolute;
           top: 0;
           bottom: 0;
           width: 1px;
-          background: rgba(255, 255, 255, 0.04);
+          background: rgba(118, 121, 144, 0.22);
+          background: color-mix(in srgb, var(--chakra-colors-app-border-muted, var(--chakra-colors-appBorderMuted, #aeb0c9)) 35%, transparent);
           pointer-events: none;
         }
         .timeline-segment {
           position: absolute;
           top: 9px;
           bottom: 9px;
-          border: 1px solid rgba(255, 255, 255, 0.1);
+          border: 1px solid rgba(118, 121, 144, 0.44);
+          border: 1px solid color-mix(in srgb, var(--chakra-colors-app-border-muted, var(--chakra-colors-appBorderMuted, #aeb0c9)) 72%, transparent);
           border-radius: 6px;
-          background: rgba(255, 255, 255, 0.04);
+          background: rgba(236, 236, 255, 0.78);
+          background: color-mix(in srgb, var(--chakra-colors-app-surface, var(--chakra-colors-appSurface, #f3f2ff)) 72%, transparent);
           display: flex;
           align-items: center;
           cursor: grab;
@@ -1237,9 +1247,12 @@ export function FinalReview() {
           cursor: grabbing;
         }
         .timeline-segment.is-selected {
-          border-color: rgba(129, 140, 248, 0.45);
-          background: rgba(129, 140, 248, 0.1);
-          box-shadow: 0 0 0 1px rgba(129, 140, 248, 0.25);
+          border-color: rgba(77, 68, 227, 0.56);
+          border-color: color-mix(in srgb, var(--chakra-colors-app-accent, var(--chakra-colors-appAccent, #4d44e3)) 56%, transparent);
+          background: rgba(77, 68, 227, 0.18);
+          background: color-mix(in srgb, var(--chakra-colors-app-accent, var(--chakra-colors-appAccent, #4d44e3)) 18%, transparent);
+          box-shadow: 0 0 0 1px rgba(77, 68, 227, 0.34);
+          box-shadow: 0 0 0 1px color-mix(in srgb, var(--chakra-colors-app-accent, var(--chakra-colors-appAccent, #4d44e3)) 34%, transparent);
         }
         .segment-waveform {
           display: flex;
@@ -1254,7 +1267,8 @@ export function FinalReview() {
         .segment-bar {
           width: 2px;
           border-radius: 999px;
-          background: rgba(255, 255, 255, 0.28);
+          background: rgba(91, 94, 116, 0.45);
+          background: color-mix(in srgb, var(--chakra-colors-app-text-muted, var(--chakra-colors-appTextMuted, #5b5e74)) 45%, transparent);
           align-self: center;
         }
         .timeline-playhead {
@@ -1263,8 +1277,9 @@ export function FinalReview() {
           bottom: 0;
           width: 1px;
           margin-left: -0.5px;
-          background: #fafafa;
-          box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+          background: var(--chakra-colors-app-accent, var(--chakra-colors-appAccent, #4d44e3));
+          box-shadow: 0 0 0 1px rgba(46, 49, 69, 0.35);
+          box-shadow: 0 0 0 1px color-mix(in srgb, var(--chakra-colors-app-text, var(--chakra-colors-appText, #2e3145)) 35%, transparent);
           pointer-events: none;
           z-index: 10;
         }

@@ -22,6 +22,14 @@ import {
   type SpeechCalibrationCapture,
 } from "../recording/latencyCalibration";
 import { model } from "../state/model";
+import {
+  dsColors,
+  dsErrorBanner,
+  dsOutlineButton,
+  dsPanel,
+  dsPrimaryButton,
+  dsScreenShell,
+} from "./designSystem";
 
 type CalibrationTimelineProps = {
   capture: SpeechCalibrationCapture;
@@ -44,11 +52,11 @@ function CaptureBeatStrip({ activeBeat }: { activeBeat: number }) {
             bg={
               isActive
                 ? isTarget
-                  ? "brand.300"
-                  : "white"
+                  ? dsColors.accent
+                  : dsColors.accentForeground
                 : isTarget
-                  ? "brand.700"
-                  : "gray.700"
+                  ? dsColors.accentHover
+                  : dsColors.borderMuted
             }
             opacity={isActive ? 1 : 0.9}
             transition="all 0.06s linear"
@@ -112,7 +120,15 @@ function CalibrationTimeline({
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     ctx.clearRect(0, 0, cssWidth, cssHeight);
-    ctx.fillStyle = "rgba(107, 114, 128, 0.92)";
+    const rootStyles = getComputedStyle(document.documentElement);
+    const waveformColor =
+      rootStyles.getPropertyValue("--chakra-colors-app-text-muted").trim() ||
+      rootStyles.getPropertyValue("--chakra-colors-appTextMuted").trim() ||
+      rootStyles.getPropertyValue("--chakra-colors-app-text").trim() ||
+      rootStyles.getPropertyValue("--chakra-colors-appText").trim() ||
+      "#5b5e74";
+    ctx.fillStyle = waveformColor;
+    ctx.globalAlpha = 0.9;
 
     const peaks = capture.waveformPeaks;
     if (peaks.length === 0) return;
@@ -127,6 +143,7 @@ function CalibrationTimeline({
       if (x + peakW < 0 || x > cssWidth) continue;
       ctx.fillRect(x, midY - h, Math.max(1, peakW), h * 2);
     }
+    ctx.globalAlpha = 1;
   }, [capture.waveformPeaks, timelineWidthPx, waveformTranslatePx]);
 
   function handlePointerDown(e: React.PointerEvent<HTMLDivElement>) {
@@ -162,9 +179,9 @@ function CalibrationTimeline({
         ref={timelineRef}
         position="relative"
         h="140px"
-        bg="gray.950"
+        bg={dsColors.surfaceSubtle}
         border="1px solid"
-        borderColor="gray.700"
+        borderColor={dsColors.borderMuted}
         borderRadius="md"
         overflow="hidden"
         onPointerDown={handlePointerDown}
@@ -184,7 +201,7 @@ function CalibrationTimeline({
               bottom={0}
               left={`${leftPct}%`}
               w={target ? "2px" : "1px"}
-              bg={target ? "brand.400" : "whiteAlpha.300"}
+              bg={target ? dsColors.accent : dsColors.borderMuted}
               opacity={target ? 0.9 : 0.55}
             />
           );
@@ -200,18 +217,18 @@ function CalibrationTimeline({
         </Box>
       </Box>
 
-      <Flex mt={2} justify="space-between" color="gray.500" fontSize="xs">
+      <Flex mt={2} justify="space-between" color={dsColors.textMuted} fontSize="xs">
         <Text>0s</Text>
         <Text>{visibleDurationSec.toFixed(2)}s</Text>
       </Flex>
 
-      <Flex mt={2} gap={4} color="gray.400" fontSize="xs" wrap="wrap">
+      <Flex mt={2} gap={4} color={dsColors.textMuted} fontSize="xs" wrap="wrap">
         <Flex align="center" gap={1.5}>
-          <Box w={2} h={2} bg="brand.400" borderRadius="sm" />
+          <Box w={2} h={2} bg={dsColors.accent} borderRadius="sm" />
           <Text>Target beats (bar 2)</Text>
         </Flex>
         <Flex align="center" gap={1.5}>
-          <Box w={2} h={2} bg="gray.500" borderRadius="sm" />
+          <Box w={2} h={2} bg={dsColors.textSubtle} borderRadius="sm" />
           <Text>Recorded speech waveform</Text>
         </Flex>
       </Flex>
@@ -372,7 +389,7 @@ export function LatencyCalibrationScreen() {
       setAutoEstimate(estimate);
       model.clearCalibration();
 
-      if (shouldAutoApplyCalibration(estimate)) {
+      if (estimate != null && shouldAutoApplyCalibration(estimate)) {
         model.setCalibrationOffset(estimate.correctionSec);
         model.appScreen.set("recording");
         return;
@@ -422,43 +439,36 @@ export function LatencyCalibrationScreen() {
   }
 
   return (
-    <Flex
-      minH="100vh"
-      bg="gray.950"
-      align="center"
-      justify="center"
-      px={4}
-      py={8}
-    >
-      <Box w="100%" maxW="640px" bg="gray.900" borderRadius="2xl" p={6}>
+    <Flex {...dsScreenShell} py={8}>
+      <Box w="100%" maxW="640px" p={6} {...dsPanel}>
         <Stack gap={5}>
           <Flex justify="space-between" align="center">
             <Button
               variant="ghost"
               size="sm"
-              color="gray.500"
+              color={dsColors.textMuted}
               onClick={handleBack}
               disabled={busy}
             >
               ← Back
             </Button>
-            <Text color="gray.500" fontSize="sm">
+            <Text color={dsColors.textMuted} fontSize="sm">
               Calibration
             </Text>
           </Flex>
 
           <Box>
-            <Heading size="lg" color="white">
+            <Heading size="lg" color={dsColors.text}>
               Speech Sync Calibration
             </Heading>
-            <Text color="gray.400" fontSize="sm" mt={1}>
+            <Text color={dsColors.textMuted} fontSize="sm" mt={1}>
               Hear 2 bars. Listen during bar 1, then say “one, two, three, four”
               on bar 2.
             </Text>
           </Box>
 
           <Box>
-            <Text color="gray.400" fontSize="xs" mb={1.5}>
+            <Text color={dsColors.textMuted} fontSize="xs" mb={1.5}>
               Microphone
             </Text>
             <NativeSelect.Root
@@ -469,10 +479,12 @@ export function LatencyCalibrationScreen() {
               <NativeSelect.Field
                 value={selectedMicId}
                 onChange={(e) => handleMicChange(e.target.value)}
-                bg="gray.800"
+                bg={dsColors.surfaceSubtle}
                 border="1px solid"
-                borderColor="gray.700"
-                color="gray.200"
+                borderColor="transparent"
+                color={dsColors.text}
+                borderRadius="xl"
+                _focus={{ borderColor: dsColors.focusRing }}
               >
                 {micDevices.map((d, i) => (
                   <option key={d.deviceId} value={d.deviceId}>
@@ -481,33 +493,27 @@ export function LatencyCalibrationScreen() {
                 ))}
               </NativeSelect.Field>
             </NativeSelect.Root>
-            <Text color="gray.500" fontSize="xs" mt={1}>
+            <Text color={dsColors.textSubtle} fontSize="xs" mt={1}>
               This mic will be used for all takes in this session.
             </Text>
           </Box>
 
           {error != null && (
-            <Box
-              bg="red.950"
-              border="1px solid"
-              borderColor="red.700"
-              borderRadius="md"
-              p={3}
-            >
-              <Text color="red.300" fontSize="sm">
+            <Box p={3} {...dsErrorBanner}>
+              <Text color={dsColors.errorText} fontSize="sm">
                 {error}
               </Text>
             </Box>
           )}
 
           {busy && (
-            <Box bg="gray.800" borderRadius="xl" p={4}>
+            <Box bg={dsColors.surfaceRaised} borderRadius="xl" p={4}>
               <Flex justify="space-between" align="center" mb={2}>
-                <Text color="gray.200" fontSize="sm" fontWeight="semibold">
+                <Text color={dsColors.text} fontSize="sm" fontWeight="semibold">
                   Capturing 2 bars
                 </Text>
                 <Text
-                  color={captureBeat >= 4 ? "brand.300" : "gray.300"}
+                  color={captureBeat >= 4 ? dsColors.accent : dsColors.textMuted}
                   fontSize="xs"
                   fontWeight="bold"
                 >
@@ -519,33 +525,33 @@ export function LatencyCalibrationScreen() {
           )}
 
           {capture != null && (
-            <Box bg="gray.800" borderRadius="xl" p={4}>
+            <Box bg={dsColors.surfaceRaised} borderRadius="xl" p={4}>
               <Flex justify="space-between" align="center" wrap="wrap" gap={2}>
-                <Text color="gray.300" fontSize="sm" fontWeight="semibold">
+                <Text color={dsColors.text} fontSize="sm" fontWeight="semibold">
                   Align Your Speech
                 </Text>
-                <Text color="gray.400" fontSize="xs">
+                <Text color={dsColors.textMuted} fontSize="xs">
                   Drag waveform left/right to line up spoken counts with bar-2
                   beats.
                 </Text>
               </Flex>
 
               <Flex mt={2} gap={4} wrap="wrap">
-                <Text color="gray.300" fontSize="sm">
+                <Text color={dsColors.text} fontSize="sm">
                   Shift:{" "}
-                  <Text as="span" color="white" fontWeight="semibold">
+                  <Text as="span" color={dsColors.text} fontWeight="semibold">
                     {Math.round(manualShiftSec * 1000)} ms
                   </Text>
                 </Text>
-                <Text color="gray.300" fontSize="sm">
+                <Text color={dsColors.text} fontSize="sm">
                   Applied correction:{" "}
-                  <Text as="span" color="white" fontWeight="semibold">
+                  <Text as="span" color={dsColors.text} fontWeight="semibold">
                     {Math.round(correctionSec * 1000)} ms
                   </Text>
                 </Text>
-                <Text color="gray.300" fontSize="sm">
+                <Text color={dsColors.text} fontSize="sm">
                   Mic:{" "}
-                  <Text as="span" color="white" fontWeight="semibold">
+                  <Text as="span" color={dsColors.text} fontWeight="semibold">
                     {selectedMicLabel || "Selected input"}
                   </Text>
                 </Text>
@@ -554,15 +560,15 @@ export function LatencyCalibrationScreen() {
               {autoEstimate != null && (
                 <Box
                   mt={3}
-                  bg="blackAlpha.500"
+                  bg={dsColors.surfaceSubtle}
                   border="1px solid"
-                  borderColor="gray.700"
+                  borderColor={dsColors.borderMuted}
                   borderRadius="md"
                   p={2}
                 >
-                  <Text color="gray.300" fontSize="xs">
+                  <Text color={dsColors.textMuted} fontSize="xs">
                     Auto estimate:{" "}
-                    <Text as="span" color="white" fontWeight="semibold">
+                    <Text as="span" color={dsColors.text} fontWeight="semibold">
                       {Math.round(autoEstimate.manualShiftSec * 1000)} ms
                     </Text>{" "}
                     ({Math.round(autoEstimate.confidence * 100)}% confidence).
@@ -583,9 +589,9 @@ export function LatencyCalibrationScreen() {
 
           <Flex gap={3} wrap="wrap">
             <Button
+              {...dsPrimaryButton}
               flex={1}
               minW="220px"
-              colorPalette="brand"
               size="lg"
               onClick={handleRunCalibration}
               disabled={busy || selectedMicId === ""}
@@ -595,23 +601,28 @@ export function LatencyCalibrationScreen() {
               {capture == null ? "Capture Speech" : "Re-capture"}
             </Button>
             <Button
+              {...dsOutlineButton}
               flex={1}
               minW="220px"
               size="lg"
               variant={previewPlaying ? "solid" : "outline"}
-              colorPalette={previewPlaying ? "red" : "gray"}
+              bg={previewPlaying ? dsColors.errorBg : undefined}
+              color={previewPlaying ? dsColors.errorText : dsColors.textMuted}
+              borderColor={previewPlaying ? dsColors.errorBorder : dsColors.outline}
               onClick={handleTogglePreview}
               disabled={busy || capture == null}
             >
               {previewPlaying ? "Stop Preview" : "Play Preview Loop"}
             </Button>
             <Button
+              {...dsOutlineButton}
               flex={1}
               minW="220px"
               size="lg"
               onClick={handleContinue}
               disabled={!canContinue}
-              colorPalette="green"
+              color={dsColors.success}
+              borderColor={dsColors.success}
             >
               Continue to Recording
             </Button>

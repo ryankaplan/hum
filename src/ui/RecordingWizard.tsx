@@ -21,6 +21,13 @@ import {
 } from "../audio/monitorPlayer";
 import type { MonitorPlayer } from "../audio/monitorPlayer";
 import { CameraPreview } from "./CameraPreview";
+import {
+  dsColors,
+  dsOutlineButton,
+  dsPanel,
+  dsPrimaryButton,
+  dsScreenShell,
+} from "./designSystem";
 import { NoteDisplay } from "./NoteDisplay";
 
 // "listening" = playing guide tones without recording (pre-roll practice)
@@ -48,14 +55,19 @@ function BeatDots({ beatsPerBar, activeBeat }: BeatDotsProps) {
             key={i}
             borderRadius="full"
             bg={
-              isActive ? (isDownbeat ? "brand.400" : "brand.300") : "gray.700"
+              isActive
+                ? (isDownbeat ? dsColors.accent : dsColors.accentHover)
+                : dsColors.borderMuted
             }
             w={isDownbeat ? 4 : 3}
             h={isDownbeat ? 4 : 3}
             transition="background 0.06s"
             style={
               isActive
-                ? { boxShadow: "0 0 8px var(--chakra-colors-brand-400)" }
+                ? {
+                    boxShadow:
+                      "0 0 8px var(--chakra-colors-app-focus-ring, var(--chakra-colors-appFocusRing, #4d44e3))",
+                  }
                 : undefined
             }
           />
@@ -108,7 +120,7 @@ function RecordingList({
       borderRadius="xl"
       overflowX="auto"
       overflowY="hidden"
-      bg="black"
+      bg={dsColors.surfaceRaised}
       px={2}
       py={3}
     >
@@ -131,11 +143,11 @@ function RecordingList({
               <Box
                 position="relative"
                 overflow="hidden"
-                bg="gray.950"
+                bg={dsColors.mediaBg}
                 borderRadius="lg"
                 aspectRatio="9/16"
                 borderWidth={isCurrent ? "1px" : "0px"}
-                borderColor={isCurrent ? "brand.500" : "transparent"}
+                borderColor={isCurrent ? dsColors.accent : "transparent"}
               >
                 {isCurrent && phase !== "review" && (
                   <CameraPreview
@@ -172,9 +184,9 @@ function RecordingList({
                     h="100%"
                     align="center"
                     justify="center"
-                    bg="gray.950"
+                    bg={dsColors.mediaBg}
                   >
-                    <Text color="gray.700" fontSize="xs" fontWeight="semibold">
+                    <Text color={dsColors.textSubtle} fontSize="xs" fontWeight="semibold">
                       {getPartLabel(i, totalParts)}
                     </Text>
                   </Flex>
@@ -183,7 +195,7 @@ function RecordingList({
 
               <Text
                 fontSize="10px"
-                color={isCurrent ? "gray.200" : "gray.600"}
+                color={isCurrent ? dsColors.text : dsColors.textSubtle}
                 textAlign="center"
                 fontWeight="semibold"
               >
@@ -236,8 +248,8 @@ function KeptCell({ url, muted, onToggleMute }: KeptCellProps) {
         position="absolute"
         bottom="6px"
         right="6px"
-        bg={muted ? "blackAlpha.800" : "blackAlpha.600"}
-        color={muted ? "gray.400" : "white"}
+        bg={muted ? "rgba(12, 12, 14, 0.82)" : "rgba(12, 12, 14, 0.68)"}
+        color={muted ? dsColors.textSubtle : dsColors.accentForeground}
         borderRadius="full"
         p="5px"
         display="flex"
@@ -245,7 +257,7 @@ function KeptCell({ url, muted, onToggleMute }: KeptCellProps) {
         justifyContent="center"
         onClick={onToggleMute}
         style={{ cursor: "pointer", border: "none", lineHeight: 0 }}
-        _hover={{ bg: "blackAlpha.900" }}
+        _hover={{ bg: "rgba(12, 12, 14, 0.9)" }}
       >
         <MuteIcon muted={muted} />
       </Box>
@@ -567,37 +579,32 @@ export function RecordingWizard() {
 
   return (
     <Flex
-      minH="100vh"
-      bg="gray.950"
-      align="center"
-      justify="center"
-      px={4}
-      py={6}
+      {...dsScreenShell}
     >
-      <Box w="100%" maxW="420px">
+      <Box w="100%" maxW="420px" p={6} {...dsPanel}>
         <Stack gap={3}>
           {/* Header */}
           <Flex justify="space-between" align="center">
             <Button
               variant="ghost"
               size="sm"
-              color="gray.500"
+              color={dsColors.textMuted}
               onClick={handleBack}
               disabled={busy}
             >
               ← Back
             </Button>
-            <Text color="gray.400" fontSize="sm">
+            <Text color={dsColors.textMuted} fontSize="sm">
               Part {partIndex + 1} of {totalParts}
             </Text>
           </Flex>
 
           {/* Title */}
           <Box>
-            <Heading size="lg" color="white">
+            <Heading size="lg" color={dsColors.text}>
               {partLabel}
             </Heading>
-            <Text color="gray.500" fontSize="sm" mt={1}>
+            <Text color={dsColors.textMuted} fontSize="sm" mt={1}>
               {isMelodyPart
                 ? "Sing the melody — harmonies play quietly in your headphones"
                 : partIndex === 0
@@ -633,15 +640,15 @@ export function RecordingWizard() {
           {(phase === "counting-in" ||
             phase === "listening" ||
             phase === "recording") && (
-            <Box bg="gray.900" borderRadius="xl" px={4} py={3}>
+            <Box bg={dsColors.surfaceRaised} borderRadius="xl" px={4} py={3}>
               <Flex align="center" justify="space-between" mb={2}>
                 {phase === "counting-in" && (
-                  <Text color="gray.400" fontSize="xs" fontWeight="semibold">
+                  <Text color={dsColors.textMuted} fontSize="xs" fontWeight="semibold">
                     COUNT-IN
                   </Text>
                 )}
                 {phase === "listening" && (
-                  <Text color="brand.400" fontSize="xs" fontWeight="semibold">
+                  <Text color={dsColors.accent} fontSize="xs" fontWeight="semibold">
                     LISTENING
                   </Text>
                 )}
@@ -651,10 +658,10 @@ export function RecordingWizard() {
                       w={2}
                       h={2}
                       borderRadius="full"
-                      bg="red.400"
+                      bg={dsColors.errorBorder}
                       style={{ animation: "recPulse 1s ease-in-out infinite" }}
                     />
-                    <Text color="red.300" fontSize="xs" fontWeight="semibold">
+                    <Text color={dsColors.errorText} fontSize="xs" fontWeight="semibold">
                       RECORDING
                     </Text>
                   </Flex>
@@ -676,16 +683,16 @@ export function RecordingWizard() {
             <Stack gap={2}>
               <Grid templateColumns="1fr 1fr" gap={3}>
                 <Button
-                  variant="outline"
+                  {...dsOutlineButton}
                   size="lg"
-                  borderColor={isListening ? "brand.600" : "gray.600"}
-                  color={isListening ? "brand.300" : "gray.300"}
+                  borderColor={isListening ? dsColors.accent : dsColors.outline}
+                  color={isListening ? dsColors.accent : dsColors.textMuted}
                   onClick={isListening ? handleStopListening : handleListen}
                 >
                   {isListening ? "Stop" : "Listen"}
                 </Button>
                 <Button
-                  colorPalette="brand"
+                  {...dsPrimaryButton}
                   size="lg"
                   onClick={handleRecord}
                   disabled={isListening}
@@ -699,14 +706,14 @@ export function RecordingWizard() {
                   <Button
                     variant="ghost"
                     size="xs"
-                    color={guideToneEnabled ? "brand.300" : "gray.600"}
+                    color={guideToneEnabled ? dsColors.accent : dsColors.textSubtle}
                     onClick={() => setGuideToneEnabled((v) => !v)}
                   >
                     Guide tones: {guideToneEnabled ? "on" : "off"}
                   </Button>
                 )}
               </Flex>
-              <Text color="gray.600" fontSize="xs" textAlign="center">
+              <Text color={dsColors.textSubtle} fontSize="xs" textAlign="center">
                 Mic locked from calibration: {activeMicLabel}
               </Text>
 
@@ -716,15 +723,13 @@ export function RecordingWizard() {
           {phase === "review" && (
             <Grid templateColumns="1fr 1fr" gap={3}>
               <Button
-                variant="outline"
+                {...dsOutlineButton}
                 size="lg"
                 onClick={handleRedo}
-                borderColor="gray.600"
-                color="gray.300"
               >
                 Redo
               </Button>
-              <Button colorPalette="brand" size="lg" onClick={handleKeep}>
+              <Button {...dsPrimaryButton} size="lg" onClick={handleKeep}>
                 {isLastPart ? "Finish" : "Keep"}
               </Button>
             </Grid>

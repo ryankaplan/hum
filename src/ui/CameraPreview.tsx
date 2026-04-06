@@ -1,5 +1,6 @@
 import { Box } from "@chakra-ui/react";
 import { useEffect, useRef } from "react";
+import { dsColors } from "./designSystem";
 
 type Props = {
   stream: MediaStream;
@@ -33,7 +34,7 @@ export function CameraPreview({
     <Box
       borderRadius={borderRadius}
       overflow="hidden"
-      bg="black"
+      bg={dsColors.mediaBg}
       // Cap width so height never exceeds maxH at 9:16. Using w="100%" + maxH
       // alone breaks aspect-ratio in CSS because the browser won't shrink an
       // explicit width to satisfy max-height. min() keeps both constraints.

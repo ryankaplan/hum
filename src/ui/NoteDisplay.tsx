@@ -2,6 +2,7 @@ import { Box, Flex, Text } from "@chakra-ui/react";
 import { midiToNoteName } from "../music/types";
 import type { Chord, HarmonyLine, MidiNote } from "../music/types";
 import { playNotePreview } from "../music/playback";
+import { dsColors, dsPanel } from "./designSystem";
 
 type Props = {
   ctx: AudioContext;
@@ -13,8 +14,8 @@ type Props = {
 export function NoteDisplay({ ctx, chords, harmonyLine, activeChordIndex }: Props) {
   if (harmonyLine == null) {
     return (
-      <Box bg="gray.800" borderRadius="xl" p={4}>
-        <Text color="gray.400" fontSize="sm" textAlign="center">
+      <Box p={4} {...dsPanel}>
+        <Text color={dsColors.textMuted} fontSize="sm" textAlign="center">
           Melody — sing freely over the harmonies
         </Text>
       </Box>
@@ -27,8 +28,8 @@ export function NoteDisplay({ ctx, chords, harmonyLine, activeChordIndex }: Prop
   }
 
   return (
-    <Box bg="gray.800" borderRadius="xl" p={4}>
-      <Text color="gray.500" fontSize="xs" mb={3} fontWeight="semibold">
+    <Box p={4} {...dsPanel}>
+      <Text color={dsColors.textMuted} fontSize="xs" mb={3} fontWeight="semibold">
         YOUR NOTES — tap to hear
       </Text>
       <Flex gap={2} flexWrap="wrap">
@@ -39,7 +40,7 @@ export function NoteDisplay({ ctx, chords, harmonyLine, activeChordIndex }: Prop
           return (
             <Box
               key={i}
-              bg={isActive ? "brand.500" : "gray.700"}
+              bg={isActive ? dsColors.accent : dsColors.surfaceSubtle}
               borderRadius="lg"
               px={3}
               py={2}
@@ -47,13 +48,13 @@ export function NoteDisplay({ ctx, chords, harmonyLine, activeChordIndex }: Prop
               minW="60px"
               transition="background 0.15s"
               cursor="pointer"
-              _hover={{ bg: isActive ? "brand.400" : "gray.600" }}
+              _hover={{ bg: isActive ? dsColors.accentHover : dsColors.surfaceRaised }}
               _active={{ transform: "scale(0.95)" }}
               onClick={() => handleNoteClick(midi)}
               userSelect="none"
             >
               <Text
-                color={isActive ? "white" : "gray.300"}
+                color={isActive ? dsColors.accentForeground : dsColors.text}
                 fontSize="lg"
                 fontWeight="bold"
                 lineHeight="1"
@@ -61,7 +62,7 @@ export function NoteDisplay({ ctx, chords, harmonyLine, activeChordIndex }: Prop
                 {noteName}
               </Text>
               <Text
-                color={isActive ? "brand.200" : "gray.500"}
+                color={isActive ? dsColors.accentForeground : dsColors.textMuted}
                 fontSize="xs"
                 mt={0.5}
               >

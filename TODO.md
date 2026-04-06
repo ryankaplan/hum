@@ -1,10 +1,14 @@
-- Export as mp4
-- Polish whole flow
+- [ ] Polish whole flow
+- [ ] Pitch scores
 
 Medium
 
-- Harmony annotations to make clear what we did
+- [ ] Harmony annotations to make clear what we did
 
 Later
 
-- Sheet music editor
+- [ ] Sheet music editor
+
+Done
+
+- [x] Export as mp4

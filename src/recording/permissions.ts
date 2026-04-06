@@ -61,7 +61,7 @@ export async function acquirePermissionsAndStart(): Promise<void> {
       tempo: model.tempoInput.get(),
     });
 
-    if (shouldAutoApplyCalibration(estimate)) {
+    if (estimate != null && shouldAutoApplyCalibration(estimate)) {
       model.setCalibrationOffset(estimate.correctionSec);
       model.appScreen.set("recording");
       return;

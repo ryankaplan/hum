@@ -12,7 +12,11 @@ import { useObservable } from "../observable";
 import { model } from "../state/model";
 import type { PartState } from "../state/model";
 import { getPartLabel } from "../music/types";
-import { recordTake } from "../recording/recorder";
+import {
+  isRecordingCancelledError,
+  startRecordTake,
+  type RecordingSession,
+} from "../recording/recorder";
 import { startRecordingPlayback, stopAllPlayback } from "../music/playback";
 import type { PlaybackSession } from "../music/playback";
 import {
@@ -282,12 +286,14 @@ export function RecordingWizard() {
   const [reviewUrl, setReviewUrl] = useState<string | null>(null);
   const [guideToneEnabled, setGuideToneEnabled] = useState(true);
   const [mutedParts, setMutedParts] = useState<boolean[]>([]);
+  const [priorHarmonyLevel, setPriorHarmonyLevel] = useState(1);
 
   const reviewVideoRef = useRef<HTMLVideoElement>(null);
   const monitorPlayerRef = useRef<MonitorPlayer | null>(null);
   const currentBlobRef = useRef<Blob | null>(null);
   const currentTrimOffsetRef = useRef<number>(0);
   const listenSessionRef = useRef<PlaybackSession | null>(null);
+  const recordSessionRef = useRef<RecordingSession | null>(null);
   // Incremented each time a new MonitorPlayer finishes decoding so the looping
   // effect can fire even though monitorPlayerRef is a ref (not state).
   const [monitorPlayerKey, setMonitorPlayerKey] = useState(0);
@@ -296,6 +302,7 @@ export function RecordingWizard() {
   const harmonyPartCount = Math.max(1, totalParts - 1);
   const isLastPart = partIndex === totalParts - 1;
   const isMelodyPart = partIndex >= harmonyPartCount;
+  const hasPriorHarmonyMonitorControl = partIndex > 0 && !isMelodyPart;
   const beatsPerBar = meter[0];
 
   const harmonyLine =
@@ -340,6 +347,7 @@ export function RecordingWizard() {
           player.setMuted(j, mutedParts[partI] ?? false);
         }
       }
+      player.setLevel(priorHarmonyLevel);
       monitorPlayerRef.current = player;
       setMonitorPlayerKey((k) => k + 1);
     });
@@ -362,6 +370,12 @@ export function RecordingWizard() {
       }
     }
   }, [mutedParts, partIndex, states]);
+
+  useEffect(() => {
+    const player = monitorPlayerRef.current;
+    if (player == null) return;
+    player.setLevel(priorHarmonyLevel);
+  }, [priorHarmonyLevel, monitorPlayerKey]);
 
   useEffect(() => {
     setMutedParts((prev) =>
@@ -397,6 +411,8 @@ export function RecordingWizard() {
   // Reset local phase state when partIndex changes (e.g. after keep)
   useEffect(() => {
     stopAllPlayback();
+    recordSessionRef.current?.stop();
+    recordSessionRef.current = null;
     listenSessionRef.current = null;
     setPhase("pre-roll");
     setReviewUrl(null);
@@ -479,7 +495,7 @@ export function RecordingWizard() {
   // ─── Record ─────────────────────────────────────────────────────────────────
 
   async function handleRecord() {
-    if (stream == null) return;
+    if (stream == null || recordSessionRef.current != null) return;
 
     // Stop preview loop and any ongoing listen session before recording
     monitorPlayerRef.current?.stop();
@@ -492,8 +508,9 @@ export function RecordingWizard() {
 
     if (ctx == null) return;
 
+    let session: RecordingSession | null = null;
     try {
-      const result = await recordTake({
+      session = startRecordTake({
         ctx,
         stream,
         chords,
@@ -523,15 +540,40 @@ export function RecordingWizard() {
           },
         },
       });
+      recordSessionRef.current = session;
+
+      const result = await session.promise;
 
       currentBlobRef.current = result.blob;
       currentTrimOffsetRef.current = result.trimOffsetSec;
       setReviewUrl(result.url);
       setPhase("review");
     } catch (err) {
+      if (isRecordingCancelledError(err)) {
+        setPhase("pre-roll");
+        setActiveChordIndex(0);
+        setCurrentAbsoluteBeat(-1);
+        setCountInBeat(0);
+        return;
+      }
       console.error("Recording failed", err);
       setPhase("pre-roll");
+    } finally {
+      if (session != null && recordSessionRef.current === session) {
+        recordSessionRef.current = null;
+      }
     }
+  }
+
+  function handleStopRecording() {
+    const session = recordSessionRef.current;
+    if (session == null) return;
+    session.stop();
+    recordSessionRef.current = null;
+    setPhase("pre-roll");
+    setActiveChordIndex(0);
+    setCurrentAbsoluteBeat(-1);
+    setCountInBeat(0);
   }
 
   function handleKeep() {
@@ -554,6 +596,8 @@ export function RecordingWizard() {
   }
 
   function handleRedo() {
+    recordSessionRef.current?.stop();
+    recordSessionRef.current = null;
     stopAllPlayback();
     setPhase("pre-roll");
     setReviewUrl(null);
@@ -561,6 +605,8 @@ export function RecordingWizard() {
   }
 
   function handleBack() {
+    recordSessionRef.current?.stop();
+    recordSessionRef.current = null;
     stopAllPlayback();
     listenSessionRef.current = null;
     if (partIndex > 0) {
@@ -636,6 +682,36 @@ export function RecordingWizard() {
             />
           )}
 
+          {phase !== "review" && hasPriorHarmonyMonitorControl && (
+            <Box bg={dsColors.surfaceRaised} borderRadius="xl" px={4} py={3}>
+              <Flex justify="space-between" align="center" mb={2}>
+                <Text color={dsColors.textMuted} fontSize="xs" fontWeight="semibold">
+                  PREVIOUS HARMONIES VOLUME
+                </Text>
+                <Text color={dsColors.text} fontSize="xs" fontWeight="semibold">
+                  {Math.round(priorHarmonyLevel * 100)}%
+                </Text>
+              </Flex>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={1}
+                value={Math.round(priorHarmonyLevel * 100)}
+                onChange={(e) => {
+                  const next = Number.parseInt(e.currentTarget.value, 10);
+                  if (Number.isNaN(next)) return;
+                  setPriorHarmonyLevel(Math.max(0, Math.min(1, next / 100)));
+                }}
+                style={{
+                  width: "100%",
+                  accentColor:
+                    "var(--chakra-colors-appAccent, var(--chakra-colors-app-accent))",
+                }}
+              />
+            </Box>
+          )}
+
           {/* Beat indicator — shown during count-in, listening, and recording */}
           {(phase === "counting-in" ||
             phase === "listening" ||
@@ -653,18 +729,36 @@ export function RecordingWizard() {
                   </Text>
                 )}
                 {phase === "recording" && (
-                  <Flex align="center" gap={2}>
-                    <Box
-                      w={2}
-                      h={2}
+                  <>
+                    <Flex align="center" gap={2}>
+                      <Box
+                        w={2}
+                        h={2}
+                        borderRadius="full"
+                        bg={dsColors.errorBorder}
+                        animation="recPulse 1s ease-in-out infinite"
+                      />
+                      <Text color={dsColors.errorText} fontSize="xs" fontWeight="semibold">
+                        RECORDING
+                      </Text>
+                    </Flex>
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      minW="28px"
+                      h="28px"
+                      p={0}
                       borderRadius="full"
-                      bg={dsColors.errorBorder}
-                      animation="recPulse 1s ease-in-out infinite"
-                    />
-                    <Text color={dsColors.errorText} fontSize="xs" fontWeight="semibold">
-                      RECORDING
-                    </Text>
-                  </Flex>
+                      color={dsColors.errorText}
+                      border="1px solid"
+                      borderColor={dsColors.errorBorder}
+                      onClick={handleStopRecording}
+                      aria-label="Stop recording"
+                      title="Stop recording"
+                    >
+                      ■
+                    </Button>
+                  </>
                 )}
               </Flex>
               <BeatDots

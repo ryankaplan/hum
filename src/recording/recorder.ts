@@ -4,6 +4,7 @@ import {
   playCountIn,
   progressionDurationSec,
   startRecordingPlayback,
+  stopAllPlayback,
 } from "../music/playback";
 import type { PlaybackSession } from "../music/playback";
 import type { MonitorPlayer } from "../audio/monitorPlayer";
@@ -37,9 +38,31 @@ export type RecordingOpts = {
   callbacks?: RecordingCallbacks;
 };
 
+export type RecordingSession = {
+  promise: Promise<RecordingResult>;
+  stop: () => void;
+};
+
+export class RecordingCancelledError extends Error {
+  constructor() {
+    super("Recording cancelled");
+    this.name = "RecordingCancelledError";
+  }
+}
+
+export function isRecordingCancelledError(
+  err: unknown,
+): err is RecordingCancelledError {
+  return err instanceof RecordingCancelledError;
+}
+
 // Records one take. Returns a promise that resolves with the recorded Blob
 // after the count-in + full chord progression has played.
 export async function recordTake(opts: RecordingOpts): Promise<RecordingResult> {
+  return startRecordTake(opts).promise;
+}
+
+export function startRecordTake(opts: RecordingOpts): RecordingSession {
   const {
     ctx,
     stream,
@@ -52,77 +75,108 @@ export async function recordTake(opts: RecordingOpts): Promise<RecordingResult> 
     callbacks,
   } = opts;
 
-  // 1. Count-in
-  // playCountIn schedules all clicks on the AudioContext clock and returns
-  // recordingStartTime — the exact beat-grid-aligned time where beat 1 falls.
-  // The promise resolves ~half a beat before that time, giving us ample lead
-  // time to start the MediaRecorder without any setTimeout-based handoff.
-  const { promise: countInPromise, recordingStartTime } = playCountIn(
-    ctx,
-    beatsPerBar,
-    tempo,
-    callbacks?.onCountInBeat,
-  );
-
-  await countInPromise;
-
-  // 2. Set up MediaRecorder
-  const mimeType = getSupportedMimeType();
-  const mediaRecorder = new MediaRecorder(stream, {
-    mimeType,
-    videoBitsPerSecond: 2_500_000,
+  let cancelled = false;
+  let mediaRecorder: MediaRecorder | null = null;
+  let playback: PlaybackSession | null = null;
+  let requestStop: (() => void) | null = null;
+  const stopSignal = new Promise<void>((resolve) => {
+    requestStop = resolve;
   });
 
-  const chunks: Blob[] = [];
-  mediaRecorder.ondataavailable = (e) => {
-    if (e.data.size > 0) {
-      chunks.push(e.data);
+  const stop = () => {
+    if (cancelled) return;
+    cancelled = true;
+    stopAllPlayback();
+    playback?.stop();
+    playback = null;
+    if (mediaRecorder != null && mediaRecorder.state !== "inactive") {
+      mediaRecorder.stop();
     }
+    requestStop?.();
   };
 
-  const recordingDone = new Promise<Omit<RecordingResult, "trimOffsetSec">>((resolve) => {
-    mediaRecorder.onstop = () => {
-      const blob = new Blob(chunks, { type: mimeType });
-      const url = URL.createObjectURL(blob);
-      resolve({ blob, url });
+  const promise = (async () => {
+    // 1. Count-in
+    const { promise: countInPromise, recordingStartTime } = playCountIn(
+      ctx,
+      beatsPerBar,
+      tempo,
+      callbacks?.onCountInBeat,
+    );
+
+    await Promise.race([countInPromise, stopSignal]);
+    if (cancelled) {
+      throw new RecordingCancelledError();
+    }
+
+    // 2. Set up MediaRecorder
+    const mimeType = getSupportedMimeType();
+    mediaRecorder = new MediaRecorder(stream, {
+      mimeType,
+      videoBitsPerSecond: 2_500_000,
+    });
+    const recorder = mediaRecorder;
+
+    const chunks: Blob[] = [];
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) {
+        chunks.push(e.data);
+      }
     };
+
+    const recordingDone = new Promise<Omit<RecordingResult, "trimOffsetSec">>(
+      (resolve) => {
+        recorder.onstop = () => {
+          const blob = new Blob(chunks, { type: mimeType });
+          const url = URL.createObjectURL(blob);
+          resolve({ blob, url });
+        };
+      },
+    );
+
+    // 3. Start recorder and compute trim offset.
+    recorder.start(100);
+    const recorderStartCtxTime = ctx.currentTime;
+    callbacks?.onRecordingStart?.();
+    const baseTrimOffsetSec = recordingStartTime - recorderStartCtxTime;
+    const trimOffsetSec = baseTrimOffsetSec + latencyCorrectionSec;
+
+    // 4. Start playback aligned with count-in.
+    playback = startRecordingPlayback({
+      ctx,
+      chords,
+      harmonyLine,
+      beatsPerBar,
+      tempo,
+      startTime: recordingStartTime,
+      monitorPlayer,
+      onBeat: callbacks?.onBeat,
+      onChordChange: callbacks?.onChordChange,
+    });
+
+    // 5. Stop on duration or manual cancel.
+    const durationMs = progressionDurationSec(chords, tempo) * 1000 + 600;
+    await Promise.race([waitMs(durationMs), stopSignal]);
+
+    playback.stop();
+    playback = null;
+    if (recorder.state !== "inactive") {
+      recorder.stop();
+    }
+
+    const { blob, url } = await recordingDone;
+    if (cancelled) {
+      URL.revokeObjectURL(url);
+      throw new RecordingCancelledError();
+    }
+    return { blob, url, trimOffsetSec };
+  })().finally(() => {
+    playback?.stop();
+    playback = null;
+    mediaRecorder = null;
   });
 
-  // 3. Start the MediaRecorder and note the AudioContext time at that instant.
-  //    trimOffsetSec is the gap between when we started recording and when
-  //    beat 1 of the recording falls (recordingStartTime). This is exact
-  //    because both values come from the same AudioContext clock.
-  mediaRecorder.start(100);
-  const recorderStartCtxTime = ctx.currentTime;
-  callbacks?.onRecordingStart?.();
-  const baseTrimOffsetSec = recordingStartTime - recorderStartCtxTime;
-  const trimOffsetSec = baseTrimOffsetSec + latencyCorrectionSec;
-
-  // 4. Start playback passing the count-in's grid-aligned recordingStartTime.
-  //    This means the recording transport is continuous with the count-in —
-  //    no transport teardown/restart gap that would cause half-beat drift.
-  const playback: PlaybackSession = startRecordingPlayback({
-    ctx,
-    chords,
-    harmonyLine,
-    beatsPerBar,
-    tempo,
-    startTime: recordingStartTime,
-    monitorPlayer,
-    onBeat: callbacks?.onBeat,
-    onChordChange: callbacks?.onChordChange,
-  });
-
-  // 5. Auto-stop after the full progression + a small buffer
-  const durationMs = progressionDurationSec(chords, tempo) * 1000 + 600;
-
-  await new Promise<void>((resolve) => setTimeout(resolve, durationMs));
-
-  playback.stop();
-  mediaRecorder.stop();
-
-  const { blob, url } = await recordingDone;
-  return { blob, url, trimOffsetSec };
+  return { promise, stop };
 }
 
 function getSupportedMimeType(): string {
@@ -141,4 +195,8 @@ function getSupportedMimeType(): string {
     }
   }
   return "video/webm";
+}
+
+function waitMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

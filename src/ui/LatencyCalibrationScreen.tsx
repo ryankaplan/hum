@@ -15,7 +15,6 @@ import {
   manualShiftToCorrectionSec,
   runBestEffortAutoCalibration,
   startCalibrationPreview,
-  type AutoCalibrationEstimate,
   type CalibrationPreviewSession,
   type SpeechCalibrationCapture,
 } from "../recording/latencyCalibration";
@@ -191,6 +190,7 @@ function CalibrationTimeline({
             Math.min(100, (sec / visibleDurationSec) * 100),
           );
           const target = targetBeats.has(i);
+          const brightColor = ["#ff4d8d", "#00d8ff", "#6bff7d", "#ffd84d"][i % 4];
           return (
             <Box
               key={`beat-${i}`}
@@ -198,9 +198,16 @@ function CalibrationTimeline({
               top={0}
               bottom={0}
               left={`${leftPct}%`}
-              w={target ? "2px" : "1px"}
-              bg={target ? dsColors.accent : dsColors.borderMuted}
-              opacity={target ? 0.9 : 0.55}
+              w={target ? "3px" : "2px"}
+              bg={target ? brightColor : dsColors.borderMuted}
+              opacity={target ? 1 : 0.75}
+              boxShadow={
+                target
+                  ? `0 0 0 1px rgba(255,255,255,0.2), 0 0 14px ${brightColor}`
+                  : undefined
+              }
+              zIndex={3}
+              pointerEvents="none"
             />
           );
         })}
@@ -210,6 +217,7 @@ function CalibrationTimeline({
           inset={0}
           transition="opacity 0.1s linear"
           pointerEvents="none"
+          zIndex={1}
         >
           <canvas ref={canvasRef} />
         </Box>
@@ -252,8 +260,6 @@ export function LatencyCalibrationScreen() {
   const [manualShiftSec, setManualShiftSec] = useState(0);
   const [previewPlaying, setPreviewPlaying] = useState(false);
   const [captureBeat, setCaptureBeat] = useState(-1);
-  const [autoEstimate, setAutoEstimate] =
-    useState<AutoCalibrationEstimate | null>(null);
 
   const previewSessionRef = useRef<CalibrationPreviewSession | null>(null);
 
@@ -347,7 +353,6 @@ export function LatencyCalibrationScreen() {
       setCapture(null);
       setManualShiftSec(0);
       setCaptureBeat(-1);
-      setAutoEstimate(null);
       model.clearCalibration();
       model.mediaStream.set(nextStream);
       setSelectedMicId(deviceId);
@@ -363,7 +368,6 @@ export function LatencyCalibrationScreen() {
     setBusy(true);
     setError(null);
     setCaptureBeat(-1);
-    setAutoEstimate(null);
 
     try {
       const { capture: nextCapture, estimate } =
@@ -374,7 +378,6 @@ export function LatencyCalibrationScreen() {
           onBeat: (beat) => setCaptureBeat(beat),
         });
       setCaptureBeat(-1);
-      setAutoEstimate(estimate);
       model.clearCalibration();
 
       setCapture(nextCapture);
@@ -391,7 +394,6 @@ export function LatencyCalibrationScreen() {
       setCapture(null);
       setManualShiftSec(0);
       setCaptureBeat(-1);
-      setAutoEstimate(null);
       model.clearCalibration();
     } finally {
       setBusy(false);
@@ -478,9 +480,6 @@ export function LatencyCalibrationScreen() {
                 ))}
               </NativeSelect.Field>
             </NativeSelect.Root>
-            <Text color={dsColors.textSubtle} fontSize="xs" mt={1}>
-              This mic will be used for all takes in this session.
-            </Text>
           </Box>
 
           {error != null && (
@@ -544,25 +543,10 @@ export function LatencyCalibrationScreen() {
                 </Text>
               </Flex>
 
-              {autoEstimate != null && (
-                <Box
-                  mt={3}
-                  bg={dsColors.surfaceSubtle}
-                  border="1px solid"
-                  borderColor={dsColors.borderMuted}
-                  borderRadius="md"
-                  p={2}
-                >
-                  <Text color={dsColors.textMuted} fontSize="xs">
-                    Auto estimate:{" "}
-                    <Text as="span" color={dsColors.text} fontWeight="semibold">
-                      {Math.round(autoEstimate.manualShiftSec * 1000)} ms
-                    </Text>{" "}
-                    ({Math.round(autoEstimate.confidence * 100)}% confidence).
-                    Fine-tune if it sounds off.
-                  </Text>
-                </Box>
-              )}
+              <Text mt={3} color={dsColors.textMuted} fontSize="xs">
+                Drag waveform to align with beats, and then press play to
+                preview.
+              </Text>
 
               <Box mt={4}>
                 <CalibrationTimeline

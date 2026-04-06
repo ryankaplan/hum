@@ -28,6 +28,7 @@ export type MonitorPlayer = {
   startLooping(): void;
   stop(): void;
   setMuted(trackIndex: number, muted: boolean): void;
+  setLevel(level: number): void;
   dispose(): void;
 };
 
@@ -61,16 +62,18 @@ export function createMonitorPlayer(
   ctx: AudioContext,
   tracks: (MonitorTrack | null)[],
 ): MonitorPlayer {
+  const BASE_TRACK_GAIN = 0.5;
   // Per-track gain nodes (persistent; control mute state)
   const gainNodes: (GainNode | null)[] = tracks.map((track) => {
     if (track == null) return null;
     const g = ctx.createGain();
-    g.gain.value = 0.5;
+    g.gain.value = BASE_TRACK_GAIN;
     g.connect(ctx.destination);
     return g;
   });
 
   const muted: boolean[] = tracks.map(() => false);
+  let level = 1;
 
   // Active source nodes — created fresh each time start() is called
   let activeSources: (AudioBufferSourceNode | null)[] = [];
@@ -84,6 +87,12 @@ export function createMonitorPlayer(
       }
     }
     activeSources = [];
+  }
+
+  function applyTrackGain(trackIndex: number) {
+    const gain = gainNodes[trackIndex];
+    if (gain == null) return;
+    gain.gain.value = muted[trackIndex] ? 0 : BASE_TRACK_GAIN * level;
   }
 
   return {
@@ -136,9 +145,13 @@ export function createMonitorPlayer(
 
     setMuted(trackIndex: number, isMuted: boolean) {
       muted[trackIndex] = isMuted;
-      const gain = gainNodes[trackIndex];
-      if (gain != null) {
-        gain.gain.value = isMuted ? 0 : 0.5;
+      applyTrackGain(trackIndex);
+    },
+
+    setLevel(nextLevel: number) {
+      level = Math.max(0, Math.min(1, nextLevel));
+      for (let i = 0; i < tracks.length; i++) {
+        applyTrackGain(i);
       }
     },
 

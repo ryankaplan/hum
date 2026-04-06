@@ -6,6 +6,7 @@ export const CORRECTION_MAX_SEC = 0.4;
 export type SpeechCalibrationCapture = {
   audioBuffer: AudioBuffer;
   waveformPeaks: number[];
+  sourceStartSec: number;
   durationSec: number;
   secPerBeat: number;
   beatTimesSec: number[];
@@ -26,6 +27,8 @@ export type CalibrationPreviewSession = {
 export type StartCalibrationPreviewOpts = {
   ctx: AudioContext;
   audioBuffer: AudioBuffer;
+  sourceStartSec: number;
+  durationSec: number;
   tempo: number;
   manualShiftSec: number;
 };
@@ -91,14 +94,23 @@ export async function captureSpeechCalibration(
   const beatTimesSec = Array.from({ length: CALIBRATION_TOTAL_BEATS }, (_, i) => {
     return startTime + i * secPerBeat + ctx.outputLatency - recorderStartCtxTime;
   });
+  const secondMeasureStartSec = beatTimesSec[CALIBRATION_TARGET_BEAT_INDICES[0]] ?? 0;
+  const secondMeasureDurationSec = 4 * secPerBeat;
 
   return {
     audioBuffer: decoded,
-    waveformPeaks: buildWaveformPeaks(mono, 1400),
-    durationSec: decoded.duration,
+    waveformPeaks: buildWaveformPeaks(
+      mono,
+      decoded.sampleRate,
+      secondMeasureStartSec,
+      secondMeasureDurationSec,
+      1400,
+    ),
+    sourceStartSec: secondMeasureStartSec,
+    durationSec: secondMeasureDurationSec,
     secPerBeat,
-    beatTimesSec,
-    targetBeatIndices: [...CALIBRATION_TARGET_BEAT_INDICES],
+    beatTimesSec: [0, secPerBeat, secPerBeat * 2, secPerBeat * 3],
+    targetBeatIndices: [0, 1, 2, 3],
   };
 }
 
@@ -108,7 +120,7 @@ export function startCalibrationPreview(
   const { ctx, audioBuffer } = opts;
   const tempo = Math.max(1, opts.tempo);
   const secPerBeat = 60 / tempo;
-  const loopDurationSec = CALIBRATION_TOTAL_BEATS * secPerBeat;
+  const loopDurationSec = Math.max(0.01, opts.durationSec);
   // Allow enough lead time so small negative shifts can still be scheduled.
   const startLeadSec = 0.9;
   const scheduleHorizonSec = 0.5;
@@ -140,9 +152,9 @@ export function startCalibrationPreview(
   }
 
   function scheduleLoop(loopStartSec: number) {
-    for (let beat = 0; beat < CALIBRATION_TOTAL_BEATS; beat++) {
+    for (let beat = 0; beat < 4; beat++) {
       const beatTime = loopStartSec + beat * secPerBeat;
-      const stopClick = playCalibrationClick(ctx, beatTime, beat % 4 === 0);
+      const stopClick = playCalibrationClick(ctx, beatTime, beat === 0);
       activeClickStops.add(stopClick);
     }
 
@@ -156,15 +168,16 @@ export function startCalibrationPreview(
     const desiredStartSec = loopStartSec + opts.manualShiftSec;
     const earliestStartSec = ctx.currentTime + 0.01;
     const safeStartSec = Math.max(desiredStartSec, earliestStartSec);
-    const sourceOffsetSec = Math.max(0, safeStartSec - desiredStartSec);
+    const startDeltaSec = Math.max(0, safeStartSec - desiredStartSec);
+    const sourceStartSec = opts.sourceStartSec + startDeltaSec;
 
-    if (sourceOffsetSec < audioBuffer.duration - 0.01) {
+    if (sourceStartSec < audioBuffer.duration - 0.01) {
       const maxPlayableSec = Math.max(
         0,
-        Math.min(loopDurationSec, audioBuffer.duration - sourceOffsetSec),
+        Math.min(loopDurationSec, audioBuffer.duration - sourceStartSec),
       );
       if (maxPlayableSec > 0) {
-        source.start(safeStartSec, sourceOffsetSec, maxPlayableSec);
+        source.start(safeStartSec, sourceStartSec, maxPlayableSec);
         source.stop(loopStartSec + loopDurationSec + 0.05);
         activeSources.add(source);
         activeGains.add(gain);
@@ -277,18 +290,37 @@ function downmixToMono(buffer: AudioBuffer): Float32Array {
   return mono;
 }
 
-function buildWaveformPeaks(samples: Float32Array, buckets: number): number[] {
-  if (samples.length === 0 || buckets <= 0) return [];
-  const window = Math.max(1, Math.floor(samples.length / buckets));
+function buildWaveformPeaks(
+  samples: Float32Array,
+  sampleRate: number,
+  sourceStartSec: number,
+  durationSec: number,
+  buckets: number,
+): number[] {
+  if (
+    samples.length === 0 ||
+    buckets <= 0 ||
+    sampleRate <= 0 ||
+    durationSec <= 0
+  ) {
+    return [];
+  }
+  const start = Math.max(0, Math.floor(sourceStartSec * sampleRate));
+  const end = Math.min(
+    samples.length,
+    Math.floor((sourceStartSec + durationSec) * sampleRate),
+  );
+  if (end <= start) return [];
+  const window = Math.max(1, Math.floor((end - start) / buckets));
   const peaks: number[] = [];
 
   for (let i = 0; i < buckets; i++) {
-    const from = i * window;
-    if (from >= samples.length) {
+    const from = start + i * window;
+    if (from >= end) {
       peaks.push(0);
       continue;
     }
-    const to = Math.min(samples.length, from + window);
+    const to = Math.min(end, from + window);
     let sumSquares = 0;
     let maxAbs = 0;
     for (let s = from; s < to; s++) {

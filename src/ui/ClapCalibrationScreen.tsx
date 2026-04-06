@@ -20,8 +20,8 @@ import {
 } from "../recording/clapCalibration";
 import { model } from "../state/model";
 
-const MIN_MANUAL_SHIFT_SEC = -2;
-const MAX_MANUAL_SHIFT_SEC = 2;
+const MIN_MANUAL_SHIFT_SEC = -CORRECTION_MAX_SEC;
+const MAX_MANUAL_SHIFT_SEC = -CORRECTION_MIN_SEC;
 
 type CalibrationTimelineProps = {
   capture: SpeechCalibrationCapture;
@@ -83,7 +83,7 @@ function CalibrationTimeline({
   }, []);
 
   const maxBeatTime = capture.beatTimesSec[capture.beatTimesSec.length - 1] ?? 0;
-  const visibleDurationSec = Math.max(capture.durationSec, maxBeatTime + capture.secPerBeat + 0.35);
+  const visibleDurationSec = Math.max(capture.durationSec, maxBeatTime + capture.secPerBeat);
   const pxPerSec = timelineWidthPx > 0 ? timelineWidthPx / Math.max(0.01, visibleDurationSec) : 0;
   const waveformTranslatePx = manualShiftSec * pxPerSec;
   const targetBeats = useMemo(() => new Set(capture.targetBeatIndices), [capture.targetBeatIndices]);
@@ -226,8 +226,6 @@ export function ClapCalibrationScreen() {
   }, [micDevices, selectedMicId]);
 
   const correctionSec = manualShiftToCorrectionSec(manualShiftSec);
-  const rawCorrectionSec = -manualShiftSec;
-  const isCorrectionClamped = Math.abs(correctionSec - rawCorrectionSec) > 1e-6;
   const canContinue = capture != null && !busy;
 
   useEffect(() => {
@@ -273,6 +271,8 @@ export function ClapCalibrationScreen() {
     previewSessionRef.current = startCalibrationPreview({
       ctx,
       audioBuffer: capture.audioBuffer,
+      sourceStartSec: capture.sourceStartSec,
+      durationSec: capture.durationSec,
       tempo,
       manualShiftSec,
     });
@@ -490,13 +490,6 @@ export function ClapCalibrationScreen() {
                   </Text>
                 </Text>
               </Flex>
-
-              {isCorrectionClamped && (
-                <Text mt={2} color="orange.300" fontSize="xs">
-                  Correction is clamped to {Math.round(CORRECTION_MIN_SEC * 1000)}ms to{" "}
-                  {Math.round(CORRECTION_MAX_SEC * 1000)}ms.
-                </Text>
-              )}
 
               <Box mt={4}>
                 <CalibrationTimeline

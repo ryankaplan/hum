@@ -659,7 +659,7 @@ export function RecordingWizard() {
                       h={2}
                       borderRadius="full"
                       bg={dsColors.errorBorder}
-                      style={{ animation: "recPulse 1s ease-in-out infinite" }}
+                      animation="recPulse 1s ease-in-out infinite"
                     />
                     <Text color={dsColors.errorText} fontSize="xs" fontWeight="semibold">
                       RECORDING
@@ -736,13 +736,6 @@ export function RecordingWizard() {
           )}
         </Stack>
       </Box>
-
-      <style>{`
-        @keyframes recPulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.25; }
-        }
-      `}</style>
     </Flex>
   );
 }

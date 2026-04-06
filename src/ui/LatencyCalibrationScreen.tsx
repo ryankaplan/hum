@@ -217,7 +217,12 @@ function CalibrationTimeline({
         </Box>
       </Box>
 
-      <Flex mt={2} justify="space-between" color={dsColors.textMuted} fontSize="xs">
+      <Flex
+        mt={2}
+        justify="space-between"
+        color={dsColors.textMuted}
+        fontSize="xs"
+      >
         <Text>0s</Text>
         <Text>{visibleDurationSec.toFixed(2)}s</Text>
       </Flex>
@@ -249,9 +254,8 @@ export function LatencyCalibrationScreen() {
   const [manualShiftSec, setManualShiftSec] = useState(0);
   const [previewPlaying, setPreviewPlaying] = useState(false);
   const [captureBeat, setCaptureBeat] = useState(-1);
-  const [autoEstimate, setAutoEstimate] = useState<AutoCalibrationEstimate | null>(
-    null,
-  );
+  const [autoEstimate, setAutoEstimate] =
+    useState<AutoCalibrationEstimate | null>(null);
 
   const previewSessionRef = useRef<CalibrationPreviewSession | null>(null);
 
@@ -342,10 +346,17 @@ export function LatencyCalibrationScreen() {
     setError(null);
     try {
       const newAudioStream = await navigator.mediaDevices.getUserMedia({
-        audio: { deviceId: { exact: deviceId } },
+        audio: {
+          deviceId: { exact: deviceId },
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+        },
       });
       const newAudioTrack = newAudioStream.getAudioTracks()[0];
       if (newAudioTrack == null) return;
+      console.log(newAudioTrack.getSettings());
+      console.log(newAudioTrack.getConstraints());
 
       for (const track of stream.getAudioTracks()) {
         track.stop();
@@ -379,12 +390,13 @@ export function LatencyCalibrationScreen() {
     setAutoEstimate(null);
 
     try {
-      const { capture: nextCapture, estimate } = await runBestEffortAutoCalibration({
-        ctx,
-        stream,
-        tempo,
-        onBeat: (beat) => setCaptureBeat(beat),
-      });
+      const { capture: nextCapture, estimate } =
+        await runBestEffortAutoCalibration({
+          ctx,
+          stream,
+          tempo,
+          onBeat: (beat) => setCaptureBeat(beat),
+        });
       setCaptureBeat(-1);
       setAutoEstimate(estimate);
       model.clearCalibration();
@@ -513,7 +525,9 @@ export function LatencyCalibrationScreen() {
                   Capturing 2 bars
                 </Text>
                 <Text
-                  color={captureBeat >= 4 ? dsColors.accent : dsColors.textMuted}
+                  color={
+                    captureBeat >= 4 ? dsColors.accent : dsColors.textMuted
+                  }
                   fontSize="xs"
                   fontWeight="bold"
                 >
@@ -608,7 +622,9 @@ export function LatencyCalibrationScreen() {
               variant={previewPlaying ? "solid" : "outline"}
               bg={previewPlaying ? dsColors.errorBg : undefined}
               color={previewPlaying ? dsColors.errorText : dsColors.textMuted}
-              borderColor={previewPlaying ? dsColors.errorBorder : dsColors.outline}
+              borderColor={
+                previewPlaying ? dsColors.errorBorder : dsColors.outline
+              }
               onClick={handleTogglePreview}
               disabled={busy || capture == null}
             >

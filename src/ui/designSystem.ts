@@ -22,11 +22,10 @@ export const dsColors = {
 } as const;
 
 export const dsFocusRing =
-  "0 0 0 1px var(--chakra-colors-app-focus-ring, var(--chakra-colors-appFocusRing, #4d44e3)), 0 0 0 3px color-mix(in srgb, var(--chakra-colors-app-focus-ring, var(--chakra-colors-appFocusRing, #4d44e3)) 18%, transparent)";
+  "0 0 0 1px var(--app-focus-ring), 0 0 0 3px color-mix(in srgb, var(--app-focus-ring) 18%, transparent)";
 
 export const dsScreenShell = {
-  minH: "100vh",
-  bg: dsColors.bg,
+  layerStyle: "appScreenShell",
   align: "center",
   justify: "center",
   px: 4,
@@ -34,12 +33,7 @@ export const dsScreenShell = {
 } as const;
 
 export const dsPanel = {
-  bg: dsColors.surface,
-  border: "1px solid",
-  borderColor: dsColors.border,
-  borderRadius: "2xl",
-  boxShadow:
-    "0 10px 24px color-mix(in srgb, var(--chakra-colors-app-text, var(--chakra-colors-appText, #2e3145)) 10%, transparent)",
+  layerStyle: "appPanel",
 } as const;
 
 export const dsInputControl = {
@@ -72,8 +66,5 @@ export const dsOutlineButton = {
 } as const;
 
 export const dsErrorBanner = {
-  bg: dsColors.errorBg,
-  border: "1px solid",
-  borderColor: dsColors.errorBorder,
-  borderRadius: "md",
+  layerStyle: "appErrorBanner",
 } as const;

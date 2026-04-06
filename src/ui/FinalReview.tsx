@@ -661,7 +661,7 @@ export function FinalReview() {
               borderRadius="xl"
               overflow="hidden"
               bg="black"
-              w={{ base: "100%", lg: "min(46%, calc(70vh * 9 / 16))" }}
+              w={{ base: "min(100%, 340px)", lg: "min(46%, calc(70vh * 9 / 16))" }}
               aspectRatio="9/16"
               flexShrink={0}
               mx={{ base: "auto", lg: 0 }}

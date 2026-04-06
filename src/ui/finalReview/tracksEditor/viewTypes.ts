@@ -28,8 +28,8 @@ export type TracksEditorView = {
   playheadSec: number;
   timelineEndSec: number;
   beatLineTimes: number[];
-  snapToBeat: boolean;
   beatSec: number;
+  reverbWet: number;
   exporting: boolean;
   isPlaying: boolean;
   isSyncingFrames: boolean;

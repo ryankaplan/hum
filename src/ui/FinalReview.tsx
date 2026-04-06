@@ -92,7 +92,6 @@ export function FinalReview() {
 
   const selection = editorState.selection;
   const playheadSec = editorState.playheadSec;
-  const snapToBeat = editorState.snapToBeat;
   const reverbWet = documentState.reverbWet;
 
   const [isPlaying, setIsPlaying] = useState(false);
@@ -442,11 +441,6 @@ export function FinalReview() {
         model.deleteSelectedClip();
         return;
       }
-      case "toggle_snap": {
-        if (exporting || isPlaying || isSyncingFrames) return;
-        model.tracksEditor.setSnapToBeat(!snapToBeat);
-        return;
-      }
       case "select_lane": {
         if (exporting || isSyncingFrames || isPlaying) return;
         model.tracksEditor.setSelection({
@@ -625,8 +619,8 @@ export function FinalReview() {
       playheadSec,
       timelineEndSec,
       beatLineTimes,
-      snapToBeat,
       beatSec,
+      reverbWet,
       exporting,
       isPlaying,
       isSyncingFrames,
@@ -644,8 +638,8 @@ export function FinalReview() {
     isSyncingFrames,
     orderedTracks,
     playheadSec,
+    reverbWet,
     selection,
-    snapToBeat,
     syncWarning,
     timelineEndSec,
     timelines,
@@ -686,44 +680,10 @@ export function FinalReview() {
                 view={tracksEditorView}
                 onPlayPause={handlePlayPause}
                 onCommand={handleTracksCommand}
+                onReverbChange={handleReverbChange}
               />
             </Box>
           </Flex>
-
-          <Box>
-            <Text color="appTextMuted" fontSize="xs" mb={3} fontWeight="semibold">
-              MIX
-            </Text>
-            <Stack gap={2}>
-              <Flex align="center" gap={3} mt={1}>
-                <Text color="appTextMuted" fontSize="xs" w="24" flexShrink={0}>
-                  Reverb
-                </Text>
-                <Box w={2} flexShrink={0} />
-                <input
-                  type="range"
-                  className="mix-slider"
-                  min={0}
-                  max={100}
-                  step={1}
-                  value={Math.round(reverbWet * 100)}
-                  onChange={(e) =>
-                    handleReverbChange(parseInt(e.target.value, 10) / 100)
-                  }
-                  disabled={exporting || isSyncingFrames}
-                />
-                <Text
-                  color="appTextSubtle"
-                  fontSize="xs"
-                  w={8}
-                  textAlign="right"
-                  flexShrink={0}
-                >
-                  {Math.round(reverbWet * 100)}%
-                </Text>
-              </Flex>
-            </Stack>
-          </Box>
 
           <Box>
             <Text color="appTextMuted" fontSize="xs" mb={3} fontWeight="semibold">

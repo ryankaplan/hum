@@ -11,7 +11,7 @@ import {
   type ClipVolumeEnvelope,
 } from "../../../state/clipAutomation";
 import { dsColors, dsPanel } from "../../designSystem";
-import { samplePeaksForSegment, snapTimeSec } from "../../timeline";
+import { samplePeaksForSegment } from "../../timeline";
 import type { TracksEditorCommand } from "./commands";
 import type { TracksEditorView } from "./viewTypes";
 
@@ -37,10 +37,12 @@ type TracksEditorPanelProps = {
   view: TracksEditorView;
   onPlayPause: () => void;
   onCommand: (command: TracksEditorCommand) => void;
+  onReverbChange: (wet: number) => void;
 };
 
 export function TracksEditorPanel(props: TracksEditorPanelProps) {
   const { view, onPlayPause, onCommand } = props;
+  const { onReverbChange } = props;
   const trackCount = view.lanes.length;
 
   const timelineViewportRef = useRef<HTMLDivElement>(null);
@@ -177,11 +179,7 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
     const onMoveClip = (event: PointerEvent) => {
       const deltaPx = event.clientX - startClientX;
       const deltaSec = deltaPx / TIMELINE_PX_PER_SEC;
-      let desiredStartSec = segmentStartSec + deltaSec;
-
-      if (view.snapToBeat) {
-        desiredStartSec = snapTimeSec(desiredStartSec, view.beatSec);
-      }
+      const desiredStartSec = segmentStartSec + deltaSec;
 
       onCommand({
         type: "move_segment",
@@ -219,19 +217,46 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
         >
           Tracks
         </Text>
-        <Box
-          as="span"
-          fontSize="xs"
-          color="appTextMuted"
-          fontFamily="mono"
-          fontVariantNumeric="tabular-nums"
-        >
-          {formatTime(view.playheadSec)}
-          <Box as="span" color="appTextSubtle">
-            {" "}
-            / {formatTime(view.timelineEndSec)}
+        <Flex align="center" gap={3}>
+          <Flex align="center" gap={2} minW={{ base: "140px", md: "190px" }}>
+            <Text fontSize="xs" color="appTextMuted" whiteSpace="nowrap">
+              Reverb
+            </Text>
+            <input
+              type="range"
+              className="mix-slider"
+              min={0}
+              max={100}
+              step={1}
+              value={Math.round(view.reverbWet * 100)}
+              onChange={(e) => onReverbChange(parseInt(e.target.value, 10) / 100)}
+              disabled={view.exporting || view.isSyncingFrames}
+              style={{ width: "100%" }}
+            />
+            <Text
+              fontSize="xs"
+              color="appTextSubtle"
+              minW="34px"
+              textAlign="right"
+              fontVariantNumeric="tabular-nums"
+            >
+              {Math.round(view.reverbWet * 100)}%
+            </Text>
+          </Flex>
+          <Box
+            as="span"
+            fontSize="xs"
+            color="appTextMuted"
+            fontFamily="mono"
+            fontVariantNumeric="tabular-nums"
+          >
+            {formatTime(view.playheadSec)}
+            <Box as="span" color="appTextSubtle">
+              {" "}
+              / {formatTime(view.timelineEndSec)}
+            </Box>
           </Box>
-        </Box>
+        </Flex>
       </Flex>
 
       <Flex
@@ -291,24 +316,6 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
           disabled={view.exporting || view.isSyncingFrames || !view.canDelete}
         >
           Delete
-        </Button>
-        <Button
-          size="sm"
-          h={8}
-          px={3}
-          variant={view.snapToBeat ? "solid" : "outline"}
-          borderColor={view.snapToBeat ? dsColors.accent : dsColors.outline}
-          bg={view.snapToBeat ? dsColors.accent : "transparent"}
-          color={view.snapToBeat ? dsColors.accentForeground : dsColors.textMuted}
-          _hover={{
-            bg: view.snapToBeat ? dsColors.accentHover : dsColors.surfaceRaised,
-          }}
-          fontSize="xs"
-          fontWeight="normal"
-          onClick={() => onCommand({ type: "toggle_snap" })}
-          disabled={view.exporting || view.isPlaying || view.isSyncingFrames}
-        >
-          Snap {view.snapToBeat ? "on" : "off"}
         </Button>
       </Flex>
 

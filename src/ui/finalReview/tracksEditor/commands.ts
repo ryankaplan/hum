@@ -1,7 +1,6 @@
 export type TracksEditorCommand =
   | { type: "split_selected" }
   | { type: "delete_selected" }
-  | { type: "toggle_snap" }
   | { type: "select_lane"; trackId: string; timelineSec: number }
   | { type: "select_segment"; trackId: string; clipId: string }
   | { type: "move_segment"; trackId: string; clipId: string; desiredStartSec: number }

@@ -90,7 +90,6 @@ export type TracksDocumentState = {
 export type TracksEditorState = {
   selection: TracksEditorSelection;
   playheadSec: number;
-  snapToBeat: boolean;
 };
 
 export type ApplyClipVolumeBrushInput = {
@@ -150,7 +149,6 @@ export function createEmptyTracksEditorState(): TracksEditorState {
   return {
     selection: { trackId: null, clipId: null },
     playheadSec: 0,
-    snapToBeat: false,
   };
 }
 
@@ -764,13 +762,6 @@ export class TracksEditorModel {
     this.setEditor((current) => ({
       ...current,
       selection,
-    }));
-  }
-
-  setSnapToBeat(enabled: boolean): void {
-    this.setEditor((current) => ({
-      ...current,
-      snapToBeat: enabled,
     }));
   }
 

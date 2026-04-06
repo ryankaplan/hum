@@ -33,11 +33,22 @@ export type VocalRange = {
   high: MidiNote;
 };
 
+export type HarmonyVoicingStrategy = "drop2" | "closed";
+
+export type ChordToneFormula = "R 3 5" | "R b3 5";
+
+export type HarmonyChordAnnotation = {
+  strategy: HarmonyVoicingStrategy;
+  chordTones: ChordToneFormula;
+};
+
 // The full voicing output: one or more harmony lines + computed melody range
 // ceiling.
 export type HarmonyVoicing = {
   lines: HarmonyLine[];
   harmonyPartCount: number;
+  // One annotation per parsed chord, aligned by index with lines[*][i].
+  annotations: HarmonyChordAnnotation[];
   // Highest MIDI note used by harmonies — melody should stay above this
   harmonyTop: MidiNote;
 };

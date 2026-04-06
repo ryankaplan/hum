@@ -1,6 +1,7 @@
 import { triadSemitones } from "./parse";
 import type {
   Chord,
+  HarmonyChordAnnotation,
   HarmonyLine,
   HarmonyVoicing,
   MidiNote,
@@ -29,6 +30,7 @@ export function generateHarmony(
     return {
       lines: Array.from({ length: resolvedHarmonyPartCount }, () => []),
       harmonyPartCount: resolvedHarmonyPartCount,
+      annotations: [],
       harmonyTop: range.low,
     };
   }
@@ -41,10 +43,16 @@ export function generateHarmony(
     { length: resolvedHarmonyPartCount },
     () => [],
   );
+  const annotations: HarmonyChordAnnotation[] = [];
   let prevSoprano: MidiNote | null = null;
 
   for (const chord of chords) {
-    const voices = voiceChord(chord, harmonyRange, prevSoprano);
+    const voiced = voiceChord(chord, harmonyRange, prevSoprano);
+    const voices = voiced.notes;
+    annotations.push({
+      strategy: voiced.strategy,
+      chordTones: chordToneFormula(chord),
+    });
     if (resolvedHarmonyPartCount === 1) {
       // For duet mode, use the middle voice to keep enough vertical space
       // below melody while still sounding harmonically grounded.
@@ -60,15 +68,21 @@ export function generateHarmony(
   return {
     lines,
     harmonyPartCount: resolvedHarmonyPartCount,
+    annotations,
     harmonyTop,
   };
 }
+
+type VoicedChord = {
+  notes: [MidiNote, MidiNote, MidiNote];
+  strategy: HarmonyChordAnnotation["strategy"];
+};
 
 function voiceChord(
   chord: Chord,
   range: VocalRange,
   prevSoprano: MidiNote | null,
-): [MidiNote, MidiNote, MidiNote] {
+): VoicedChord {
   const classes = triadClasses(chord);
 
   // Soprano targets the previous soprano for smooth voice leading, or the top
@@ -81,7 +95,7 @@ function voiceChord(
   const dropped = applyDrop2(closed);
 
   if (dropped[0] >= range.low) {
-    return dropped;
+    return { notes: dropped, strategy: "drop2" };
   }
 
   // Drop-2 pushed the lowest voice below the range. Try the soprano an octave
@@ -91,13 +105,17 @@ function voiceChord(
     const closedUp = buildClosedVoicing(sopranoUp, classes);
     const droppedUp = applyDrop2(closedUp);
     if (droppedUp[0] >= range.low) {
-      return droppedUp;
+      return { notes: droppedUp, strategy: "drop2" };
     }
   }
 
   // Fallback: use the closed voicing without drop-2 (still sounds fine, just
   // tighter spacing).
-  return closed;
+  return { notes: closed, strategy: "closed" };
+}
+
+function chordToneFormula(chord: Chord): HarmonyChordAnnotation["chordTones"] {
+  return chord.quality === "major" ? "R 3 5" : "R b3 5";
 }
 
 // Returns the 3 pitch classes (0–11) for a chord's triad.

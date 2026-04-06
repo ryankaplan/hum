@@ -247,10 +247,10 @@ export function SetupScreen() {
             </Field.Root>
           </Stack>
 
-          {parsed.length > 0 && (
+          {parsed.length > 0 && voicing != null && (
             <Box bg="gray.800" borderRadius="lg" p={4}>
               <Text color="gray.400" fontSize="xs" mb={2} fontWeight="semibold">
-                PARSED — {parsed.length} chord{parsed.length !== 1 ? "s" : ""}
+                ARRANGEMENT — {parsed.length} chord{parsed.length !== 1 ? "s" : ""}
               </Text>
               <Flex gap={2} flexWrap="wrap">
                 {parsed.map((c, i) => (
@@ -262,12 +262,42 @@ export function SetupScreen() {
                     py={1}
                     fontSize="sm"
                     color="white"
+                    display="inline-flex"
+                    alignItems="center"
                   >
                     {c.root}
                     {c.quality === "minor" ? "m" : ""}
-                    <Text as="span" color="gray.400" fontSize="xs" ml={1}>
-                      {c.beats}b
-                    </Text>
+                    {(() => {
+                      const annotation = voicing.annotations[i];
+                      const strategyLabel =
+                        annotation?.strategy === "closed" ? "Closed fallback" : "Drop-2";
+                      const badgeLabel = annotation?.strategy === "closed" ? "C" : "2";
+                      const tones =
+                        annotation?.chordTones ??
+                        (c.quality === "minor" ? "R b3 5" : "R 3 5");
+                      const hoverText = `${strategyLabel} - tones: ${tones}`;
+                      return (
+                        <Box
+                          as="span"
+                          title={hoverText}
+                          aria-label={hoverText}
+                          ml={2}
+                          w="20px"
+                          h="20px"
+                          borderRadius="full"
+                          bg="gray.600"
+                          color="gray.100"
+                          fontSize="xs"
+                          fontWeight="bold"
+                          lineHeight="20px"
+                          textAlign="center"
+                          cursor="help"
+                          userSelect="none"
+                        >
+                          {badgeLabel}
+                        </Box>
+                      );
+                    })()}
                   </Box>
                 ))}
               </Flex>

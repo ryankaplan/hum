@@ -7,71 +7,49 @@ import {
   splitClipVolumeEnvelopeAtTime,
 } from "./clipAutomation";
 
+export type TrackId = string;
+export type ClipId = string;
+export type RecordingId = string;
+export type MediaAssetId = string;
+
+export type TrackRole = "harmony" | "melody";
+
 export type TrackClip = {
-  // Generated locally by the document model and used only as timeline clip identity.
-  id: string;
-  laneIndex: number;
-
-  // Foreign key into `takesById` for the kept take backing this clip.
-  takeId: string;
-
-  // Clip start in the edited timeline.
+  id: ClipId;
+  trackId: TrackId;
+  recordingId: RecordingId;
   timelineStartSec: number;
-
-  // Start offset into the underlying kept take media.
   sourceStartSec: number;
-
   durationSec: number;
   volumeEnvelope: ClipVolumeEnvelope;
 };
 
-export type TrackLane = {
-  laneIndex: number;
-  clips: TrackClip[];
+export type TrackRecord = {
+  id: TrackId;
+  role: TrackRole;
+  clipIds: ClipId[];
+  volume: number;
+  muted: boolean;
 };
 
-export type TracksEditorSelection = {
-  laneIndex: number | null;
-  clipId: string | null;
-};
-
-export type TracksMixState = {
-  volumes: number[];
-  muted: boolean[];
-  reverbWet: number;
-};
-
-export type TakeRecord = {
-  // Stable ID for one kept take in a lane.
-  id: string;
-  laneIndex: number;
-
-  // Original recorded media for the kept take. In this app the blob is the
-  // recorded video file, and its audio track is later decoded for playback/editing.
-  blob: Blob;
-
-  // Object URL created from `blob` so the recorded video can be loaded into
-  // <video> elements for preview, compositing, and review.
-  url: string;
-
-  // Seconds to skip from the beginning of the recorded media before the usable
-  // take starts. This trims leading latency/silence so timeline playback aligns.
+export type RecordingRecord = {
+  id: RecordingId;
+  trackId: TrackId;
+  mediaAssetId: MediaAssetId;
   trimOffsetSec: number;
 };
 
-export type ApplyClipVolumeBrushInput = {
-  laneIndex: number;
-  clipId: string;
-  centerSec: number;
-  deltaGainMultiplier: number;
-  radiusSec: number;
+export type TracksEditorSelection = {
+  trackId: TrackId | null;
+  clipId: ClipId | null;
 };
 
 export type TracksDocumentState = {
-  takesById: Record<string, TakeRecord>;
-  laneTakeIds: (string | null)[];
-  lanes: TrackLane[];
-  mix: TracksMixState;
+  trackOrder: TrackId[];
+  tracksById: Record<TrackId, TrackRecord>;
+  clipsById: Record<ClipId, TrackClip>;
+  recordingsById: Record<RecordingId, RecordingRecord>;
+  reverbWet: number;
 };
 
 export type TracksEditorState = {
@@ -80,266 +58,338 @@ export type TracksEditorState = {
   snapToBeat: boolean;
 };
 
+export type ApplyClipVolumeBrushInput = {
+  trackId: TrackId;
+  clipId: ClipId;
+  centerSec: number;
+  deltaGainMultiplier: number;
+  radiusSec: number;
+};
+
 type TracksDocumentModelOptions = {
   totalParts: number;
   getMixer: () => Mixer | null;
 };
 
-export function createEmptyTracksMixState(totalParts: number): TracksMixState {
+const DEFAULT_TRACK_VOLUME = 1;
+const DEFAULT_REVERB_WET = 0.15;
+
+function createTrackRecord(
+  id: TrackId,
+  displayIndex: number,
+  totalParts: number,
+): TrackRecord {
+  const harmonyPartCount = Math.max(1, totalParts - 1);
   return {
-    volumes: Array.from({ length: totalParts }, () => 1),
-    muted: Array.from({ length: totalParts }, () => false),
-    reverbWet: 0.15,
+    id,
+    role: displayIndex >= harmonyPartCount ? "melody" : "harmony",
+    clipIds: [],
+    volume: DEFAULT_TRACK_VOLUME,
+    muted: false,
   };
 }
 
 export function createEmptyTracksDocument(
   totalParts: number,
+  makeTrackId?: () => TrackId,
 ): TracksDocumentState {
+  const trackOrder: TrackId[] = [];
+  const tracksById: Record<TrackId, TrackRecord> = {};
+
+  for (let i = 0; i < totalParts; i++) {
+    const trackId = makeTrackId ? makeTrackId() : `track-${i + 1}`;
+    trackOrder.push(trackId);
+    tracksById[trackId] = createTrackRecord(trackId, i, totalParts);
+  }
+
   return {
-    takesById: {},
-    laneTakeIds: Array.from({ length: totalParts }, () => null),
-    lanes: Array.from({ length: totalParts }, (_, laneIndex) => ({
-      laneIndex,
-      clips: [],
-    })),
-    mix: createEmptyTracksMixState(totalParts),
+    trackOrder,
+    tracksById,
+    clipsById: {},
+    recordingsById: {},
+    reverbWet: DEFAULT_REVERB_WET,
   };
 }
 
 export function createEmptyTracksEditorState(): TracksEditorState {
   return {
-    selection: { laneIndex: null, clipId: null },
+    selection: { trackId: null, clipId: null },
     playheadSec: 0,
     snapToBeat: false,
   };
 }
 
 export class TracksDocumentModel {
+  private nextTrackId = 0;
   private nextClipId = 0;
 
   readonly document: Observable<TracksDocumentState>;
 
   constructor(private options: TracksDocumentModelOptions) {
     this.document = new Observable<TracksDocumentState>(
-      createEmptyTracksDocument(options.totalParts),
+      createEmptyTracksDocument(options.totalParts, () => this.makeTrackId()),
     );
   }
 
-  stageKeptTake(input: {
-    laneIndex: number;
-    take: TakeRecord;
+  getTrackIdAtIndex(index: number): TrackId | null {
+    return this.document.get().trackOrder[index] ?? null;
+  }
+
+  getTrackIndex(trackId: TrackId): number {
+    return this.document.get().trackOrder.indexOf(trackId);
+  }
+
+  getTrackCount(): number {
+    return this.document.get().trackOrder.length;
+  }
+
+  getTrack(trackId: TrackId): TrackRecord | null {
+    return this.document.get().tracksById[trackId] ?? null;
+  }
+
+  getOrderedClipsForTrack(trackId: TrackId): TrackClip[] {
+    const current = this.document.get();
+    const track = current.tracksById[trackId];
+    if (track == null) return [];
+    return track.clipIds
+      .map((clipId) => current.clipsById[clipId] ?? null)
+      .filter((clip): clip is TrackClip => clip != null);
+  }
+
+  getOrderedTracks(): TrackRecord[] {
+    const current = this.document.get();
+    return current.trackOrder
+      .map((trackId) => current.tracksById[trackId] ?? null)
+      .filter((track): track is TrackRecord => track != null);
+  }
+
+  getRecording(recordingId: RecordingId): RecordingRecord | null {
+    return this.document.get().recordingsById[recordingId] ?? null;
+  }
+
+  getPrimaryRecordingIdForTrack(trackId: TrackId): RecordingId | null {
+    const clip = this.getOrderedClipsForTrack(trackId)[0] ?? null;
+    return clip?.recordingId ?? null;
+  }
+
+  stageCommittedRecording(input: {
+    trackId: TrackId;
+    recording: RecordingRecord;
     sourceStartSec: number;
     durationSec: number;
-  }): { replacedTake: TakeRecord | null; clipId: string | null } {
-    const { laneIndex, take, sourceStartSec, durationSec } = input;
+  }): {
+    removedRecordings: RecordingRecord[];
+    clipId: ClipId | null;
+  } {
+    const { trackId, recording, sourceStartSec, durationSec } = input;
     const clipId = this.makeClipId();
-    let replacedTake: TakeRecord | null = null;
+    let removedRecordings: RecordingRecord[] = [];
 
     this.setDocument((current) => {
-      if (laneIndex < 0 || laneIndex >= current.lanes.length) return current;
+      const track = current.tracksById[trackId];
+      if (track == null) return current;
 
-      const previousTakeId = current.laneTakeIds[laneIndex];
-      if (previousTakeId != null && previousTakeId !== take.id) {
-        replacedTake = current.takesById[previousTakeId] ?? null;
-      }
+      const nextTracksById = { ...current.tracksById };
+      const nextClipsById = { ...current.clipsById };
+      const nextRecordingsById = { ...current.recordingsById };
 
-      const nextLaneTakeIds = [...current.laneTakeIds];
-      nextLaneTakeIds[laneIndex] = take.id;
+      removedRecordings = this.collectRemovedTrackRecordings(
+        current,
+        trackId,
+        nextClipsById,
+        nextRecordingsById,
+      );
 
-      const nextTakesById: Record<string, TakeRecord> = {
-        ...current.takesById,
-        [take.id]: take,
+      const nextClip: TrackClip = {
+        id: clipId,
+        trackId,
+        recordingId: recording.id,
+        timelineStartSec: 0,
+        sourceStartSec: Math.max(0, sourceStartSec),
+        durationSec: Math.max(0, durationSec),
+        volumeEnvelope: createDefaultClipVolumeEnvelope(Math.max(0, durationSec)),
       };
 
-      if (previousTakeId != null && previousTakeId !== take.id) {
-        delete nextTakesById[previousTakeId];
-      }
-
-      const nextLanes = current.lanes.map((lane, index) =>
-        index === laneIndex
-          ? {
-              laneIndex,
-              clips: [
-                {
-                  id: clipId,
-                  laneIndex,
-                  takeId: take.id,
-                  timelineStartSec: 0,
-                  sourceStartSec: Math.max(0, sourceStartSec),
-                  durationSec: Math.max(0, durationSec),
-                  volumeEnvelope: createDefaultClipVolumeEnvelope(
-                    Math.max(0, durationSec),
-                  ),
-                },
-              ],
-            }
-          : lane,
-      );
+      nextClipsById[clipId] = nextClip;
+      nextRecordingsById[recording.id] = recording;
+      nextTracksById[trackId] = {
+        ...track,
+        clipIds: [clipId],
+      };
 
       return {
         ...current,
-        takesById: nextTakesById,
-        laneTakeIds: nextLaneTakeIds,
-        lanes: nextLanes,
+        tracksById: nextTracksById,
+        clipsById: nextClipsById,
+        recordingsById: nextRecordingsById,
       };
     });
 
-    return { replacedTake, clipId };
+    return { removedRecordings, clipId };
   }
 
-  initializeTrackFromTake(
-    laneIndex: number,
-    takeId: string,
+  initializeTrackFromRecording(
+    trackId: TrackId,
+    recordingId: RecordingId,
     sourceStartSec: number,
     durationSec: number,
   ): void {
     this.setDocument((current) => {
-      if (laneIndex < 0 || laneIndex >= current.lanes.length) return current;
+      const track = current.tracksById[trackId];
+      if (track == null) return current;
 
-      const lane = current.lanes[laneIndex];
-      if (lane == null) return current;
+      const firstClipId = track.clipIds[0] ?? null;
+      const firstClip = firstClipId != null ? current.clipsById[firstClipId] : null;
 
-      const clip: TrackClip = {
-        id: this.makeClipId(),
-        laneIndex,
-        takeId,
-        timelineStartSec: 0,
-        sourceStartSec,
-        durationSec,
-        volumeEnvelope: createDefaultClipVolumeEnvelope(durationSec),
-      };
-
-      const firstClip = lane.clips[0];
-      const shouldReplaceWithDecodedClip =
-        lane.clips.length === 1 &&
+      if (
+        track.clipIds.length === 1 &&
         firstClip != null &&
-        firstClip.takeId === takeId &&
-        firstClip.timelineStartSec === 0;
+        firstClip.recordingId === recordingId &&
+        firstClip.timelineStartSec === 0
+      ) {
+        return {
+          ...current,
+          clipsById: {
+            ...current.clipsById,
+            [firstClip.id]: {
+              ...firstClip,
+              sourceStartSec,
+              durationSec,
+              volumeEnvelope: createDefaultClipVolumeEnvelope(durationSec),
+            },
+          },
+        };
+      }
 
-      const nextLane: TrackLane = shouldReplaceWithDecodedClip
-        ? {
-            laneIndex,
-            clips: [
-              {
-                ...firstClip,
-                sourceStartSec,
-                durationSec,
-                volumeEnvelope: createDefaultClipVolumeEnvelope(durationSec),
-              },
-            ],
-          }
-        : lane.clips.length === 0
-          ? {
-              laneIndex,
-              clips: [clip],
-            }
-          : lane;
+      if (track.clipIds.length !== 0) return current;
 
-      if (nextLane === lane) return current;
-
-      const nextLanes = [...current.lanes];
-      nextLanes[laneIndex] = nextLane;
-
+      const clipId = this.makeClipId();
       return {
         ...current,
-        lanes: nextLanes,
+        clipsById: {
+          ...current.clipsById,
+          [clipId]: {
+            id: clipId,
+            trackId,
+            recordingId,
+            timelineStartSec: 0,
+            sourceStartSec,
+            durationSec,
+            volumeEnvelope: createDefaultClipVolumeEnvelope(durationSec),
+          },
+        },
+        tracksById: {
+          ...current.tracksById,
+          [trackId]: {
+            ...track,
+            clipIds: [clipId],
+          },
+        },
       };
     });
   }
 
   splitClipAtTime(input: {
-    laneIndex: number;
-    clipId: string;
+    trackId: TrackId;
+    clipId: ClipId;
     splitTimeSec: number;
-  }): { leftClipId: string; rightClipId: string } | null {
-    const { laneIndex, clipId, splitTimeSec } = input;
-    let result: { leftClipId: string; rightClipId: string } | null = null;
+  }): { leftClipId: ClipId; rightClipId: ClipId } | null {
+    const { trackId, clipId, splitTimeSec } = input;
+    let result: { leftClipId: ClipId; rightClipId: ClipId } | null = null;
 
     this.setDocument((current) => {
-      const lane = current.lanes[laneIndex];
-      if (lane == null) return current;
+      const track = current.tracksById[trackId];
+      if (track == null) return current;
 
-      const idx = lane.clips.findIndex((clip) => clip.id === clipId);
+      const idx = track.clipIds.findIndex((candidate) => candidate === clipId);
       if (idx < 0) return current;
 
-      const clip = lane.clips[idx];
+      const clip = current.clipsById[clipId];
       if (clip == null) return current;
 
       const clipStart = clip.timelineStartSec;
       const clipEnd = clip.timelineStartSec + clip.durationSec;
-      const EPSILON = 1e-6;
+      const epsilon = 1e-6;
       if (
-        !(splitTimeSec > clipStart + EPSILON && splitTimeSec < clipEnd - EPSILON)
+        !(splitTimeSec > clipStart + epsilon && splitTimeSec < clipEnd - epsilon)
       ) {
         return current;
       }
 
       const leftDuration = splitTimeSec - clipStart;
       const rightDuration = clipEnd - splitTimeSec;
-      if (leftDuration <= EPSILON || rightDuration <= EPSILON) return current;
+      if (leftDuration <= epsilon || rightDuration <= epsilon) return current;
+
       const splitVolumeEnvelope = splitClipVolumeEnvelopeAtTime(
         clip.volumeEnvelope,
         leftDuration,
         clip.durationSec,
       );
 
+      const leftClipId = this.makeClipId();
+      const rightClipId = this.makeClipId();
+
       const left: TrackClip = {
         ...clip,
-        id: this.makeClipId(),
+        id: leftClipId,
         durationSec: leftDuration,
         volumeEnvelope: splitVolumeEnvelope.left,
       };
 
       const right: TrackClip = {
         ...clip,
-        id: this.makeClipId(),
+        id: rightClipId,
         timelineStartSec: splitTimeSec,
         sourceStartSec: clip.sourceStartSec + leftDuration,
         durationSec: rightDuration,
         volumeEnvelope: splitVolumeEnvelope.right,
       };
 
-      const nextClips = [
-        ...lane.clips.slice(0, idx),
-        left,
-        right,
-        ...lane.clips.slice(idx + 1),
+      const nextClipIds = [
+        ...track.clipIds.slice(0, idx),
+        leftClipId,
+        rightClipId,
+        ...track.clipIds.slice(idx + 1),
       ];
+      const nextClipsById = { ...current.clipsById };
+      delete nextClipsById[clipId];
+      nextClipsById[leftClipId] = left;
+      nextClipsById[rightClipId] = right;
 
-      const nextLanes = [...current.lanes];
-      nextLanes[laneIndex] = {
-        ...lane,
-        clips: nextClips,
-      };
-
-      result = {
-        leftClipId: left.id,
-        rightClipId: right.id,
-      };
+      result = { leftClipId, rightClipId };
 
       return {
         ...current,
-        lanes: nextLanes,
+        clipsById: nextClipsById,
+        tracksById: {
+          ...current.tracksById,
+          [trackId]: {
+            ...track,
+            clipIds: nextClipIds,
+          },
+        },
       };
     });
 
     return result;
   }
 
-  moveClip(laneIndex: number, clipId: string, desiredStartSec: number): void {
+  moveClip(trackId: TrackId, clipId: ClipId, desiredStartSec: number): void {
     this.setDocument((current) => {
-      const lane = current.lanes[laneIndex];
-      if (lane == null) return current;
+      const track = current.tracksById[trackId];
+      if (track == null) return current;
 
-      const idx = lane.clips.findIndex((clip) => clip.id === clipId);
+      const idx = track.clipIds.findIndex((candidate) => candidate === clipId);
       if (idx < 0) return current;
 
-      const clip = lane.clips[idx];
+      const clip = current.clipsById[clipId];
       if (clip == null) return current;
 
-      const prev = idx > 0 ? lane.clips[idx - 1] : null;
-      const next = idx < lane.clips.length - 1 ? lane.clips[idx + 1] : null;
+      const prev = idx > 0 ? current.clipsById[track.clipIds[idx - 1]!] : null;
+      const next =
+        idx < track.clipIds.length - 1
+          ? current.clipsById[track.clipIds[idx + 1]!] ?? null
+          : null;
 
       const minStart =
         prev != null ? prev.timelineStartSec + prev.durationSec : 0;
@@ -351,50 +401,59 @@ export class TracksDocumentModel {
       const clamped = Math.min(Math.max(desiredStartSec, minStart), maxStart);
       if (Math.abs(clamped - clip.timelineStartSec) < 1e-6) return current;
 
-      const nextClips = [...lane.clips];
-      nextClips[idx] = {
-        ...clip,
-        timelineStartSec: clamped,
-      };
-
-      const nextLanes = [...current.lanes];
-      nextLanes[laneIndex] = {
-        ...lane,
-        clips: nextClips,
-      };
-
       return {
         ...current,
-        lanes: nextLanes,
+        clipsById: {
+          ...current.clipsById,
+          [clipId]: {
+            ...clip,
+            timelineStartSec: clamped,
+          },
+        },
       };
     });
   }
 
-  deleteClip(input: { laneIndex: number; clipId: string }): { deleted: boolean } {
-    const { laneIndex, clipId } = input;
+  deleteClip(input: {
+    trackId: TrackId;
+    clipId: ClipId;
+  }): { deleted: boolean; removedRecordings: RecordingRecord[] } {
+    const { trackId, clipId } = input;
     let deleted = false;
+    let removedRecordings: RecordingRecord[] = [];
 
     this.setDocument((current) => {
-      const lane = current.lanes[laneIndex];
-      if (lane == null) return current;
+      const track = current.tracksById[trackId];
+      if (track == null) return current;
+      if (track.clipIds.includes(clipId) === false) return current;
 
-      const nextClips = lane.clips.filter((clip) => clip.id !== clipId);
-      if (nextClips.length === lane.clips.length) return current;
+      const nextClipsById = { ...current.clipsById };
+      delete nextClipsById[clipId];
 
-      const nextLanes = [...current.lanes];
-      nextLanes[laneIndex] = {
-        ...lane,
-        clips: nextClips,
-      };
+      const nextRecordingsById = { ...current.recordingsById };
+      removedRecordings = this.removeUnreferencedRecordings(
+        current,
+        nextClipsById,
+        nextRecordingsById,
+      );
+
       deleted = true;
 
       return {
         ...current,
-        lanes: nextLanes,
+        clipsById: nextClipsById,
+        recordingsById: nextRecordingsById,
+        tracksById: {
+          ...current.tracksById,
+          [trackId]: {
+            ...track,
+            clipIds: track.clipIds.filter((candidate) => candidate !== clipId),
+          },
+        },
       };
     });
 
-    return { deleted };
+    return { deleted, removedRecordings };
   }
 
   applyClipVolumeBrush(input: ApplyClipVolumeBrushInput): void {
@@ -403,197 +462,239 @@ export class TracksDocumentModel {
     }
 
     this.setDocument((current) => {
-      const lane = current.lanes[input.laneIndex];
-      if (lane == null) return current;
+      const track = current.tracksById[input.trackId];
+      if (track == null || track.clipIds.includes(input.clipId) === false) {
+        return current;
+      }
 
-      const clipIndex = lane.clips.findIndex((clip) => clip.id === input.clipId);
-      if (clipIndex < 0) return current;
-      const clip = lane.clips[clipIndex];
+      const clip = current.clipsById[input.clipId];
       if (clip == null || clip.durationSec <= 0) return current;
 
-      const currentEnvelope = clip.volumeEnvelope;
       const nextEnvelope = applyClipVolumeBrush({
-        envelope: currentEnvelope,
+        envelope: clip.volumeEnvelope,
         durationSec: clip.durationSec,
         centerSec: input.centerSec,
         deltaGainMultiplier: input.deltaGainMultiplier,
         radiusSec: input.radiusSec,
       });
 
-      if (isSameVolumeEnvelope(currentEnvelope, nextEnvelope)) {
+      if (isSameVolumeEnvelope(clip.volumeEnvelope, nextEnvelope)) {
         return current;
       }
 
-      const nextClip: TrackClip = {
-        ...clip,
-        volumeEnvelope: nextEnvelope,
-      };
-
-      const nextClips = [...lane.clips];
-      nextClips[clipIndex] = nextClip;
-
-      const nextLanes = [...current.lanes];
-      nextLanes[input.laneIndex] = {
-        ...lane,
-        clips: nextClips,
-      };
-
       return {
         ...current,
-        lanes: nextLanes,
+        clipsById: {
+          ...current.clipsById,
+          [input.clipId]: {
+            ...clip,
+            volumeEnvelope: nextEnvelope,
+          },
+        },
       };
     });
   }
 
-  setTrackVolume(laneIndex: number, volume: number): void {
-    if (laneIndex < 0 || laneIndex >= this.document.get().mix.volumes.length) {
-      return;
-    }
-
+  setTrackVolume(trackId: TrackId, volume: number): void {
     this.setDocument((current) => {
-      const nextVolumes = [...current.mix.volumes];
-      nextVolumes[laneIndex] = volume;
+      const track = current.tracksById[trackId];
+      if (track == null) return current;
+
       return {
         ...current,
-        mix: {
-          ...current.mix,
-          volumes: nextVolumes,
+        tracksById: {
+          ...current.tracksById,
+          [trackId]: {
+            ...track,
+            volume,
+          },
         },
       };
     });
 
-    this.options.getMixer()?.setTrackVolume(laneIndex, volume);
+    const trackIndex = this.getTrackIndex(trackId);
+    if (trackIndex >= 0) {
+      this.options.getMixer()?.setTrackVolume(trackIndex, volume);
+    }
   }
 
-  setTrackMuted(laneIndex: number, muted: boolean): void {
-    if (laneIndex < 0 || laneIndex >= this.document.get().mix.muted.length) {
-      return;
-    }
-
+  setTrackMuted(trackId: TrackId, muted: boolean): void {
     this.setDocument((current) => {
-      const nextMuted = [...current.mix.muted];
-      nextMuted[laneIndex] = muted;
+      const track = current.tracksById[trackId];
+      if (track == null) return current;
+
       return {
         ...current,
-        mix: {
-          ...current.mix,
-          muted: nextMuted,
+        tracksById: {
+          ...current.tracksById,
+          [trackId]: {
+            ...track,
+            muted,
+          },
         },
       };
     });
 
-    this.options.getMixer()?.setTrackMuted(laneIndex, muted);
+    const trackIndex = this.getTrackIndex(trackId);
+    if (trackIndex >= 0) {
+      this.options.getMixer()?.setTrackMuted(trackIndex, muted);
+    }
   }
 
   setReverbWet(wet: number): void {
     this.setDocument((current) => ({
       ...current,
-      mix: {
-        ...current.mix,
-        reverbWet: wet,
-      },
+      reverbWet: wet,
     }));
 
     this.options.getMixer()?.setReverbWet(wet);
   }
 
-  clearLane(laneIndex: number): TakeRecord | null {
-    let removedTake: TakeRecord | null = null;
+  clearTrack(trackId: TrackId): RecordingRecord[] {
+    let removedRecordings: RecordingRecord[] = [];
 
     this.setDocument((current) => {
-      if (laneIndex < 0 || laneIndex >= current.lanes.length) return current;
+      const track = current.tracksById[trackId];
+      if (track == null) return current;
 
-      const takeId = current.laneTakeIds[laneIndex];
-      if (takeId != null) {
-        removedTake = current.takesById[takeId] ?? null;
-      }
-
-      const nextLaneTakeIds = [...current.laneTakeIds];
-      nextLaneTakeIds[laneIndex] = null;
-
-      const nextTakesById = { ...current.takesById };
-      if (takeId != null) {
-        delete nextTakesById[takeId];
-      }
-
-      const nextLanes = current.lanes.map((lane, index) =>
-        index === laneIndex
-          ? {
-              laneIndex,
-              clips: [],
-            }
-          : lane,
+      const nextClipsById = { ...current.clipsById };
+      const nextRecordingsById = { ...current.recordingsById };
+      removedRecordings = this.collectRemovedTrackRecordings(
+        current,
+        trackId,
+        nextClipsById,
+        nextRecordingsById,
       );
 
       return {
         ...current,
-        laneTakeIds: nextLaneTakeIds,
-        takesById: nextTakesById,
-        lanes: nextLanes,
-      };
-    });
-
-    return removedTake;
-  }
-
-  resizeForPartCount(totalParts: number): TakeRecord[] {
-    const removedTakes: TakeRecord[] = [];
-
-    this.setDocument((current) => {
-      const currentLaneTakeIds = current.laneTakeIds.slice(0, totalParts);
-      const currentLanes = current.lanes.slice(0, totalParts);
-      const currentVolumes = current.mix.volumes.slice(0, totalParts);
-      const currentMuted = current.mix.muted.slice(0, totalParts);
-
-      for (let i = currentLaneTakeIds.length; i < totalParts; i++) {
-        currentLaneTakeIds.push(null);
-      }
-
-      for (let i = currentLanes.length; i < totalParts; i++) {
-        currentLanes.push({ laneIndex: i, clips: [] });
-      }
-
-      for (let i = currentVolumes.length; i < totalParts; i++) {
-        currentVolumes.push(1);
-      }
-
-      for (let i = currentMuted.length; i < totalParts; i++) {
-        currentMuted.push(false);
-      }
-
-      const preservedTakeIds = new Set(
-        currentLaneTakeIds.filter((takeId): takeId is string => takeId != null),
-      );
-
-      const nextTakesById: Record<string, TakeRecord> = {};
-      for (const [takeId, take] of Object.entries(current.takesById)) {
-        if (preservedTakeIds.has(takeId)) {
-          nextTakesById[takeId] = take;
-        } else {
-          removedTakes.push(take);
-        }
-      }
-
-      return {
-        ...current,
-        takesById: nextTakesById,
-        laneTakeIds: currentLaneTakeIds,
-        lanes: currentLanes,
-        mix: {
-          ...current.mix,
-          volumes: currentVolumes,
-          muted: currentMuted,
+        clipsById: nextClipsById,
+        recordingsById: nextRecordingsById,
+        tracksById: {
+          ...current.tracksById,
+          [trackId]: {
+            ...track,
+            clipIds: [],
+          },
         },
       };
     });
 
-    return removedTakes;
+    return removedRecordings;
   }
 
-  reset(totalParts: number): TakeRecord[] {
-    const removedTakes = Object.values(this.document.get().takesById);
-    this.document.set(createEmptyTracksDocument(totalParts));
-    return removedTakes;
+  resizeForPartCount(totalParts: number): RecordingRecord[] {
+    const removedRecordings: RecordingRecord[] = [];
+
+    this.setDocument((current) => {
+      const nextTrackOrder = current.trackOrder.slice(0, totalParts);
+      const nextTracksById: Record<TrackId, TrackRecord> = {};
+
+      for (const trackId of nextTrackOrder) {
+        const track = current.tracksById[trackId];
+        if (track != null) {
+          nextTracksById[trackId] = track;
+        }
+      }
+
+      for (let i = nextTrackOrder.length; i < totalParts; i++) {
+        const trackId = this.makeTrackId();
+        nextTrackOrder.push(trackId);
+        nextTracksById[trackId] = createTrackRecord(trackId, i, totalParts);
+      }
+
+      for (let i = 0; i < nextTrackOrder.length; i++) {
+        const trackId = nextTrackOrder[i]!;
+        nextTracksById[trackId] = {
+          ...nextTracksById[trackId]!,
+          role: i >= Math.max(1, totalParts - 1) ? "melody" : "harmony",
+        };
+      }
+
+      const nextClipsById: Record<ClipId, TrackClip> = {};
+      for (const clip of Object.values(current.clipsById)) {
+        if (nextTracksById[clip.trackId] != null) {
+          nextClipsById[clip.id] = clip;
+        }
+      }
+
+      const nextRecordingsById: Record<RecordingId, RecordingRecord> = {};
+      for (const recording of Object.values(current.recordingsById)) {
+        if (nextTracksById[recording.trackId] != null) {
+          nextRecordingsById[recording.id] = recording;
+        } else {
+          removedRecordings.push(recording);
+        }
+      }
+
+      for (const trackId of nextTrackOrder) {
+        const track = nextTracksById[trackId];
+        if (track == null) continue;
+        nextTracksById[trackId] = {
+          ...track,
+          clipIds: track.clipIds.filter((clipId) => nextClipsById[clipId] != null),
+        };
+      }
+
+      return {
+        ...current,
+        trackOrder: nextTrackOrder,
+        tracksById: nextTracksById,
+        clipsById: nextClipsById,
+        recordingsById: nextRecordingsById,
+      };
+    });
+
+    return removedRecordings;
+  }
+
+  reset(totalParts: number): RecordingRecord[] {
+    const removedRecordings = Object.values(this.document.get().recordingsById);
+    this.document.set(
+      createEmptyTracksDocument(totalParts, () => this.makeTrackId()),
+    );
+    return removedRecordings;
+  }
+
+  private collectRemovedTrackRecordings(
+    current: TracksDocumentState,
+    trackId: TrackId,
+    nextClipsById: Record<ClipId, TrackClip>,
+    nextRecordingsById: Record<RecordingId, RecordingRecord>,
+  ): RecordingRecord[] {
+    const track = current.tracksById[trackId];
+    if (track == null) return [];
+
+    for (const clipId of track.clipIds) {
+      delete nextClipsById[clipId];
+    }
+
+    return this.removeUnreferencedRecordings(
+      current,
+      nextClipsById,
+      nextRecordingsById,
+    );
+  }
+
+  private removeUnreferencedRecordings(
+    current: TracksDocumentState,
+    nextClipsById: Record<ClipId, TrackClip>,
+    nextRecordingsById: Record<RecordingId, RecordingRecord>,
+  ): RecordingRecord[] {
+    const referencedRecordingIds = new Set(
+      Object.values(nextClipsById).map((clip) => clip.recordingId),
+    );
+
+    const removed: RecordingRecord[] = [];
+    for (const [recordingId, recording] of Object.entries(current.recordingsById)) {
+      if (referencedRecordingIds.has(recordingId)) {
+        nextRecordingsById[recordingId] = recording;
+      } else {
+        delete nextRecordingsById[recordingId];
+        removed.push(recording);
+      }
+    }
+    return removed;
   }
 
   private setDocument(
@@ -606,7 +707,12 @@ export class TracksDocumentModel {
     }
   }
 
-  private makeClipId(): string {
+  private makeTrackId(): TrackId {
+    this.nextTrackId += 1;
+    return `track-${this.nextTrackId}`;
+  }
+
+  private makeClipId(): ClipId {
     this.nextClipId += 1;
     return `clip-${this.nextClipId}`;
   }
@@ -639,7 +745,7 @@ export class TracksEditorModel {
   }
 
   clearSelection(): void {
-    this.setSelection({ laneIndex: null, clipId: null });
+    this.setSelection({ trackId: null, clipId: null });
   }
 
   reset(): void {
@@ -665,9 +771,7 @@ function isSameVolumeEnvelope(
     const right = b.points[i];
     if (left == null || right == null) return false;
     if (Math.abs(left.timeSec - right.timeSec) > 1e-6) return false;
-    if (
-      Math.abs(left.gainMultiplier - right.gainMultiplier) > 1e-6
-    ) {
+    if (Math.abs(left.gainMultiplier - right.gainMultiplier) > 1e-6) {
       return false;
     }
   }

@@ -10,7 +10,6 @@ import {
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { useObservable } from "../observable";
 import { model } from "../state/model";
-import type { PartState } from "../state/model";
 import { getPartLabel } from "../music/types";
 import {
   isRecordingCancelledError,
@@ -61,7 +60,7 @@ type RecordingListProps = {
   stream: MediaStream;
   totalParts: number;
   partIndex: number;
-  states: PartState[];
+  keptUrls: (string | null)[];
   phase: RecordPhase;
   reviewUrl: string | null;
   reviewVideoRef: RefObject<HTMLVideoElement | null>;
@@ -73,7 +72,7 @@ function RecordingList({
   stream,
   totalParts,
   partIndex,
-  states,
+  keptUrls,
   phase,
   reviewUrl,
   reviewVideoRef,
@@ -92,8 +91,8 @@ function RecordingList({
       <Flex gap={2} w="max-content">
         {Array.from({ length: totalParts }).map((_, i) => {
           const isCurrent = i === partIndex;
-          const state = states[i];
-          const isKept = state != null && state.status === "kept";
+          const keptUrl = keptUrls[i] ?? null;
+          const isKept = keptUrl != null;
           const isFuture = i > partIndex;
 
           return (
@@ -135,9 +134,9 @@ function RecordingList({
                   />
                 )}
 
-                {isKept && state.status === "kept" && (
+                {isKept && keptUrl != null && (
                   <KeptCell
-                    url={state.url}
+                    url={keptUrl}
                     muted={mutedParts[i] ?? false}
                     onToggleMute={() => onToggleMute(i)}
                   />
@@ -233,7 +232,7 @@ function KeptCell({ url, muted, onToggleMute }: KeptCellProps) {
 export function RecordingWizard() {
   const stream = useObservable(model.mediaStream);
   const partIndex = useObservable(model.currentPartIndex);
-  const states = useObservable(model.partStates);
+  const tracksDocument = useObservable(model.tracksDocument.document);
   const arrangement = useObservable(model.arrangementDocument);
   const chords = useObservable(model.parsedChords);
   const voicing = useObservable(model.harmonyVoicing);
@@ -258,7 +257,7 @@ export function RecordingWizard() {
   // effect can fire even though monitorPlayerRef is a ref (not state).
   const [monitorPlayerKey, setMonitorPlayerKey] = useState(0);
 
-  const totalParts = states.length;
+  const totalParts = tracksDocument.trackOrder.length;
   const harmonyPartCount = Math.max(1, totalParts - 1);
   const isLastPart = partIndex === totalParts - 1;
   const isMelodyPart = partIndex >= harmonyPartCount;
@@ -271,6 +270,11 @@ export function RecordingWizard() {
       : null;
 
   const ctx = useObservable(model.audioContext);
+  const orderedTrackIds = tracksDocument.trackOrder;
+  const keptUrls = orderedTrackIds.map((trackId) => {
+    const recordingId = model.tracksDocument.getPrimaryRecordingIdForTrack(trackId);
+    return recordingId != null ? model.getRecordingUrl(recordingId) : null;
+  });
 
   // Rebuild the MonitorPlayer whenever we advance to a new part.
   // Decoding is async; we use a cancelled flag to discard stale results.
@@ -287,12 +291,16 @@ export function RecordingWizard() {
     const partIndices: number[] = [];
 
     for (let i = 0; i < partIndex; i++) {
-      const state = states[i];
-      if (state != null && state.status === "kept") {
-        blobs.push(state.blob);
-        trimOffsets.push(state.trimOffsetSec);
-        partIndices.push(i);
-      }
+      const trackId = orderedTrackIds[i];
+      if (trackId == null) continue;
+      const recordingId = model.tracksDocument.getPrimaryRecordingIdForTrack(trackId);
+      if (recordingId == null) continue;
+      const recording = model.tracksDocument.getRecording(recordingId);
+      const blob = model.getRecordingBlob(recordingId);
+      if (recording == null || blob == null) continue;
+      blobs.push(blob);
+      trimOffsets.push(recording.trimOffsetSec);
+      partIndices.push(i);
     }
 
     if (blobs.length === 0) return;
@@ -315,7 +323,7 @@ export function RecordingWizard() {
     return () => {
       cancelled = true;
     };
-  }, [partIndex, states, ctx]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ctx, orderedTrackIds, partIndex, tracksDocument]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync mute state onto the MonitorPlayer when mutedParts changes
   useEffect(() => {
@@ -323,13 +331,13 @@ export function RecordingWizard() {
     if (player == null) return;
     let audioIdx = 0;
     for (let i = 0; i < partIndex; i++) {
-      const state = states[i];
-      if (state != null && state.status === "kept") {
+      const trackId = orderedTrackIds[i];
+      if (trackId != null && model.tracksDocument.getPrimaryRecordingIdForTrack(trackId) != null) {
         player.setMuted(audioIdx, mutedParts[i] ?? false);
         audioIdx++;
       }
     }
-  }, [mutedParts, partIndex, states]);
+  }, [mutedParts, orderedTrackIds, partIndex, tracksDocument]);
 
   useEffect(() => {
     const player = monitorPlayerRef.current;
@@ -542,13 +550,12 @@ export function RecordingWizard() {
 
   function handleKeep() {
     const blob = currentBlobRef.current;
-    const url = reviewUrl;
-    if (blob == null || url == null) return;
+    const trackId = orderedTrackIds[partIndex] ?? null;
+    if (blob == null || trackId == null) return;
 
     model.keepRecordedTake({
-      laneIndex: partIndex,
+      trackId,
       blob,
-      url,
       trimOffsetSec: currentTrimOffsetRef.current,
     });
 
@@ -638,12 +645,12 @@ export function RecordingWizard() {
 
           {/* Recording list */}
           <RecordingList
-            stream={stream}
-            totalParts={totalParts}
-            partIndex={partIndex}
-            states={states}
-            phase={phase}
-            reviewUrl={reviewUrl}
+              stream={stream}
+              totalParts={totalParts}
+              partIndex={partIndex}
+              keptUrls={keptUrls}
+              phase={phase}
+              reviewUrl={reviewUrl}
             reviewVideoRef={reviewVideoRef}
             mutedParts={mutedParts}
             onToggleMute={handleToggleMute}

@@ -27,7 +27,7 @@ const VOLUME_BRUSH_GAIN_PER_PX = 1 / 180;
 const VOLUME_LINE_HIT_RADIUS_PX = 11;
 
 type VolumeBrushPreview = {
-  laneIndex: number;
+  trackId: string;
   clipId: string;
   startSec: number;
   endSec: number;
@@ -74,7 +74,7 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
 
   function handleLaneClick(
     e: ReactPointerEvent<HTMLDivElement>,
-    laneIndex: number,
+    trackId: string,
   ) {
     if (view.exporting || view.isSyncingFrames || view.isPlaying) return;
 
@@ -86,12 +86,12 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
     const unclampedTime = contentX / TIMELINE_PX_PER_SEC;
     const timelineSec = clamp(unclampedTime, 0, view.timelineEndSec);
 
-    onCommand({ type: "select_lane", laneIndex, timelineSec });
+    onCommand({ type: "select_lane", trackId, timelineSec });
   }
 
   function handleSegmentPointerDown(
     e: ReactPointerEvent<HTMLDivElement>,
-    laneIndex: number,
+    trackId: string,
     clipId: string,
     segmentStartSec: number,
     segmentDurationSec: number,
@@ -100,7 +100,7 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
     e.stopPropagation();
     if (view.exporting || view.isPlaying || view.isSyncingFrames) return;
 
-    onCommand({ type: "select_segment", laneIndex, clipId });
+    onCommand({ type: "select_segment", trackId, clipId });
 
     const rect = e.currentTarget.getBoundingClientRect();
     const widthPx = Math.max(1, rect.width);
@@ -126,7 +126,7 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
       let lastClientY = e.clientY;
 
       setVolumeBrushPreview({
-        laneIndex,
+        trackId,
         clipId,
         startSec: Math.max(0, pointerDownLocalSec - VOLUME_BRUSH_RADIUS_SEC),
         endSec: Math.min(segmentDurationSec, pointerDownLocalSec + VOLUME_BRUSH_RADIUS_SEC),
@@ -141,7 +141,7 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
         if (Math.abs(deltaGainMultiplier) > 1e-6) {
           onCommand({
             type: "apply_volume_brush",
-            laneIndex,
+            trackId,
             clipId,
             centerSec,
             deltaGainMultiplier,
@@ -150,7 +150,7 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
         }
 
         setVolumeBrushPreview({
-          laneIndex,
+          trackId,
           clipId,
           startSec: Math.max(0, centerSec - VOLUME_BRUSH_RADIUS_SEC),
           endSec: Math.min(segmentDurationSec, centerSec + VOLUME_BRUSH_RADIUS_SEC),
@@ -161,7 +161,7 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
         window.removeEventListener("pointermove", onBrushMove);
         window.removeEventListener("pointerup", onBrushUp);
         setVolumeBrushPreview((prev) =>
-          prev != null && prev.clipId === clipId && prev.laneIndex === laneIndex
+          prev != null && prev.clipId === clipId && prev.trackId === trackId
             ? null
             : prev,
         );
@@ -185,7 +185,7 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
 
       onCommand({
         type: "move_segment",
-        laneIndex,
+        trackId,
         clipId,
         desiredStartSec,
       });
@@ -343,7 +343,7 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
         >
           {view.lanes.map((lane) => (
             <Flex
-              key={`rail-${lane.laneIndex}`}
+              key={`rail-${lane.trackId}`}
               h={`${LANE_HEIGHT_PX}px`}
               direction="column"
               align="stretch"
@@ -374,7 +374,7 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
                   bg={lane.muted ? dsColors.errorBg : "transparent"}
                   fontWeight="bold"
                   onClick={() =>
-                    onCommand({ type: "toggle_lane_mute", laneIndex: lane.laneIndex })
+                    onCommand({ type: "toggle_lane_mute", trackId: lane.trackId })
                   }
                   w={7}
                   h={6}
@@ -396,7 +396,7 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
                   onChange={(event) =>
                     onCommand({
                       type: "set_lane_volume",
-                      laneIndex: lane.laneIndex,
+                      trackId: lane.trackId,
                       value: parseInt(event.target.value, 10) / 100,
                     })
                   }
@@ -432,23 +432,23 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
           >
             {view.lanes.map((lane) => {
               const laneClass =
-                `timeline-lane ${view.selection.laneIndex === lane.laneIndex ? "is-selected-lane" : ""}` +
-                (lane.laneIndex % 2 === 0 ? " is-alt" : "");
+                `timeline-lane ${view.selection.trackId === lane.trackId ? "is-selected-lane" : ""}` +
+                (lane.displayIndex % 2 === 0 ? " is-alt" : "");
 
               return (
                 <Box
-                  key={lane.laneIndex}
+                  key={lane.trackId}
                   className={laneClass}
                   position="absolute"
                   left={0}
                   right={0}
-                  top={`${lane.laneIndex * LANE_HEIGHT_PX}px`}
+                  top={`${lane.displayIndex * LANE_HEIGHT_PX}px`}
                   h={`${LANE_HEIGHT_PX - 1}px`}
-                  onPointerDown={(e) => handleLaneClick(e, lane.laneIndex)}
+                  onPointerDown={(e) => handleLaneClick(e, lane.trackId)}
                 >
                   {view.beatLineTimes.map((line, index) => (
                     <Box
-                      key={`${lane.laneIndex}-beat-${index}`}
+                      key={`${lane.trackId}-beat-${index}`}
                       className="timeline-beat"
                       left={`${line * TIMELINE_PX_PER_SEC}px`}
                     />
@@ -484,7 +484,7 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
                     );
                     const activeBrush =
                       volumeBrushPreview != null &&
-                      volumeBrushPreview.laneIndex === lane.laneIndex &&
+                      volumeBrushPreview.trackId === lane.trackId &&
                       volumeBrushPreview.clipId === segment.id
                         ? volumeBrushPreview
                         : null;
@@ -507,7 +507,7 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
                         onPointerDown={(e) =>
                           handleSegmentPointerDown(
                             e,
-                            lane.laneIndex,
+                            lane.trackId,
                             segment.id,
                             segment.timelineStartSec,
                             segment.durationSec,

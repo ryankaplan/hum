@@ -130,17 +130,20 @@ function SetupCard({
               <Field.Label color={dsColors.text} mb={0}>
                 Chord progression
               </Field.Label>
-              <Tooltip.Root openDelay={250}>
+              <Tooltip.Root
+                openDelay={0}
+                closeDelay={250}
+                interactive
+                positioning={{ gutter: 8 }}
+              >
                 <Tooltip.Trigger asChild>
                   <Box
-                    as="button"
-                    type="button"
                     aria-label="Chord progression help"
                     display="inline-flex"
                     alignItems="center"
                     justifyContent="center"
-                    w={5}
-                    h={5}
+                    w={7}
+                    h={7}
                     borderRadius="full"
                     border="1px solid"
                     borderColor={dsColors.borderMuted}
@@ -149,7 +152,10 @@ function SetupCard({
                     fontWeight="bold"
                     cursor="help"
                     bg={dsColors.surfaceSubtle}
-                    _hover={{ bg: dsColors.surfaceRaised, color: dsColors.text }}
+                    _hover={{
+                      bg: dsColors.surfaceRaised,
+                      color: dsColors.text,
+                    }}
                   >
                     i
                   </Box>
@@ -168,8 +174,8 @@ function SetupCard({
                     fontSize="xs"
                   >
                     One chord per bar, space separated - repeat a chord to hold
-                    it: "Am Am G F F E". Use brackets for shared bars: "[A E]"
-                    = two chords in one bar.
+                    it: "Am Am G F F E". Use brackets for shared bars: "[A E]" =
+                    two chords in one bar.
                   </Tooltip.Content>
                 </Tooltip.Positioner>
               </Tooltip.Root>
@@ -290,7 +296,13 @@ function SetupCard({
                 const notes = triadPitchClassNames(c);
                 const tooltipText = `${degrees} - ${notes}`;
                 return (
-                  <Tooltip.Root key={i} openDelay={250}>
+                  <Tooltip.Root
+                    key={i}
+                    openDelay={0}
+                    closeDelay={250}
+                    interactive
+                    positioning={{ gutter: 8 }}
+                  >
                     <Tooltip.Trigger asChild>
                       <Box
                         as="span"

@@ -2,17 +2,17 @@ export type TracksEditorCommand =
   | { type: "split_selected" }
   | { type: "delete_selected" }
   | { type: "toggle_snap" }
-  | { type: "select_lane"; laneIndex: number; timelineSec: number }
-  | { type: "select_segment"; laneIndex: number; clipId: string }
-  | { type: "move_segment"; laneIndex: number; clipId: string; desiredStartSec: number }
+  | { type: "select_lane"; trackId: string; timelineSec: number }
+  | { type: "select_segment"; trackId: string; clipId: string }
+  | { type: "move_segment"; trackId: string; clipId: string; desiredStartSec: number }
   | {
       type: "apply_volume_brush";
-      laneIndex: number;
+      trackId: string;
       clipId: string;
       centerSec: number;
       deltaGainMultiplier: number;
       radiusSec: number;
     }
   | { type: "seek"; valueSec: number }
-  | { type: "set_lane_volume"; laneIndex: number; value: number }
-  | { type: "toggle_lane_mute"; laneIndex: number };
+  | { type: "set_lane_volume"; trackId: string; value: number }
+  | { type: "toggle_lane_mute"; trackId: string };

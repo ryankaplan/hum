@@ -51,10 +51,11 @@ export function FinalReview() {
   const documentState = useObservable(model.tracksDocument.document);
   const editorState = useObservable(model.tracksEditor.editor);
   const exportState = useObservable(model.tracksExport);
+  const exportPreferences = useObservable(model.exportPreferences);
   const arrangement = useObservable(model.arrangementDocument);
   const chords = useObservable(model.parsedChords);
   const ctx = useObservable(model.audioContext);
-  const trackCount = documentState.lanes.length;
+  const trackCount = documentState.trackOrder.length;
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const activeVideoMaskRef = useRef<boolean[]>(
@@ -64,18 +65,28 @@ export function FinalReview() {
   const startRequestTokenRef = useRef(0);
   const activeSourcesRef = useRef<ActiveAudioSource[]>([]);
 
-  const timelines = useMemo<TrackClip[][]>(
-    () => documentState.lanes.map((lane) => lane.clips),
+  const orderedTracks = useMemo(
+    () =>
+      documentState.trackOrder
+        .map((trackId) => documentState.tracksById[trackId] ?? null)
+        .filter((track): track is (typeof documentState.tracksById)[string] => track != null),
     [documentState],
+  );
+  const timelines = useMemo<TrackClip[][]>(
+    () =>
+      orderedTracks.map((track) =>
+        track.clipIds
+          .map((clipId) => documentState.clipsById[clipId] ?? null)
+          .filter((clip): clip is TrackClip => clip != null),
+      ),
+    [documentState, orderedTracks],
   );
   const timelinesRef = useRef<TrackClip[][]>(timelines);
 
   const selection = editorState.selection;
   const playheadSec = editorState.playheadSec;
   const snapToBeat = editorState.snapToBeat;
-  const volumes = documentState.mix.volumes;
-  const muted = documentState.mix.muted;
-  const reverbWet = documentState.mix.reverbWet;
+  const reverbWet = documentState.reverbWet;
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isSyncingFrames, setIsSyncingFrames] = useState(false);
@@ -86,7 +97,10 @@ export function FinalReview() {
   const exportProgress = exportState.progress;
   const exportedUrl = exportState.exportedUrl;
   const exportedFormat = exportState.format;
-  const preferredExportFormat = useMemo(() => getPreferredExportFormat(), []);
+  const preferredExportFormat = useMemo(
+    () => getPreferredExportFormat(exportPreferences.preferredFormat),
+    [exportPreferences.preferredFormat],
+  );
   const ctaExportFormat = exportedFormat ?? preferredExportFormat;
   const showWebmFallbackMessage = preferredExportFormat === "webm";
 
@@ -148,7 +162,7 @@ export function FinalReview() {
         if (track == null) continue;
 
         for (const segment of track) {
-          const buffer = model.getTakeAudioBuffer(segment.takeId);
+          const buffer = model.getRecordingAudioBuffer(segment.recordingId);
           if (buffer == null) continue;
 
           const segStart = segment.timelineStartSec;
@@ -207,8 +221,10 @@ export function FinalReview() {
   );
 
   function findSegmentBySelection(sel: EditorSelection): TrackClip | null {
-    if (sel.laneIndex == null || sel.clipId == null) return null;
-    const track = timelines[sel.laneIndex] ?? [];
+    if (sel.trackId == null || sel.clipId == null) return null;
+    const trackIndex = documentState.trackOrder.indexOf(sel.trackId);
+    if (trackIndex < 0) return null;
+    const track = timelines[trackIndex] ?? [];
     return track.find((segment) => segment.id === sel.clipId) ?? null;
   }
 
@@ -217,31 +233,34 @@ export function FinalReview() {
 
     let cancelled = false;
     const videos: HTMLVideoElement[] = [];
-    const activeLaneTakeIds = documentState.laneTakeIds;
-
-    model.clearRuntimeTakeMedia();
+    model.clearDecodedRuntimeMedia();
     model.tracksEditor.setPlayhead(0);
     model.tracksEditor.clearSelection();
     setWaveformVersion((v) => v + 1);
 
     for (let i = 0; i < trackCount; i++) {
-      const takeId = activeLaneTakeIds[i];
-      const take = takeId != null ? documentState.takesById[takeId] : null;
+      const trackId = documentState.trackOrder[i];
+      const recordingId =
+        trackId != null
+          ? model.tracksDocument.getPrimaryRecordingIdForTrack(trackId)
+          : null;
+      const url = recordingId != null ? model.getRecordingUrl(recordingId) : null;
       const video = document.createElement("video");
       video.muted = true;
       video.playsInline = true;
       video.loop = false;
       video.preload = "auto";
-      if (take != null) {
-        video.src = take.url;
+      if (url != null) {
+        video.src = url;
       }
       videos.push(video);
     }
 
     const mixer = createMixer(ctx, trackCount);
     for (let i = 0; i < trackCount; i++) {
-      mixer.setTrackVolume(i, volumes[i] ?? 1);
-      mixer.setTrackMuted(i, muted[i] ?? false);
+      const track = orderedTracks[i];
+      mixer.setTrackVolume(i, track?.volume ?? 1);
+      mixer.setTrackMuted(i, track?.muted ?? false);
     }
     mixer.setReverbWet(reverbWet);
     model.mixer = mixer;
@@ -264,20 +283,22 @@ export function FinalReview() {
     reviewTransportRef.current.syncPaused(0);
 
     for (let i = 0; i < trackCount; i++) {
-      const takeId = documentState.laneTakeIds[i];
-      if (takeId == null) continue;
-      const take = documentState.takesById[takeId];
-      if (take == null) continue;
+      const trackId = documentState.trackOrder[i];
+      if (trackId == null) continue;
+      const recordingId = model.tracksDocument.getPrimaryRecordingIdForTrack(trackId);
+      if (recordingId == null) continue;
+      const recording = model.tracksDocument.getRecording(recordingId);
+      if (recording == null) continue;
 
       const videoEl = videos[i];
       if (videoEl == null) continue;
 
       void model
-        .ingestTakeRuntimeMedia({
-          takeId,
-          laneIndex: i,
-          blob: take.blob,
-          trimOffsetSec: Math.max(0, take.trimOffsetSec),
+        .ingestRecordingRuntimeMedia({
+          recordingId,
+          trackId,
+          mediaAssetId: recording.mediaAssetId,
+          trimOffsetSec: Math.max(0, recording.trimOffsetSec),
           ctx,
           videoEl,
           maxDurationSec: baseDurationSec,
@@ -312,24 +333,26 @@ export function FinalReview() {
   }, [
     baseDurationSec,
     ctx,
-    documentState.laneTakeIds,
-    documentState.takesById,
-    muted,
+    documentState.clipsById,
+    documentState.recordingsById,
+    documentState.trackOrder,
+    documentState.tracksById,
+    orderedTracks,
     reverbWet,
     stopPlaybackEngine,
     trackCount,
-    volumes,
   ]);
 
   useEffect(() => {
     const mixer = model.mixer;
     if (mixer == null) return;
     for (let i = 0; i < trackCount; i++) {
-      mixer.setTrackVolume(i, volumes[i] ?? 1);
-      mixer.setTrackMuted(i, muted[i] ?? false);
+      const track = orderedTracks[i];
+      mixer.setTrackVolume(i, track?.volume ?? 1);
+      mixer.setTrackMuted(i, track?.muted ?? false);
     }
     mixer.setReverbWet(reverbWet);
-  }, [muted, reverbWet, trackCount, volumes]);
+  }, [orderedTracks, reverbWet, trackCount]);
 
   useEffect(() => {
     if (isPlaying || exporting || isSyncingFrames) return;
@@ -404,14 +427,14 @@ export function FinalReview() {
     switch (command.type) {
       case "split_selected": {
         if (exporting || isSyncingFrames) return;
-        if (selection.laneIndex == null) return;
+        if (selection.trackId == null) return;
         if (isPlaying) stopPlaybackEngine(true);
         model.splitSelectedClipAtPlayhead();
         return;
       }
       case "delete_selected": {
         if (exporting || isSyncingFrames) return;
-        if (selection.laneIndex == null || selection.clipId == null) return;
+        if (selection.trackId == null || selection.clipId == null) return;
         if (isPlaying) stopPlaybackEngine(true);
         model.deleteSelectedClip();
         return;
@@ -424,7 +447,7 @@ export function FinalReview() {
       case "select_lane": {
         if (exporting || isSyncingFrames || isPlaying) return;
         model.tracksEditor.setSelection({
-          laneIndex: command.laneIndex,
+          trackId: command.trackId,
           clipId: selection.clipId,
         });
         model.tracksEditor.setPlayhead(command.timelineSec);
@@ -433,7 +456,7 @@ export function FinalReview() {
       case "select_segment": {
         if (exporting || isSyncingFrames || isPlaying) return;
         model.tracksEditor.setSelection({
-          laneIndex: command.laneIndex,
+          trackId: command.trackId,
           clipId: command.clipId,
         });
         return;
@@ -441,7 +464,7 @@ export function FinalReview() {
       case "move_segment": {
         if (exporting || isSyncingFrames || isPlaying) return;
         model.tracksDocument.moveClip(
-          command.laneIndex,
+          command.trackId,
           command.clipId,
           command.desiredStartSec,
         );
@@ -450,7 +473,7 @@ export function FinalReview() {
       case "apply_volume_brush": {
         if (exporting || isSyncingFrames || isPlaying) return;
         model.tracksDocument.applyClipVolumeBrush({
-          laneIndex: command.laneIndex,
+          trackId: command.trackId,
           clipId: command.clipId,
           centerSec: command.centerSec,
           deltaGainMultiplier: command.deltaGainMultiplier,
@@ -465,12 +488,13 @@ export function FinalReview() {
         return;
       }
       case "set_lane_volume": {
-        model.tracksDocument.setTrackVolume(command.laneIndex, command.value);
+        model.tracksDocument.setTrackVolume(command.trackId, command.value);
         return;
       }
       case "toggle_lane_mute": {
-        const nextMuted = !(muted[command.laneIndex] ?? false);
-        model.tracksDocument.setTrackMuted(command.laneIndex, nextMuted);
+        const track = documentState.tracksById[command.trackId];
+        if (track == null) return;
+        model.tracksDocument.setTrackMuted(command.trackId, !track.muted);
         return;
       }
       default:
@@ -571,23 +595,27 @@ export function FinalReview() {
   const selectedSegment = findSegmentBySelection(selection);
   const canDelete = selectedSegment != null;
   const canSplit =
-    selection.laneIndex != null &&
-    getActiveSegmentAtTime(timelines[selection.laneIndex] ?? [], playheadSec) !=
-      null;
+    selection.trackId != null &&
+    getActiveSegmentAtTime(
+      timelines[documentState.trackOrder.indexOf(selection.trackId)] ?? [],
+      playheadSec,
+    ) != null;
 
   const tracksEditorView = useMemo<TracksEditorView>(() => {
     return {
-      lanes: timelines.map((segments, laneIndex) => {
-        const laneRuntime = model.getLaneRuntimeWaveform(laneIndex);
+      lanes: orderedTracks.map((track, displayIndex) => {
+        const segments = timelines[displayIndex] ?? [];
+        const laneRuntime = model.getTrackRuntimeWaveform(track.id);
         return {
-          laneIndex,
-          label: getPartLabel(laneIndex, trackCount),
+          trackId: track.id,
+          displayIndex,
+          label: getPartLabel(displayIndex, trackCount),
           segments,
           peaks: laneRuntime?.peaks ?? [],
           sourceStartSec: laneRuntime?.sourceWindow.sourceStartSec ?? 0,
           sourceDurationSec: laneRuntime?.sourceWindow.durationSec ?? 0,
-          volume: volumes[laneIndex] ?? 1,
-          muted: muted[laneIndex] ?? false,
+          volume: track.volume,
+          muted: track.muted,
         };
       }),
       selection,
@@ -601,8 +629,8 @@ export function FinalReview() {
       isSyncingFrames,
       syncWarning,
       canSplit,
-      canDelete,
-    };
+    canDelete,
+  };
   }, [
     beatLineTimes,
     beatSec,
@@ -611,7 +639,7 @@ export function FinalReview() {
     exporting,
     isPlaying,
     isSyncingFrames,
-    muted,
+    orderedTracks,
     playheadSec,
     selection,
     snapToBeat,
@@ -619,7 +647,6 @@ export function FinalReview() {
     timelineEndSec,
     timelines,
     trackCount,
-    volumes,
   ]);
 
   return (

@@ -4,20 +4,24 @@ export type {
   AppScreen,
   ArrangementDocState,
   ArrangementInfo,
+  ClipId,
+  ExportPreferences,
   ExportState,
+  HumDocument,
   KeepTakeInput,
-  LaneRuntimeWaveform,
-  PartState,
-  RuntimeTakeMediaIngestInput,
-  TakeSourceWindow,
-  TakeRecord,
+  MediaAssetId,
+  RecordingId,
+  RecordingRecord,
+  RecordingSourceWindow,
+  RuntimeRecordingMediaIngestInput,
   TotalPartCount,
   TrackClip,
-  TrackLane,
+  TrackId,
+  TrackRecord,
+  TrackRuntimeWaveform,
   TracksDocumentState,
   TracksEditorSelection,
   TracksEditorState,
-  TracksMixState,
 } from "./model";
 
 export const appScreen = model.appScreen;
@@ -32,18 +36,11 @@ export const arrangementDocument = model.arrangementDocument;
 export const arrangementInfo = model.derivedArrangementInfo;
 export const parsedChords = model.parsedChords;
 export const harmonyVoicing = model.harmonyVoicing;
+export const exportPreferences = model.exportPreferences;
 
-export const partStates = model.partStates;
 export const tracksDocument = model.tracksDocument.document;
 export const tracksEditor = model.tracksEditor.editor;
 export const tracksExport = model.tracksExport;
-
-export function updatePartState(
-  index: number,
-  state: Parameters<typeof model.updatePartState>[1],
-): void {
-  model.updatePartState(index, state);
-}
 
 export function keepRecordedTake(
   input: Parameters<typeof model.keepRecordedTake>[0],
@@ -53,10 +50,6 @@ export function keepRecordedTake(
 
 export function redoPart(index: number): void {
   model.redoPart(index);
-}
-
-export function getKeptBlobs(): (Blob | null)[] {
-  return model.getKeptBlobs();
 }
 
 export function resetSession(): void {

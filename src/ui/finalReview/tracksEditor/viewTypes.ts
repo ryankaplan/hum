@@ -3,6 +3,7 @@ import type { EditorSelection, WaveformPeaks } from "../../timeline";
 
 export type TracksEditorSegmentView = {
   id: string;
+  trackId: string;
   timelineStartSec: number;
   sourceStartSec: number;
   durationSec: number;
@@ -10,7 +11,8 @@ export type TracksEditorSegmentView = {
 };
 
 export type TracksEditorLaneView = {
-  laneIndex: number;
+  trackId: string;
+  displayIndex: number;
   label: string;
   segments: TracksEditorSegmentView[];
   peaks: WaveformPeaks;

@@ -16,22 +16,33 @@ import type {
 import {
   TracksDocumentModel,
   TracksEditorModel,
-  type TakeRecord,
+  type ApplyClipVolumeBrushInput,
+  type ClipId,
+  type MediaAssetId,
+  type RecordingId,
+  type RecordingRecord,
+  type TrackClip,
+  type TrackId,
+  type TrackRecord,
   type TracksDocumentState,
   type TracksEditorSelection,
+  type TracksEditorState,
 } from "./tracksModel";
 
 type WaveformPeaks = number[];
 
 export type {
   ApplyClipVolumeBrushInput,
+  ClipId,
+  MediaAssetId,
+  RecordingId,
+  RecordingRecord,
   TrackClip,
-  TrackLane,
-  TakeRecord,
+  TrackId,
+  TrackRecord,
   TracksDocumentState,
   TracksEditorSelection,
   TracksEditorState,
-  TracksMixState,
 } from "./tracksModel";
 
 export type {
@@ -41,6 +52,16 @@ export type {
 } from "./arrangementModel";
 
 export type ExportVideoFormat = "mp4" | "webm";
+
+export type ExportPreferences = {
+  preferredFormat: ExportVideoFormat | null;
+};
+
+export type HumDocument = {
+  arrangement: ArrangementDocState;
+  tracks: TracksDocumentState;
+  exportPreferences: ExportPreferences;
+};
 
 export type ExportState = {
   exporting: boolean;
@@ -52,23 +73,16 @@ export type ExportState = {
 
 export type AppScreen = "setup" | "calibration" | "recording" | "review";
 
-export type PartState =
-  | { status: "idle" }
-  | { status: "recording" }
-  | { status: "review"; blob: Blob; url: string }
-  | { status: "kept"; blob: Blob; url: string; trimOffsetSec: number };
-
 export type KeepTakeInput = {
-  laneIndex: number;
+  trackId: TrackId;
   blob: Blob;
-  url: string;
   trimOffsetSec: number;
 };
 
-export type RuntimeTakeMediaIngestInput = {
-  takeId: string;
-  laneIndex: number;
-  blob: Blob;
+export type RuntimeRecordingMediaIngestInput = {
+  recordingId: RecordingId;
+  trackId: TrackId;
+  mediaAssetId: MediaAssetId;
   trimOffsetSec: number;
   ctx: AudioContext;
   videoEl: HTMLVideoElement;
@@ -77,21 +91,21 @@ export type RuntimeTakeMediaIngestInput = {
   waveformBucketsPerSec?: number;
 };
 
-export type TakeSourceWindow = {
+export type RecordingSourceWindow = {
   sourceStartSec: number;
   durationSec: number;
 };
 
-export type LaneRuntimeWaveform = {
-  takeId: string;
+export type TrackRuntimeWaveform = {
+  recordingId: RecordingId;
   peaks: WaveformPeaks;
-  sourceWindow: TakeSourceWindow;
+  sourceWindow: RecordingSourceWindow;
 } | null;
 
-function createIdlePartStates(totalParts: number): PartState[] {
-  return Array.from({ length: totalParts }, () => ({
-    status: "idle" as const,
-  }));
+function createDefaultExportPreferences(): ExportPreferences {
+  return {
+    preferredFormat: null,
+  };
 }
 
 function createEmptyExportState(): ExportState {
@@ -105,16 +119,26 @@ function createEmptyExportState(): ExportState {
 }
 
 class AppModel {
-  private nextTakeId = 0;
-  private audioBuffersByTakeId = new Map<string, AudioBuffer>();
-  private waveformPeaksByTakeId = new Map<string, WaveformPeaks>();
-  private videoElByTakeId = new Map<string, HTMLVideoElement>();
-  private takeSourceWindowByTakeId = new Map<string, TakeSourceWindow>();
+  private nextRecordingId = 0;
+  private nextMediaAssetId = 0;
+  private mediaBlobsByAssetId = new Map<MediaAssetId, Blob>();
+  private objectUrlsByAssetId = new Map<MediaAssetId, string>();
+  private audioBuffersByRecordingId = new Map<RecordingId, AudioBuffer>();
+  private waveformPeaksByRecordingId = new Map<RecordingId, WaveformPeaks>();
+  private videoElByRecordingId = new Map<RecordingId, HTMLVideoElement>();
+  private recordingSourceWindowByRecordingId = new Map<
+    RecordingId,
+    RecordingSourceWindow
+  >();
 
   readonly arrangementDocument = new PersistedObservable<ArrangementDocState>(
     "hum.arrangementDoc",
     createDefaultArrangementDocState(),
     { schema: parseArrangementDocState },
+  );
+
+  readonly exportPreferences = new Observable<ExportPreferences>(
+    createDefaultExportPreferences(),
   );
 
   readonly appScreen = new Observable<AppScreen>("setup");
@@ -125,10 +149,6 @@ class AppModel {
   readonly latencyCorrectionSec = new Observable<number>(0);
   readonly isCalibrated = new Observable<boolean>(false);
 
-  readonly partStates = new Observable<PartState[]>(
-    createIdlePartStates(this.arrangementDocument.get().totalParts),
-  );
-
   readonly derivedArrangementInfo = new Derived<DerivedArrangementInfo>(
     () => computeArrangementInfo(this.arrangementDocument.get()),
     [this.arrangementDocument],
@@ -137,7 +157,6 @@ class AppModel {
 
   readonly tracksExport = new Observable<ExportState>(createEmptyExportState());
 
-  // Mutable runtime systems remain exposed.
   mixer: Mixer | null = null;
   compositor: CompositorHandle | null = null;
 
@@ -175,63 +194,66 @@ class AppModel {
     });
   }
 
-  updatePartState(index: number, state: PartState): void {
-    const current = this.partStates.get();
-    if (index < 0 || index >= current.length) return;
+  setExportPreferences(patch: Partial<ExportPreferences>): void {
+    this.exportPreferences.set({
+      ...this.exportPreferences.get(),
+      ...patch,
+    });
+  }
 
-    const next = [...current];
-    next[index] = state;
-    this.partStates.set(next);
+  getHumDocument(): HumDocument {
+    return {
+      arrangement: this.arrangementDocument.get(),
+      tracks: this.tracksDocument.document.get(),
+      exportPreferences: this.exportPreferences.get(),
+    };
+  }
+
+  getTrackIdForPartIndex(index: number): TrackId | null {
+    return this.tracksDocument.getTrackIdAtIndex(index);
   }
 
   keepRecordedTake(input: KeepTakeInput): void {
-    const { laneIndex, blob, url, trimOffsetSec } = input;
+    const { trackId, blob, trimOffsetSec } = input;
+    const recordingId = this.makeRecordingId();
+    const mediaAssetId = this.makeMediaAssetId();
 
-    this.updatePartState(laneIndex, {
-      status: "kept",
-      blob,
-      url,
-      trimOffsetSec,
-    });
+    this.registerMediaAsset(mediaAssetId, blob);
 
-    const takeId = this.makeTakeId();
-    const arrangement = this.derivedArrangementInfo.get();
-
-    const take: TakeRecord = {
-      id: takeId,
-      laneIndex,
-      blob,
-      url,
+    const recording: RecordingRecord = {
+      id: recordingId,
+      trackId,
+      mediaAssetId,
       trimOffsetSec,
     };
 
-    const { replacedTake, clipId } = this.tracksDocument.stageKeptTake({
-      laneIndex,
-      take,
+    const arrangement = this.derivedArrangementInfo.get();
+    const { removedRecordings, clipId } = this.tracksDocument.stageCommittedRecording({
+      trackId,
+      recording,
       sourceStartSec: Math.max(0, trimOffsetSec),
       durationSec: Math.max(0, arrangement.progressionDurationSec),
     });
 
     if (clipId != null) {
       this.tracksEditor.setSelection({
-        laneIndex,
+        trackId,
         clipId,
       });
     }
 
-    if (replacedTake != null) {
-      URL.revokeObjectURL(replacedTake.url);
-      this.removeTakeRuntimeMedia(replacedTake.id);
+    for (const removed of removedRecordings) {
+      this.releaseRecording(removed);
     }
   }
 
-  async ingestTakeRuntimeMedia(
-    input: RuntimeTakeMediaIngestInput,
+  async ingestRecordingRuntimeMedia(
+    input: RuntimeRecordingMediaIngestInput,
   ): Promise<boolean> {
     const {
-      takeId,
-      laneIndex,
-      blob,
+      recordingId,
+      trackId,
+      mediaAssetId,
       trimOffsetSec,
       ctx,
       videoEl,
@@ -240,13 +262,16 @@ class AppModel {
       waveformBucketsPerSec = 72,
     } = input;
 
-    this.videoElByTakeId.set(takeId, videoEl);
+    const blob = this.mediaBlobsByAssetId.get(mediaAssetId) ?? null;
+    if (blob == null) return false;
+
+    this.videoElByRecordingId.set(recordingId, videoEl);
 
     const raw = await blob.arrayBuffer();
     const decoded = await ctx.decodeAudioData(raw);
 
-    const current = this.tracksDocument.document.get();
-    if (current.laneTakeIds[laneIndex] !== takeId) {
+    const recording = this.tracksDocument.getRecording(recordingId);
+    if (recording == null || recording.trackId !== trackId) {
       return false;
     }
 
@@ -260,11 +285,12 @@ class AppModel {
       Math.min(rawDuration, Math.max(0, maxDurationSec)),
     );
 
-    this.audioBuffersByTakeId.set(takeId, decoded);
-    this.takeSourceWindowByTakeId.set(takeId, {
+    this.audioBuffersByRecordingId.set(recordingId, decoded);
+    this.recordingSourceWindowByRecordingId.set(recordingId, {
       sourceStartSec,
       durationSec,
     });
+
     const computedBuckets =
       waveformBuckets ??
       Math.max(
@@ -274,79 +300,84 @@ class AppModel {
           Math.round(durationSec * Math.max(16, waveformBucketsPerSec)),
         ),
       );
-    this.waveformPeaksByTakeId.set(
-      takeId,
+    this.waveformPeaksByRecordingId.set(
+      recordingId,
       buildWaveformPeaks(decoded, sourceStartSec, durationSec, computedBuckets),
     );
 
-    this.tracksDocument.initializeTrackFromTake(
-      laneIndex,
-      takeId,
+    this.tracksDocument.initializeTrackFromRecording(
+      trackId,
+      recordingId,
       sourceStartSec,
       durationSec,
     );
     return true;
   }
 
-  getTakeAudioBuffer(takeId: string): AudioBuffer | null {
-    return this.audioBuffersByTakeId.get(takeId) ?? null;
+  getRecordingBlob(recordingId: RecordingId): Blob | null {
+    const recording = this.tracksDocument.getRecording(recordingId);
+    if (recording == null) return null;
+    return this.mediaBlobsByAssetId.get(recording.mediaAssetId) ?? null;
   }
 
-  getTakeWaveform(takeId: string): WaveformPeaks | null {
-    return this.waveformPeaksByTakeId.get(takeId) ?? null;
+  getRecordingUrl(recordingId: RecordingId): string | null {
+    const recording = this.tracksDocument.getRecording(recordingId);
+    if (recording == null) return null;
+    return this.objectUrlsByAssetId.get(recording.mediaAssetId) ?? null;
   }
 
-  getTakeSourceWindow(takeId: string): TakeSourceWindow | null {
-    return this.takeSourceWindowByTakeId.get(takeId) ?? null;
+  getRecordingAudioBuffer(recordingId: RecordingId): AudioBuffer | null {
+    return this.audioBuffersByRecordingId.get(recordingId) ?? null;
   }
 
-  getTakeVideoElement(takeId: string): HTMLVideoElement | null {
-    return this.videoElByTakeId.get(takeId) ?? null;
+  getRecordingWaveform(recordingId: RecordingId): WaveformPeaks | null {
+    return this.waveformPeaksByRecordingId.get(recordingId) ?? null;
   }
 
-  getLaneRuntimeWaveform(laneIndex: number): LaneRuntimeWaveform {
-    const takeId = this.tracksDocument.document.get().laneTakeIds[laneIndex];
-    if (takeId == null) return null;
+  getRecordingSourceWindow(recordingId: RecordingId): RecordingSourceWindow | null {
+    return this.recordingSourceWindowByRecordingId.get(recordingId) ?? null;
+  }
 
-    const peaks = this.getTakeWaveform(takeId);
-    const sourceWindow = this.getTakeSourceWindow(takeId);
+  getRecordingVideoElement(recordingId: RecordingId): HTMLVideoElement | null {
+    return this.videoElByRecordingId.get(recordingId) ?? null;
+  }
+
+  getTrackRuntimeWaveform(trackId: TrackId): TrackRuntimeWaveform {
+    const recordingId = this.tracksDocument.getPrimaryRecordingIdForTrack(trackId);
+    if (recordingId == null) return null;
+
+    const peaks = this.getRecordingWaveform(recordingId);
+    const sourceWindow = this.getRecordingSourceWindow(recordingId);
     if (peaks == null || sourceWindow == null) return null;
 
     return {
-      takeId,
+      recordingId,
       peaks,
       sourceWindow,
     };
   }
 
-  clearRuntimeTakeMedia(): void {
-    this.audioBuffersByTakeId.clear();
-    this.waveformPeaksByTakeId.clear();
-    this.videoElByTakeId.clear();
-    this.takeSourceWindowByTakeId.clear();
-  }
-
-  removeTakeRuntimeMedia(takeId: string): void {
-    this.audioBuffersByTakeId.delete(takeId);
-    this.waveformPeaksByTakeId.delete(takeId);
-    this.videoElByTakeId.delete(takeId);
-    this.takeSourceWindowByTakeId.delete(takeId);
+  clearDecodedRuntimeMedia(): void {
+    this.audioBuffersByRecordingId.clear();
+    this.waveformPeaksByRecordingId.clear();
+    this.videoElByRecordingId.clear();
+    this.recordingSourceWindowByRecordingId.clear();
   }
 
   splitSelectedClipAtPlayhead(): void {
     const editor = this.tracksEditor.editor.get();
-    const { laneIndex, clipId } = editor.selection;
-    if (laneIndex == null || clipId == null) return;
+    const { trackId, clipId } = editor.selection;
+    if (trackId == null || clipId == null) return;
 
     const result = this.tracksDocument.splitClipAtTime({
-      laneIndex,
+      trackId,
       clipId,
       splitTimeSec: editor.playheadSec,
     });
 
     if (result != null) {
       this.tracksEditor.setSelection({
-        laneIndex,
+        trackId,
         clipId: result.rightClipId,
       });
     }
@@ -354,14 +385,20 @@ class AppModel {
 
   deleteSelectedClip(): void {
     const editor = this.tracksEditor.editor.get();
-    const { laneIndex, clipId } = editor.selection;
-    if (laneIndex == null || clipId == null) return;
+    const { trackId, clipId } = editor.selection;
+    if (trackId == null || clipId == null) return;
 
-    const { deleted } = this.tracksDocument.deleteClip({ laneIndex, clipId });
+    const { deleted, removedRecordings } = this.tracksDocument.deleteClip({
+      trackId,
+      clipId,
+    });
     if (!deleted) return;
 
-    const nextLane = this.tracksDocument.document.get().lanes[laneIndex];
-    const nextClips = nextLane?.clips ?? [];
+    for (const removed of removedRecordings) {
+      this.releaseRecording(removed);
+    }
+
+    const nextClips = this.tracksDocument.getOrderedClipsForTrack(trackId);
     const after = nextClips.find(
       (clip) => clip.timelineStartSec >= editor.playheadSec,
     );
@@ -370,7 +407,7 @@ class AppModel {
 
     if (nextSelectionClipId != null) {
       this.tracksEditor.setSelection({
-        laneIndex,
+        trackId,
         clipId: nextSelectionClipId,
       });
       return;
@@ -387,10 +424,10 @@ class AppModel {
       return;
     }
 
-    for (let lane = 0; lane < document.lanes.length; lane++) {
-      const first = document.lanes[lane]?.clips[0] ?? null;
-      if (first != null) {
-        this.tracksEditor.setSelection({ laneIndex: lane, clipId: first.id });
+    for (const trackId of document.trackOrder) {
+      const firstClip = this.tracksDocument.getOrderedClipsForTrack(trackId)[0] ?? null;
+      if (firstClip != null) {
+        this.tracksEditor.setSelection({ trackId, clipId: firstClip.id });
         return;
       }
     }
@@ -466,27 +503,22 @@ class AppModel {
   }
 
   redoPart(index: number): void {
-    this.updatePartState(index, { status: "idle" });
+    const trackId = this.tracksDocument.getTrackIdAtIndex(index);
+    if (trackId == null) return;
+
     this.currentPartIndex.set(index);
     this.appScreen.set("recording");
 
-    const removedTake = this.tracksDocument.clearLane(index);
+    const removedRecordings = this.tracksDocument.clearTrack(trackId);
     const selection = this.tracksEditor.editor.get().selection;
-    if (selection.laneIndex === index) {
+    if (selection.trackId === trackId) {
       this.tracksEditor.clearSelection();
       this.tracksEditor.setPlayhead(0);
     }
 
-    if (removedTake != null) {
-      URL.revokeObjectURL(removedTake.url);
-      this.removeTakeRuntimeMedia(removedTake.id);
+    for (const removed of removedRecordings) {
+      this.releaseRecording(removed);
     }
-  }
-
-  getKeptBlobs(): (Blob | null)[] {
-    return this.partStates
-      .get()
-      .map((state) => (state.status === "kept" ? state.blob : null));
   }
 
   setCalibrationOffset(correctionSec: number): void {
@@ -503,16 +535,15 @@ class AppModel {
     const totalParts = this.arrangementDocument.get().totalParts;
 
     this.currentPartIndex.set(0);
-    this.partStates.set(createIdlePartStates(totalParts));
     this.permissionError.set(null);
     this.clearCalibration();
 
-    const removedTakes = this.tracksDocument.reset(totalParts);
-    for (const take of removedTakes) {
-      URL.revokeObjectURL(take.url);
+    const removedRecordings = this.tracksDocument.reset(totalParts);
+    for (const removed of removedRecordings) {
+      this.releaseRecording(removed);
     }
 
-    this.clearRuntimeTakeMedia();
+    this.clearDecodedRuntimeMedia();
     this.tracksEditor.reset();
     this.resetExportState();
 
@@ -523,51 +554,73 @@ class AppModel {
     this.compositor = null;
   }
 
-  private resizePartCount(totalParts: number): void {
-    this.partStates.set(
-      this.resizePartStates(this.partStates.get(), totalParts),
-    );
+  private registerMediaAsset(mediaAssetId: MediaAssetId, blob: Blob): void {
+    const previousUrl = this.objectUrlsByAssetId.get(mediaAssetId);
+    if (previousUrl != null) {
+      URL.revokeObjectURL(previousUrl);
+    }
 
+    this.mediaBlobsByAssetId.set(mediaAssetId, blob);
+    this.objectUrlsByAssetId.set(mediaAssetId, URL.createObjectURL(blob));
+  }
+
+  private releaseRecording(recording: RecordingRecord): void {
+    this.removeRecordingRuntimeMedia(recording.id);
+
+    const stillReferenced = Object.values(
+      this.tracksDocument.document.get().recordingsById,
+    ).some((candidate) => candidate.mediaAssetId === recording.mediaAssetId);
+
+    if (!stillReferenced) {
+      const url = this.objectUrlsByAssetId.get(recording.mediaAssetId);
+      if (url != null) {
+        URL.revokeObjectURL(url);
+      }
+      this.objectUrlsByAssetId.delete(recording.mediaAssetId);
+      this.mediaBlobsByAssetId.delete(recording.mediaAssetId);
+    }
+  }
+
+  private removeRecordingRuntimeMedia(recordingId: RecordingId): void {
+    this.audioBuffersByRecordingId.delete(recordingId);
+    this.waveformPeaksByRecordingId.delete(recordingId);
+    this.videoElByRecordingId.delete(recordingId);
+    this.recordingSourceWindowByRecordingId.delete(recordingId);
+  }
+
+  private resizePartCount(totalParts: number): void {
     const clampedPartIndex = Math.min(
       Math.max(0, this.currentPartIndex.get()),
       Math.max(0, totalParts - 1),
     );
     this.currentPartIndex.set(clampedPartIndex);
 
-    const removedTakes = this.tracksDocument.resizeForPartCount(totalParts);
-
-    for (const take of removedTakes) {
-      URL.revokeObjectURL(take.url);
-      this.removeTakeRuntimeMedia(take.id);
+    const removedRecordings = this.tracksDocument.resizeForPartCount(totalParts);
+    for (const removed of removedRecordings) {
+      this.releaseRecording(removed);
     }
 
     const selection = this.tracksEditor.editor.get().selection;
-    if (selection.laneIndex != null && selection.laneIndex >= totalParts) {
+    if (
+      selection.trackId != null &&
+      this.tracksDocument.getTrack(selection.trackId) == null
+    ) {
       this.tracksEditor.clearSelection();
     }
-  }
-
-  private resizePartStates(
-    current: PartState[],
-    totalParts: number,
-  ): PartState[] {
-    const next = current.slice(0, totalParts);
-    while (next.length < totalParts) {
-      next.push({ status: "idle" });
-    }
-    return next;
   }
 
   private findClipBySelection(
     document: TracksDocumentState,
     selection: TracksEditorSelection,
-  ) {
-    if (selection.laneIndex == null || selection.clipId == null) {
+  ): TrackClip | null {
+    if (selection.trackId == null || selection.clipId == null) {
       return null;
     }
-    const lane = document.lanes[selection.laneIndex] ?? null;
-    if (lane == null) return null;
-    return lane.clips.find((clip) => clip.id === selection.clipId) ?? null;
+    const clip = document.clipsById[selection.clipId] ?? null;
+    if (clip == null || clip.trackId !== selection.trackId) {
+      return null;
+    }
+    return clip;
   }
 
   private resetExportState(): void {
@@ -588,9 +641,14 @@ class AppModel {
     }
   }
 
-  private makeTakeId(): string {
-    this.nextTakeId += 1;
-    return `take-${this.nextTakeId}`;
+  private makeRecordingId(): RecordingId {
+    this.nextRecordingId += 1;
+    return `recording-${this.nextRecordingId}`;
+  }
+
+  private makeMediaAssetId(): MediaAssetId {
+    this.nextMediaAssetId += 1;
+    return `media-asset-${this.nextMediaAssetId}`;
   }
 }
 

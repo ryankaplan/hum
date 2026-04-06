@@ -40,14 +40,27 @@ const FALLBACK_EXPORT_PROFILE: ExportProfile = {
   format: "webm",
 };
 
-export function getPreferredExportProfile(): ExportProfile {
+export function getPreferredExportProfile(
+  preferredFormat?: ExportFormat | null,
+): ExportProfile {
   if (
     typeof MediaRecorder === "undefined" ||
     typeof MediaRecorder.isTypeSupported !== "function"
   ) {
     return FALLBACK_EXPORT_PROFILE;
   }
-  for (const candidate of EXPORT_MIME_CANDIDATES) {
+  const candidates =
+    preferredFormat == null
+      ? EXPORT_MIME_CANDIDATES
+      : [
+          ...EXPORT_MIME_CANDIDATES.filter(
+            (candidate) => candidate.format === preferredFormat,
+          ),
+          ...EXPORT_MIME_CANDIDATES.filter(
+            (candidate) => candidate.format !== preferredFormat,
+          ),
+        ];
+  for (const candidate of candidates) {
     if (MediaRecorder.isTypeSupported(candidate.mimeType)) {
       return candidate;
     }
@@ -55,8 +68,10 @@ export function getPreferredExportProfile(): ExportProfile {
   return FALLBACK_EXPORT_PROFILE;
 }
 
-export function getPreferredExportFormat(): ExportFormat {
-  return getPreferredExportProfile().format;
+export function getPreferredExportFormat(
+  preferredFormat?: ExportFormat | null,
+): ExportFormat {
+  return getPreferredExportProfile(preferredFormat).format;
 }
 
 export async function exportVideo(opts: ExportOpts): Promise<ExportResult> {

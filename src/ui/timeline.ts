@@ -1,6 +1,6 @@
 export type TimelineSegment = {
   id: string;
-  laneIndex: number;
+  trackId: string;
   timelineStartSec: number;
   sourceStartSec: number;
   durationSec: number;
@@ -9,7 +9,7 @@ export type TimelineSegment = {
 export type TrackTimeline = TimelineSegment[];
 
 export type EditorSelection = {
-  laneIndex: number | null;
+  trackId: string | null;
   clipId: string | null;
 };
 

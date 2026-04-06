@@ -12,12 +12,22 @@ import {
   withUpdatedVolumeLane,
 } from "./clipAutomation";
 
+// Implementation idea: what if we gave lanes ids, and used laneId instead of laneIndex?
+
 export type TrackClip = {
+  // NEEDS COMMENT: how is this assigned?
   id: string;
   laneIndex: number;
+
+  // NEEDS COMMENT: is this the id of... a blob? idk
+  // how do i find it?
   takeId: string;
+
+  // NEEDS COMMENT: How exactly should I read this offset?
+  // how is it different than sourceStartSec?
   timelineStartSec: number;
   sourceStartSec: number;
+
   durationSec: number;
   automation: ClipAutomation;
 };
@@ -32,6 +42,9 @@ export type TrackEditorSelection = {
   segmentId: string | null;
 };
 
+// NEEDS COMMENT: Comment what this is; I think it's a single take
+// that the user did. What's blob? url? Name these audio / video as
+// appropriate. What's trimOffsetSec?
 export type TakeRecord = {
   id: string;
   laneIndex: number;
@@ -55,6 +68,9 @@ export type TracksState = {
   takesById: Record<string, TakeRecord>;
   laneTakeIds: (string | null)[];
   lanes: TrackLane[];
+
+  // Idea: This seems like UI state. Make sure to split out user data model state
+  // vs UI state.
   editor: {
     selection: TrackEditorSelection;
     playheadSec: number;
@@ -65,6 +81,9 @@ export type TracksState = {
     muted: boolean[];
     reverbWet: number;
   };
+
+  // This seems like not TracksState, it's something separate called ExportState.
+  // Should live separately.
   export: {
     exporting: boolean;
     progress: number;
@@ -113,7 +132,9 @@ export class TracksModel {
   readonly tracks: Observable<TracksState>;
 
   constructor(private options: TracksModelOptions) {
-    this.tracks = new Observable<TracksState>(createEmptyTracks(options.totalParts));
+    this.tracks = new Observable<TracksState>(
+      createEmptyTracks(options.totalParts),
+    );
   }
 
   stageKeptTake(input: {
@@ -158,7 +179,9 @@ export class TracksModel {
                   timelineStartSec: 0,
                   sourceStartSec: Math.max(0, sourceStartSec),
                   durationSec: Math.max(0, durationSec),
-                  automation: createDefaultClipAutomation(Math.max(0, durationSec)),
+                  automation: createDefaultClipAutomation(
+                    Math.max(0, durationSec),
+                  ),
                 },
               ],
             }
@@ -257,13 +280,16 @@ export class TracksModel {
   splitSelectedClipAtPlayhead(): void {
     this.setTracks((current) => {
       const { selection, playheadSec } = current.editor;
-      if (selection.laneIndex == null || selection.segmentId == null) return current;
+      if (selection.laneIndex == null || selection.segmentId == null)
+        return current;
 
       const laneIndex = selection.laneIndex;
       const lane = current.lanes[laneIndex];
       if (lane == null) return current;
 
-      const idx = lane.clips.findIndex((clip) => clip.id === selection.segmentId);
+      const idx = lane.clips.findIndex(
+        (clip) => clip.id === selection.segmentId,
+      );
       if (idx < 0) return current;
 
       const clip = lane.clips[idx];
@@ -272,7 +298,9 @@ export class TracksModel {
       const clipStart = clip.timelineStartSec;
       const clipEnd = clip.timelineStartSec + clip.durationSec;
       const EPSILON = 1e-6;
-      if (!(playheadSec > clipStart + EPSILON && playheadSec < clipEnd - EPSILON)) {
+      if (
+        !(playheadSec > clipStart + EPSILON && playheadSec < clipEnd - EPSILON)
+      ) {
         return current;
       }
 
@@ -342,7 +370,8 @@ export class TracksModel {
       const prev = idx > 0 ? lane.clips[idx - 1] : null;
       const next = idx < lane.clips.length - 1 ? lane.clips[idx + 1] : null;
 
-      const minStart = prev != null ? prev.timelineStartSec + prev.durationSec : 0;
+      const minStart =
+        prev != null ? prev.timelineStartSec + prev.durationSec : 0;
       const maxStart =
         next != null
           ? Math.max(minStart, next.timelineStartSec - clip.durationSec)
@@ -373,13 +402,16 @@ export class TracksModel {
   deleteSelectedClip(): void {
     this.setTracks((current) => {
       const { selection, playheadSec } = current.editor;
-      if (selection.laneIndex == null || selection.segmentId == null) return current;
+      if (selection.laneIndex == null || selection.segmentId == null)
+        return current;
 
       const laneIndex = selection.laneIndex;
       const lane = current.lanes[laneIndex];
       if (lane == null) return current;
 
-      const nextClips = lane.clips.filter((clip) => clip.id !== selection.segmentId);
+      const nextClips = lane.clips.filter(
+        (clip) => clip.id !== selection.segmentId,
+      );
       if (nextClips.length === lane.clips.length) return current;
 
       const nextLanes = [...current.lanes];
@@ -388,8 +420,11 @@ export class TracksModel {
         clips: nextClips,
       };
 
-      const after = nextClips.find((clip) => clip.timelineStartSec >= playheadSec);
-      const nextSelectionId = after?.id ?? nextClips[nextClips.length - 1]?.id ?? null;
+      const after = nextClips.find(
+        (clip) => clip.timelineStartSec >= playheadSec,
+      );
+      const nextSelectionId =
+        after?.id ?? nextClips[nextClips.length - 1]?.id ?? null;
 
       return {
         ...current,
@@ -495,7 +530,9 @@ export class TracksModel {
       const lane = current.lanes[input.laneIndex];
       if (lane == null) return current;
 
-      const clipIndex = lane.clips.findIndex((clip) => clip.id === input.clipId);
+      const clipIndex = lane.clips.findIndex(
+        (clip) => clip.id === input.clipId,
+      );
       if (clipIndex < 0) return current;
       const clip = lane.clips[clipIndex];
       if (clip == null || clip.durationSec <= 0) return current;
@@ -763,7 +800,10 @@ export class TracksModel {
   }
 }
 
-function isSameVolumeLane(a: ClipAutomationLane, b: ClipAutomationLane): boolean {
+function isSameVolumeLane(
+  a: ClipAutomationLane,
+  b: ClipAutomationLane,
+): boolean {
   if (a.points.length !== b.points.length) return false;
   for (let i = 0; i < a.points.length; i++) {
     const left = a.points[i];

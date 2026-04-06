@@ -9,7 +9,6 @@ import {
   Text,
 } from "@chakra-ui/react";
 import {
-  type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
   useMemo,
@@ -39,38 +38,22 @@ import {
 import {
   getActiveSegmentAtTime,
   getTimelineEndSec,
-  samplePeaksForSegment,
-  snapTimeSec,
 } from "./timeline";
 import type {
   EditorSelection,
 } from "./timeline";
 import {
-  dsColors,
   dsOutlineButton,
-  dsPanel,
   dsPrimaryButton,
   dsScreenShell,
 } from "./designSystem";
+import {
+  TracksEditorPanel,
+  type TracksEditorCommand,
+  type TracksEditorView,
+} from "./finalReview/tracksEditor";
 
-const TIMELINE_PX_PER_SEC = 110;
-const TIMELINE_RIGHT_PAD_PX = 48;
-const LANE_HEIGHT_PX = 72;
-const TRACK_RAIL_WIDTH_PX = 200;
-const WAVEFORM_BARS_PER_SEC = 12;
-const WAVEFORM_BARS_MIN = 12;
-const WAVEFORM_BARS_MAX = 280;
 const WAVEFORM_BUCKETS_PER_SEC = 72;
-const VOLUME_BRUSH_RADIUS_SEC = 2;
-const VOLUME_BRUSH_GAIN_PER_PX = 1 / 180;
-const VOLUME_LINE_HIT_RADIUS_PX = 11;
-
-type VolumeBrushPreview = {
-  laneIndex: number;
-  segmentId: string;
-  startSec: number;
-  endSec: number;
-};
 
 type ActiveAudioSource = {
   source: AudioBufferSourceNode;
@@ -84,7 +67,6 @@ export function FinalReview() {
   const trackCount = tracksState.lanes.length;
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const timelineViewportRef = useRef<HTMLDivElement>(null);
 
   const videoRefs = useRef<(HTMLVideoElement | null)[]>(
     Array.from({ length: trackCount }, () => null),
@@ -111,10 +93,7 @@ export function FinalReview() {
   const [isSyncingFrames, setIsSyncingFrames] = useState(false);
   const [syncWarning, setSyncWarning] = useState<string | null>(null);
 
-  const [timelineViewportWidth, setTimelineViewportWidth] = useState(0);
   const [waveformVersion, setWaveformVersion] = useState(0);
-  const [volumeBrushPreview, setVolumeBrushPreview] =
-    useState<VolumeBrushPreview | null>(null);
 
   const exporting = tracksState.export.exporting;
   const exportProgress = tracksState.export.progress;
@@ -133,12 +112,6 @@ export function FinalReview() {
   const timelineEndSec = useMemo(() => {
     return getTimelineEndSec(timelines);
   }, [timelines]);
-
-  const timelineContentWidthPx = useMemo(() => {
-    const minContent =
-      Math.max(1, timelineEndSec) * TIMELINE_PX_PER_SEC + TIMELINE_RIGHT_PAD_PX;
-    return Math.max(timelineViewportWidth, Math.ceil(minContent));
-  }, [timelineEndSec, timelineViewportWidth]);
 
   const beatLineTimes = useMemo(() => {
     if (beatSec <= 0 || timelineEndSec <= 0) return [] as number[];
@@ -169,7 +142,6 @@ export function FinalReview() {
       stopAudio();
       setIsPlaying(false);
       setIsSyncingFrames(false);
-      setVolumeBrushPreview(null);
 
       if (!preservePlayhead) {
         model.tracks.setPlayhead(0);
@@ -414,19 +386,6 @@ export function FinalReview() {
     }
   }, [selection, timelines, trackCount]);
 
-  // Track timeline viewport width for responsive content width.
-  useEffect(() => {
-    const el = timelineViewportRef.current;
-    if (el == null) return;
-
-    const update = () => setTimelineViewportWidth(el.clientWidth);
-    update();
-
-    const observer = new ResizeObserver(update);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-
   useEffect(() => {
     return () => {
       stopPlaybackEngine(false);
@@ -485,174 +444,83 @@ export function FinalReview() {
     }
   }
 
-  function handleSplitAtPlayhead() {
-    if (exporting || isSyncingFrames) return;
-    if (selection.laneIndex == null) return;
-
-    if (isPlaying) {
-      stopPlaybackEngine(true);
-    }
-
-    model.tracks.splitSelectedClipAtPlayhead();
-  }
-
-  function handleDeleteSelectedSegment() {
-    if (exporting || isSyncingFrames) return;
-    if (selection.laneIndex == null || selection.segmentId == null) return;
-
-    if (isPlaying) {
-      stopPlaybackEngine(true);
-    }
-
-    model.tracks.deleteSelectedClip();
-  }
-
-  function handleLaneClick(
-    e: ReactPointerEvent<HTMLDivElement>,
-    laneIndex: number,
-  ) {
-    if (exporting || isSyncingFrames) return;
-    if (isPlaying) return;
-
-    const viewport = timelineViewportRef.current;
-    if (viewport == null) return;
-
-    const rect = viewport.getBoundingClientRect();
-    const contentX = e.clientX - rect.left + viewport.scrollLeft;
-    const unclampedTime = contentX / TIMELINE_PX_PER_SEC;
-    const nextPlayhead = Math.max(0, Math.min(unclampedTime, timelineEndSec));
-
-    model.tracks.setSelection({ laneIndex, segmentId: selection.segmentId });
-    model.tracks.setPlayhead(nextPlayhead);
-  }
-
-  function handleSegmentPointerDown(
-    e: ReactPointerEvent<HTMLDivElement>,
-    laneIndex: number,
-    segment: TrackClip,
-  ) {
-    e.stopPropagation();
-    if (exporting || isPlaying || isSyncingFrames) return;
-
-    model.tracks.setSelection({ laneIndex, segmentId: segment.id });
-
-    const rect = e.currentTarget.getBoundingClientRect();
-    const widthPx = Math.max(1, rect.width);
-    const heightPx = Math.max(1, rect.height);
-    const volumeLane = getVolumeAutomationLane(
-      segment.automation,
-      segment.durationSec,
-    );
-    const toLocalTimeSec = (clientX: number): number => {
-      const ratio = clamp((clientX - rect.left) / widthPx, 0, 1);
-      return ratio * segment.durationSec;
-    };
-
-    const pointerDownLocalSec = toLocalTimeSec(e.clientX);
-    const pointerDownGain = evaluateAutomationLaneAtTime(
-      volumeLane,
-      pointerDownLocalSec,
-      segment.durationSec,
-    );
-    const pointerDownY = e.clientY - rect.top;
-    const volumeLineY = gainToLineYPx(pointerDownGain, heightPx);
-    const isVolumeGesture =
-      Math.abs(pointerDownY - volumeLineY) <= VOLUME_LINE_HIT_RADIUS_PX;
-
-    if (isVolumeGesture) {
-      let lastClientY = e.clientY;
-
-      setVolumeBrushPreview({
-        laneIndex,
-        segmentId: segment.id,
-        startSec: Math.max(0, pointerDownLocalSec - VOLUME_BRUSH_RADIUS_SEC),
-        endSec: Math.min(
-          segment.durationSec,
-          pointerDownLocalSec + VOLUME_BRUSH_RADIUS_SEC,
-        ),
-      });
-
-      const onBrushMove = (event: PointerEvent) => {
-        const centerSec = toLocalTimeSec(event.clientX);
-        const deltaValue = (lastClientY - event.clientY) * VOLUME_BRUSH_GAIN_PER_PX;
-        lastClientY = event.clientY;
-
-        if (Math.abs(deltaValue) > 1e-6) {
-          model.tracks.applyClipAutomationBrush({
-            laneIndex,
-            clipId: segment.id,
-            param: "volume",
-            centerSec,
-            deltaValue,
-            radiusSec: VOLUME_BRUSH_RADIUS_SEC,
-          });
-        }
-
-        setVolumeBrushPreview({
-          laneIndex,
-          segmentId: segment.id,
-          startSec: Math.max(0, centerSec - VOLUME_BRUSH_RADIUS_SEC),
-          endSec: Math.min(
-            segment.durationSec,
-            centerSec + VOLUME_BRUSH_RADIUS_SEC,
-          ),
-        });
-      };
-
-      const onBrushUp = () => {
-        window.removeEventListener("pointermove", onBrushMove);
-        window.removeEventListener("pointerup", onBrushUp);
-        setVolumeBrushPreview((prev) =>
-          prev != null &&
-          prev.segmentId === segment.id &&
-          prev.laneIndex === laneIndex
-            ? null
-            : prev,
-        );
-      };
-
-      window.addEventListener("pointermove", onBrushMove);
-      window.addEventListener("pointerup", onBrushUp);
-      return;
-    }
-
-    const startClientX = e.clientX;
-    const originStartSec = segment.timelineStartSec;
-
-    const onMoveClip = (event: PointerEvent) => {
-      const deltaPx = event.clientX - startClientX;
-      const deltaSec = deltaPx / TIMELINE_PX_PER_SEC;
-      let desiredStartSec = originStartSec + deltaSec;
-
-      if (snapToBeat) {
-        desiredStartSec = snapTimeSec(desiredStartSec, beatSec);
+  function handleTracksCommand(command: TracksEditorCommand) {
+    switch (command.type) {
+      case "split_selected": {
+        if (exporting || isSyncingFrames) return;
+        if (selection.laneIndex == null) return;
+        if (isPlaying) stopPlaybackEngine(true);
+        model.tracks.splitSelectedClipAtPlayhead();
+        return;
       }
-
-      model.tracks.moveClip(laneIndex, segment.id, desiredStartSec);
-    };
-
-    const onMoveClipUp = () => {
-      window.removeEventListener("pointermove", onMoveClip);
-      window.removeEventListener("pointerup", onMoveClipUp);
-    };
-
-    window.addEventListener("pointermove", onMoveClip);
-    window.addEventListener("pointerup", onMoveClipUp);
-  }
-
-  function handleSeek(valueSec: number) {
-    if (isPlaying || exporting || isSyncingFrames) return;
-    const next = Math.max(0, Math.min(valueSec, timelineEndSec));
-    model.tracks.setPlayhead(next);
-  }
-
-  function handleVolumeChange(index: number, value: number) {
-    model.tracks.setTrackVolume(index, value);
-  }
-
-  function handleMuteToggle(index: number) {
-    const nextMuted = !(muted[index] ?? false);
-    model.tracks.setTrackMuted(index, nextMuted);
+      case "delete_selected": {
+        if (exporting || isSyncingFrames) return;
+        if (selection.laneIndex == null || selection.segmentId == null) return;
+        if (isPlaying) stopPlaybackEngine(true);
+        model.tracks.deleteSelectedClip();
+        return;
+      }
+      case "toggle_snap": {
+        if (exporting || isPlaying || isSyncingFrames) return;
+        model.tracks.setSnapToBeat(!snapToBeat);
+        return;
+      }
+      case "select_lane": {
+        if (exporting || isSyncingFrames || isPlaying) return;
+        model.tracks.setSelection({
+          laneIndex: command.laneIndex,
+          segmentId: selection.segmentId,
+        });
+        model.tracks.setPlayhead(command.timelineSec);
+        return;
+      }
+      case "select_segment": {
+        if (exporting || isSyncingFrames || isPlaying) return;
+        model.tracks.setSelection({
+          laneIndex: command.laneIndex,
+          segmentId: command.segmentId,
+        });
+        return;
+      }
+      case "move_segment": {
+        if (exporting || isSyncingFrames || isPlaying) return;
+        model.tracks.moveClip(
+          command.laneIndex,
+          command.segmentId,
+          command.desiredStartSec,
+        );
+        return;
+      }
+      case "apply_volume_brush": {
+        if (exporting || isSyncingFrames || isPlaying) return;
+        model.tracks.applyClipAutomationBrush({
+          laneIndex: command.laneIndex,
+          clipId: command.segmentId,
+          param: "volume",
+          centerSec: command.centerSec,
+          deltaValue: command.deltaValue,
+          radiusSec: command.radiusSec,
+        });
+        return;
+      }
+      case "seek": {
+        if (isPlaying || exporting || isSyncingFrames) return;
+        const next = Math.max(0, Math.min(command.valueSec, timelineEndSec));
+        model.tracks.setPlayhead(next);
+        return;
+      }
+      case "set_lane_volume": {
+        model.tracks.setTrackVolume(command.laneIndex, command.value);
+        return;
+      }
+      case "toggle_lane_mute": {
+        const nextMuted = !(muted[command.laneIndex] ?? false);
+        model.tracks.setTrackMuted(command.laneIndex, nextMuted);
+        return;
+      }
+      default:
+        return;
+    }
   }
 
   function handleReverbChange(wet: number) {
@@ -751,6 +619,52 @@ export function FinalReview() {
     selection.laneIndex != null &&
     getActiveSegmentAtTime(timelines[selection.laneIndex] ?? [], playheadSec) !=
       null;
+  const tracksEditorView = useMemo<TracksEditorView>(() => {
+    return {
+      lanes: timelines.map((segments, laneIndex) => {
+        const laneRuntime = model.getLaneRuntimeWaveform(laneIndex);
+        return {
+          laneIndex,
+          label: getPartLabel(laneIndex, trackCount),
+          segments,
+          peaks: laneRuntime?.peaks ?? [],
+          sourceStartSec: laneRuntime?.sourceWindow.sourceStartSec ?? 0,
+          sourceDurationSec: laneRuntime?.sourceWindow.durationSec ?? 0,
+          volume: volumes[laneIndex] ?? 1,
+          muted: muted[laneIndex] ?? false,
+        };
+      }),
+      selection,
+      playheadSec,
+      timelineEndSec,
+      beatLineTimes,
+      snapToBeat,
+      beatSec,
+      exporting,
+      isPlaying,
+      isSyncingFrames,
+      syncWarning,
+      canSplit,
+      canDelete,
+    };
+  }, [
+    timelines,
+    trackCount,
+    volumes,
+    muted,
+    selection,
+    playheadSec,
+    timelineEndSec,
+    beatLineTimes,
+    snapToBeat,
+    beatSec,
+    exporting,
+    isPlaying,
+    isSyncingFrames,
+    syncWarning,
+    canSplit,
+    canDelete,
+  ]);
 
   return (
     <Flex {...dsScreenShell} py={8}>
@@ -782,402 +696,11 @@ export function FinalReview() {
             </Box>
 
             <Box flex="1" minW={0}>
-              <Stack gap={0}>
-                <Box
-                  overflow="hidden"
-                  {...dsPanel}
-                >
-                  <Flex
-                    align="center"
-                    justify="space-between"
-                    gap={3}
-                    px={3}
-                    py={2}
-                    borderBottomWidth="1px"
-                    borderColor="appBorderMuted"
-                  >
-                    <Text
-                      fontSize="xs"
-                      fontWeight="medium"
-                      color="appTextMuted"
-                      letterSpacing="0.02em"
-                    >
-                      Tracks
-                    </Text>
-                    <Box
-                      as="span"
-                      fontSize="xs"
-                      color="appTextMuted"
-                      fontFamily="mono"
-                      fontVariantNumeric="tabular-nums"
-                    >
-                      {formatTime(playheadSec)}
-                      <Box as="span" color="appTextSubtle">
-                        {" "}
-                        / {formatTime(timelineEndSec)}
-                      </Box>
-                    </Box>
-                  </Flex>
-
-                  <Flex
-                    gap={1.5}
-                    flexWrap="wrap"
-                    px={3}
-                    py={2}
-                    borderBottomWidth="1px"
-                    borderColor="appBorderMuted"
-                  >
-                    <Button
-                      variant={isPlaying ? "outline" : "solid"}
-                      size="sm"
-                      h={8}
-                      px={3}
-                      fontSize="xs"
-                      fontWeight="medium"
-                      onClick={handlePlayPause}
-                      disabled={
-                        exporting || isSyncingFrames || timelineEndSec <= 0
-                      }
-                      loading={isSyncingFrames}
-                      loadingText="Syncing…"
-                      borderColor={isPlaying ? dsColors.outline : dsColors.accent}
-                      bg={isPlaying ? "transparent" : dsColors.accent}
-                      color={isPlaying ? dsColors.textMuted : dsColors.accentForeground}
-                      _hover={{
-                        bg: isPlaying ? dsColors.surfaceRaised : dsColors.accentHover,
-                      }}
-                    >
-                      {isPlaying ? "Pause" : "Play"}
-                    </Button>
-                    <Button
-                      size="sm"
-                      h={8}
-                      px={3}
-                      variant="outline"
-                      borderColor="appBorderMuted"
-                      color="appText"
-                      _hover={{ bg: dsColors.surfaceRaised }}
-                      fontSize="xs"
-                      fontWeight="normal"
-                      onClick={handleSplitAtPlayhead}
-                      disabled={exporting || isSyncingFrames || !canSplit}
-                    >
-                      Split
-                    </Button>
-                    <Button
-                      size="sm"
-                      h={8}
-                      px={3}
-                      variant="outline"
-                      borderColor="appBorderMuted"
-                      color="appText"
-                      _hover={{ bg: dsColors.surfaceRaised }}
-                      fontSize="xs"
-                      fontWeight="normal"
-                      onClick={handleDeleteSelectedSegment}
-                      disabled={exporting || isSyncingFrames || !canDelete}
-                    >
-                      Delete
-                    </Button>
-                    <Button
-                      size="sm"
-                      h={8}
-                      px={3}
-                      variant={snapToBeat ? "solid" : "outline"}
-                      borderColor={snapToBeat ? dsColors.accent : dsColors.outline}
-                      bg={snapToBeat ? dsColors.accent : "transparent"}
-                      color={snapToBeat ? dsColors.accentForeground : dsColors.textMuted}
-                      _hover={{
-                        bg: snapToBeat ? dsColors.accentHover : dsColors.surfaceRaised,
-                      }}
-                      fontSize="xs"
-                      fontWeight="normal"
-                      onClick={() => model.tracks.setSnapToBeat(!snapToBeat)}
-                      disabled={exporting || isPlaying || isSyncingFrames}
-                    >
-                      Snap {snapToBeat ? "on" : "off"}
-                    </Button>
-                  </Flex>
-
-                  {(isSyncingFrames || syncWarning != null) && (
-                    <Box
-                      px={3}
-                      py={2}
-                      borderBottomWidth="1px"
-                      borderColor="appBorderMuted"
-                      bg="appSurfaceSubtle"
-                    >
-                      {isSyncingFrames && (
-                        <Text color="appText" fontSize="xs">
-                          Syncing frames…
-                        </Text>
-                      )}
-                      {syncWarning != null && (
-                        <Text color="appWarning" fontSize="xs">
-                          {syncWarning}
-                        </Text>
-                      )}
-                    </Box>
-                  )}
-
-                  <Flex align="stretch" minH={0}>
-                    <Box
-                      flexShrink={0}
-                      w={`${TRACK_RAIL_WIDTH_PX}px`}
-                      borderRightWidth="1px"
-                      borderColor="appBorderMuted"
-                      bg="appSurfaceSubtle"
-                    >
-                      {Array.from({ length: trackCount }).map((_, lane) => (
-                        <Flex
-                          key={`rail-${lane}`}
-                          h={`${LANE_HEIGHT_PX}px`}
-                          direction="column"
-                          align="stretch"
-                          justify="center"
-                          borderBottomWidth="1px"
-                          borderColor="appBorderMuted"
-                          px={2.5}
-                          py={2}
-                          gap={1.5}
-                        >
-                          <Text
-                            fontSize="10px"
-                            fontWeight="medium"
-                            color="appTextMuted"
-                            textAlign="left"
-                            lineHeight="1.25"
-                            textTransform="uppercase"
-                            letterSpacing="0.06em"
-                            lineClamp={1}
-                          >
-                            {getPartLabel(lane, trackCount)}
-                          </Text>
-                          <Flex align="center" gap={1.5} minW={0}>
-                            <Button
-                              size="xs"
-                              variant="ghost"
-                              color={muted[lane] ? dsColors.errorText : dsColors.textSubtle}
-                              bg={muted[lane] ? dsColors.errorBg : "transparent"}
-                              fontWeight="bold"
-                              onClick={() => handleMuteToggle(lane)}
-                              w={7}
-                              h={6}
-                              minW={7}
-                              p={0}
-                              fontSize="11px"
-                              flexShrink={0}
-                              disabled={exporting || isSyncingFrames}
-                            >
-                              M
-                            </Button>
-                            <input
-                              type="range"
-                              className="mix-slider"
-                              min={0}
-                              max={150}
-                              step={1}
-                              value={Math.round((volumes[lane] ?? 1) * 100)}
-                              onChange={(event) =>
-                                handleVolumeChange(
-                                  lane,
-                                  parseInt(event.target.value, 10) / 100,
-                                )
-                              }
-                              disabled={exporting || isSyncingFrames}
-                            />
-                            <Text
-                              color="appTextSubtle"
-                              fontSize="10px"
-                              w={10}
-                              textAlign="right"
-                              flexShrink={0}
-                              fontVariantNumeric="tabular-nums"
-                            >
-                              {Math.round((volumes[lane] ?? 1) * 100)}%
-                            </Text>
-                          </Flex>
-                        </Flex>
-                      ))}
-                    </Box>
-
-                    <Box
-                      ref={timelineViewportRef}
-                      overflowX="auto"
-                      overflowY="hidden"
-                      flex={1}
-                      minW={0}
-                      bg={dsColors.surfaceSubtle}
-                    >
-                      <Box
-                        position="relative"
-                        w={`${timelineContentWidthPx}px`}
-                        h={`${trackCount * LANE_HEIGHT_PX}px`}
-                      >
-                        {Array.from({ length: trackCount }).map((_, lane) => {
-                          const track = timelines[lane] ?? [];
-                          const laneRuntime =
-                            model.getLaneRuntimeWaveform(lane);
-                          const peaks = laneRuntime?.peaks ?? [];
-                          const laneStart =
-                            laneRuntime?.sourceWindow.sourceStartSec ?? 0;
-                          const laneDuration =
-                            laneRuntime?.sourceWindow.durationSec ?? 0;
-                          const laneClass =
-                            `timeline-lane ${selection.laneIndex === lane ? "is-selected-lane" : ""}` +
-                            (lane % 2 === 0 ? " is-alt" : "");
-
-                          return (
-                            <Box
-                              key={lane}
-                              className={laneClass}
-                              position="absolute"
-                              left={0}
-                              right={0}
-                              top={`${lane * LANE_HEIGHT_PX}px`}
-                              h={`${LANE_HEIGHT_PX - 1}px`}
-                              onPointerDown={(e) => handleLaneClick(e, lane)}
-                            >
-                              {beatLineTimes.map((line, index) => (
-                                <Box
-                                  key={`${lane}-beat-${index}`}
-                                  className="timeline-beat"
-                                  left={`${line * TIMELINE_PX_PER_SEC}px`}
-                                />
-                              ))}
-
-                              {track.map((segment) => {
-                                const leftPx =
-                                  segment.timelineStartSec *
-                                  TIMELINE_PX_PER_SEC;
-                                const widthPx = Math.max(
-                                  8,
-                                  segment.durationSec * TIMELINE_PX_PER_SEC,
-                                );
-                                const isSelected =
-                                  selection.segmentId === segment.id;
-
-                                const bars = Math.max(
-                                  WAVEFORM_BARS_MIN,
-                                  Math.min(
-                                    WAVEFORM_BARS_MAX,
-                                    Math.round(segment.durationSec * WAVEFORM_BARS_PER_SEC),
-                                  ),
-                                );
-                                const relativeSourceStart = Math.max(
-                                  0,
-                                  segment.sourceStartSec - laneStart,
-                                );
-                                const samples = samplePeaksForSegment(
-                                  peaks,
-                                  laneDuration,
-                                  relativeSourceStart,
-                                  segment.durationSec,
-                                  bars,
-                                );
-                                const volumeLane = getVolumeAutomationLane(
-                                  segment.automation,
-                                  segment.durationSec,
-                                );
-                                const volumeLine = buildVolumePolylinePoints(
-                                  volumeLane,
-                                  segment.durationSec,
-                                );
-                                const activeBrush =
-                                  volumeBrushPreview != null &&
-                                  volumeBrushPreview.laneIndex === lane &&
-                                  volumeBrushPreview.segmentId === segment.id
-                                    ? volumeBrushPreview
-                                    : null;
-                                const brushLeftPercent =
-                                  activeBrush == null || segment.durationSec <= 0
-                                    ? 0
-                                    : (activeBrush.startSec / segment.durationSec) * 100;
-                                const brushWidthPercent =
-                                  activeBrush == null || segment.durationSec <= 0
-                                    ? 0
-                                    : ((activeBrush.endSec - activeBrush.startSec) /
-                                        segment.durationSec) *
-                                      100;
-
-                                return (
-                                  <Box
-                                    key={segment.id}
-                                    className={`timeline-segment ${isSelected ? "is-selected" : ""}`}
-                                    left={`${leftPx}px`}
-                                    w={`${widthPx}px`}
-                                    onPointerDown={(e) =>
-                                      handleSegmentPointerDown(e, lane, segment)
-                                    }
-                                  >
-                                    <Box className="segment-waveform">
-                                      {samples.map((sample, idx) => (
-                                        <Box
-                                          key={`${segment.id}-${idx}`}
-                                          className="segment-bar"
-                                          h={`${Math.max(12, Math.round(sample * 100))}%`}
-                                        />
-                                      ))}
-                                    </Box>
-                                    {activeBrush != null && (
-                                      <Box
-                                        className="segment-volume-brush"
-                                        left={`${brushLeftPercent}%`}
-                                        w={`${Math.max(0, brushWidthPercent)}%`}
-                                      />
-                                    )}
-                                    <svg
-                                      className="segment-volume-svg"
-                                      viewBox="0 0 100 100"
-                                      preserveAspectRatio="none"
-                                    >
-                                      <polyline
-                                        className="segment-volume-line"
-                                        points={volumeLine}
-                                      />
-                                    </svg>
-                                  </Box>
-                                );
-                              })}
-                            </Box>
-                          );
-                        })}
-
-                        <Box
-                          className="timeline-playhead"
-                          left={`${playheadSec * TIMELINE_PX_PER_SEC}px`}
-                        />
-                      </Box>
-                    </Box>
-                  </Flex>
-
-                  <Box
-                    px={3}
-                    py={2.5}
-                    borderTopWidth="1px"
-                    borderColor="appBorderMuted"
-                    bg="appSurface"
-                  >
-                    <input
-                      type="range"
-                      className="timeline-slider"
-                      min={0}
-                      max={Math.max(1, Math.round(timelineEndSec * 1000))}
-                      step={1}
-                      value={Math.round(playheadSec * 1000)}
-                      onChange={(e) =>
-                        handleSeek(parseInt(e.target.value, 10) / 1000)
-                      }
-                      disabled={
-                        exporting ||
-                        isPlaying ||
-                        isSyncingFrames ||
-                        timelineEndSec <= 0
-                      }
-                    />
-                  </Box>
-                </Box>
-              </Stack>
+              <TracksEditorPanel
+                view={tracksEditorView}
+                onPlayPause={handlePlayPause}
+                onCommand={handleTracksCommand}
+              />
             </Box>
           </Flex>
 
@@ -1345,35 +868,6 @@ function scheduleClipVolumeGain(input: {
     segmentDurationSec,
   );
   gain.linearRampToValueAtTime(endValue, startAtSec + playDurationSec);
-}
-
-function buildVolumePolylinePoints(
-  lane: ClipAutomationLane,
-  durationSec: number,
-): string {
-  if (durationSec <= 0) return "0,50";
-  const sorted = [...lane.points].sort((a, b) => a.timeSec - b.timeSec);
-  return sorted
-    .map((point) => {
-      const x = clamp((point.timeSec / durationSec) * 100, 0, 100);
-      const y = clamp((1 - point.value / 2) * 100, 2, 98);
-      return `${x},${y}`;
-    })
-    .join(" ");
-}
-
-function gainToLineYPx(gain: number, heightPx: number): number {
-  const ratio = clamp(1 - gain / 2, 0, 1);
-  return ratio * heightPx;
-}
-
-function formatTime(sec: number): string {
-  if (!Number.isFinite(sec) || sec < 0) return "0:00.00";
-  const mins = Math.floor(sec / 60);
-  const rem = sec - mins * 60;
-  const whole = Math.floor(rem);
-  const hundredths = Math.floor((rem - whole) * 100);
-  return `${mins}:${String(whole).padStart(2, "0")}.${String(hundredths).padStart(2, "0")}`;
 }
 
 function formatLabel(format: "mp4" | "webm"): string {

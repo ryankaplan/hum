@@ -2,15 +2,23 @@ import type { Chord, NoteName, TriadQuality } from "./types";
 
 // Parses a chord progression string like "A A F#m F#m D D E E"
 // Each token is one bar (beatsPerBar beats). Separate by spaces and/or commas.
+// Group syntax: "[A E]" means both chords share one bar evenly.
 export function parseChordProgression(
   input: string,
   beatsPerBar: number,
 ): Chord[] {
   const chords: Chord[] = [];
-  const tokens = input.trim().split(/[\s,]+/);
+  const tokens = tokenizeProgression(input);
 
   for (const token of tokens) {
     if (token === "") continue;
+    if (token.startsWith("[") && token.endsWith("]")) {
+      const grouped = parseGroupedBarToken(token, beatsPerBar);
+      for (const chord of grouped) {
+        chords.push(chord);
+      }
+      continue;
+    }
     const parsed = parseChordToken(token, beatsPerBar);
     if (parsed != null) {
       chords.push(parsed);
@@ -20,7 +28,25 @@ export function parseChordProgression(
   return chords;
 }
 
-function parseChordToken(token: string, beatsPerBar: number): Chord | null {
+function parseGroupedBarToken(token: string, beatsPerBar: number): Chord[] {
+  const inner = token.slice(1, -1).trim();
+  if (inner === "") return [];
+  const parts = inner.split(/[\s,]+/).filter((part) => part.length > 0);
+  if (parts.length === 0) return [];
+  const beatsPerChord = beatsPerBar / parts.length;
+  if (!Number.isFinite(beatsPerChord) || beatsPerChord <= 0) return [];
+
+  const grouped: Chord[] = [];
+  for (const part of parts) {
+    const parsed = parseChordToken(part, beatsPerChord);
+    // If any chord in the grouped bar is invalid, discard the whole group.
+    if (parsed == null) return [];
+    grouped.push(parsed);
+  }
+  return grouped;
+}
+
+function parseChordToken(token: string, beats: number): Chord | null {
   // Match chord name only: "A", "F#m", "Bb", "C#m"
   const match = token.match(/^([A-G][#b]?)(m?)$/i);
   if (match == null) return null;
@@ -30,7 +56,47 @@ function parseChordToken(token: string, beatsPerBar: number): Chord | null {
 
   const quality: TriadQuality = match[2] === "m" ? "minor" : "major";
 
-  return { root, quality, beats: beatsPerBar };
+  return { root, quality, beats };
+}
+
+function tokenizeProgression(input: string): string[] {
+  const tokens: string[] = [];
+  let current = "";
+  let inGroup = false;
+
+  for (const char of input) {
+    if (inGroup) {
+      current += char;
+      if (char === "]") {
+        const trimmed = current.trim();
+        if (trimmed !== "") tokens.push(trimmed);
+        current = "";
+        inGroup = false;
+      }
+      continue;
+    }
+
+    if (char === "[") {
+      const trimmed = current.trim();
+      if (trimmed !== "") tokens.push(trimmed);
+      current = "[";
+      inGroup = true;
+      continue;
+    }
+
+    if (/\s|,/.test(char)) {
+      const trimmed = current.trim();
+      if (trimmed !== "") tokens.push(trimmed);
+      current = "";
+      continue;
+    }
+
+    current += char;
+  }
+
+  const tail = current.trim();
+  if (tail !== "") tokens.push(tail);
+  return tokens;
 }
 
 // Valid note names after normalizing flats to sharps

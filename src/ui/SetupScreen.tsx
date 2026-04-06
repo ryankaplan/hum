@@ -156,7 +156,8 @@ function SetupCard({
             />
             <Field.HelperText color={dsColors.textMuted} fontSize="xs">
               One chord per bar, space separated - repeat a chord to hold it:
-              "Am Am G F F E"
+              "Am Am G F F E". Use brackets for shared bars: "[A E]" = two
+              chords in one bar.
             </Field.HelperText>
           </Field.Root>
 

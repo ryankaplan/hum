@@ -17,7 +17,7 @@ import {
   startCalibrationPreview,
   type CalibrationPreviewSession,
   type SpeechCalibrationCapture,
-} from "../recording/clapCalibration";
+} from "../recording/latencyCalibration";
 import { model } from "../state/model";
 
 const MIN_MANUAL_SHIFT_SEC = -CORRECTION_MAX_SEC;
@@ -29,11 +29,7 @@ type CalibrationTimelineProps = {
   onShiftChange: (nextShiftSec: number) => void;
 };
 
-function CaptureBeatStrip({
-  activeBeat,
-}: {
-  activeBeat: number;
-}) {
+function CaptureBeatStrip({ activeBeat }: { activeBeat: number }) {
   return (
     <Flex gap={1.5} justify="center">
       {Array.from({ length: 8 }).map((_, i) => {
@@ -82,11 +78,21 @@ function CalibrationTimeline({
     return () => observer.disconnect();
   }, []);
 
-  const maxBeatTime = capture.beatTimesSec[capture.beatTimesSec.length - 1] ?? 0;
-  const visibleDurationSec = Math.max(capture.durationSec, maxBeatTime + capture.secPerBeat);
-  const pxPerSec = timelineWidthPx > 0 ? timelineWidthPx / Math.max(0.01, visibleDurationSec) : 0;
+  const maxBeatTime =
+    capture.beatTimesSec[capture.beatTimesSec.length - 1] ?? 0;
+  const visibleDurationSec = Math.max(
+    capture.durationSec,
+    maxBeatTime + capture.secPerBeat,
+  );
+  const pxPerSec =
+    timelineWidthPx > 0
+      ? timelineWidthPx / Math.max(0.01, visibleDurationSec)
+      : 0;
   const waveformTranslatePx = manualShiftSec * pxPerSec;
-  const targetBeats = useMemo(() => new Set(capture.targetBeatIndices), [capture.targetBeatIndices]);
+  const targetBeats = useMemo(
+    () => new Set(capture.targetBeatIndices),
+    [capture.targetBeatIndices],
+  );
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -132,7 +138,13 @@ function CalibrationTimeline({
     const onMove = (ev: PointerEvent) => {
       const deltaPx = ev.clientX - startX;
       const deltaSec = deltaPx / pxPerSec;
-      onShiftChange(clamp(startShiftSec + deltaSec, MIN_MANUAL_SHIFT_SEC, MAX_MANUAL_SHIFT_SEC));
+      onShiftChange(
+        clamp(
+          startShiftSec + deltaSec,
+          MIN_MANUAL_SHIFT_SEC,
+          MAX_MANUAL_SHIFT_SEC,
+        ),
+      );
     };
 
     const onUp = () => {
@@ -159,7 +171,10 @@ function CalibrationTimeline({
         style={{ cursor: "grab" }}
       >
         {capture.beatTimesSec.map((sec, i) => {
-          const leftPct = Math.max(0, Math.min(100, (sec / visibleDurationSec) * 100));
+          const leftPct = Math.max(
+            0,
+            Math.min(100, (sec / visibleDurationSec) * 100),
+          );
           const target = targetBeats.has(i);
           return (
             <Box
@@ -204,7 +219,7 @@ function CalibrationTimeline({
   );
 }
 
-export function ClapCalibrationScreen() {
+export function LatencyCalibrationScreen() {
   const stream = useObservable(model.mediaStream);
   const ctx = useObservable(model.audioContext);
   const tempo = useObservable(model.tempoInput);
@@ -371,7 +386,14 @@ export function ClapCalibrationScreen() {
   }
 
   return (
-    <Flex minH="100vh" bg="gray.950" align="center" justify="center" px={4} py={8}>
+    <Flex
+      minH="100vh"
+      bg="gray.950"
+      align="center"
+      justify="center"
+      px={4}
+      py={8}
+    >
       <Box w="100%" maxW="640px" bg="gray.900" borderRadius="2xl" p={6}>
         <Stack gap={5}>
           <Flex justify="space-between" align="center">
@@ -394,7 +416,8 @@ export function ClapCalibrationScreen() {
               Speech Sync Calibration
             </Heading>
             <Text color="gray.400" fontSize="sm" mt={1}>
-              Hear 2 bars. Listen during bar 1, then say “one, two, three, four” on bar 2.
+              Hear 2 bars. Listen during bar 1, then say “one, two, three, four”
+              on bar 2.
             </Text>
           </Box>
 
@@ -466,7 +489,8 @@ export function ClapCalibrationScreen() {
                   Align Your Speech
                 </Text>
                 <Text color="gray.400" fontSize="xs">
-                  Drag waveform left/right to line up spoken counts with bar-2 beats.
+                  Drag waveform left/right to line up spoken counts with bar-2
+                  beats.
                 </Text>
               </Flex>
 

@@ -4,7 +4,7 @@ import { useObservable } from "./observable";
 import { model } from "./state/model";
 import { system } from "./theme";
 import { SetupScreen } from "./ui/SetupScreen";
-import { ClapCalibrationScreen } from "./ui/ClapCalibrationScreen";
+import { LatencyCalibrationScreen } from "./ui/LatencyCalibrationScreen";
 import { RecordingWizard } from "./ui/RecordingWizard";
 import { FinalReview } from "./ui/FinalReview";
 
@@ -12,7 +12,7 @@ function App() {
   const screen = useObservable(model.appScreen);
 
   if (screen === "setup") return <SetupScreen />;
-  if (screen === "calibration") return <ClapCalibrationScreen />;
+  if (screen === "calibration") return <LatencyCalibrationScreen />;
   if (screen === "recording") return <RecordingWizard />;
   if (screen === "review") return <FinalReview />;
   return null;

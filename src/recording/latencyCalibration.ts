@@ -1,7 +1,7 @@
 export const CALIBRATION_TOTAL_BEATS = 8;
 export const CALIBRATION_TARGET_BEAT_INDICES = [4, 5, 6, 7] as const;
-export const CORRECTION_MIN_SEC = -0.4;
-export const CORRECTION_MAX_SEC = 0.4;
+export const CORRECTION_MIN_SEC = -0.8;
+export const CORRECTION_MAX_SEC = 0.8;
 
 export type SpeechCalibrationCapture = {
   audioBuffer: AudioBuffer;
@@ -54,7 +54,9 @@ export async function captureSpeechCalibration(
 
   const beatTracker =
     onBeat != null
-      ? createBeatTracker(ctx, beatTimesCtx, (i) => onBeat(i, CALIBRATION_TOTAL_BEATS))
+      ? createBeatTracker(ctx, beatTimesCtx, (i) =>
+          onBeat(i, CALIBRATION_TOTAL_BEATS),
+        )
       : null;
 
   const mimeType = getSupportedCalibrationMimeType();
@@ -91,10 +93,16 @@ export async function captureSpeechCalibration(
   const decoded = await ctx.decodeAudioData(raw);
   const mono = downmixToMono(decoded);
 
-  const beatTimesSec = Array.from({ length: CALIBRATION_TOTAL_BEATS }, (_, i) => {
-    return startTime + i * secPerBeat + ctx.outputLatency - recorderStartCtxTime;
-  });
-  const secondMeasureStartSec = beatTimesSec[CALIBRATION_TARGET_BEAT_INDICES[0]] ?? 0;
+  const beatTimesSec = Array.from(
+    { length: CALIBRATION_TOTAL_BEATS },
+    (_, i) => {
+      return (
+        startTime + i * secPerBeat + ctx.outputLatency - recorderStartCtxTime
+      );
+    },
+  );
+  const secondMeasureStartSec =
+    beatTimesSec[CALIBRATION_TARGET_BEAT_INDICES[0]] ?? 0;
   const secondMeasureDurationSec = 4 * secPerBeat;
 
   return {

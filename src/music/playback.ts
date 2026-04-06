@@ -2,6 +2,7 @@ import type { Chord, HarmonyLine, MidiNote } from "./types";
 import { totalBeats } from "./parse";
 import type { MonitorPlayer } from "../audio/monitorPlayer";
 import { playClick, playGuideTone, stopAllSynths } from "../audio/synths";
+import { AUDIO_SCHEDULE_LEAD_SEC } from "../transport/core";
 
 function midiToFrequency(midi: MidiNote): number {
   return 440 * Math.pow(2, (midi - 69) / 12);
@@ -62,7 +63,7 @@ export function playCountIn(
   onBeat?: (beat: number, totalBeats: number) => void,
 ): CountInResult {
   const secPerBeat = 60 / tempo;
-  const startTime = ctx.currentTime + 0.05;
+  const startTime = ctx.currentTime + AUDIO_SCHEDULE_LEAD_SEC;
   // Shift recordingStartTime forward by the device's output latency so that
   // trimOffsetSec captures the full gap between MediaRecorder.start() and when
   // the user actually *hears* beat 1. On wired audio this is ~10ms; on
@@ -106,7 +107,7 @@ export type RecordingPlaybackOpts = {
   beatsPerBar: number;
   tempo: number;
   // Pass the count-in's recordingStartTime for a grid-continuous timeline.
-  // If omitted, defaults to ctx.currentTime + 0.05.
+  // If omitted, defaults to ctx.currentTime + AUDIO_SCHEDULE_LEAD_SEC.
   startTime?: number;
   monitorPlayer?: MonitorPlayer | null;
   onBeat?: (beatIndex: number) => void;
@@ -120,7 +121,8 @@ export function startRecordingPlayback(
 ): PlaybackSession {
   const { ctx } = opts;
   const secPerBeat = 60 / opts.tempo;
-  const startTime = opts.startTime ?? ctx.currentTime + 0.05;
+  const startTime =
+    opts.startTime ?? ctx.currentTime + AUDIO_SCHEDULE_LEAD_SEC;
   const totalB = totalBeats(opts.chords);
 
   // Schedule clicks
@@ -232,7 +234,7 @@ export function playHarmonyPreview(
   tempo: number,
 ): PlaybackSession {
   const secPerBeat = 60 / tempo;
-  const startTime = ctx.currentTime + 0.05;
+  const startTime = ctx.currentTime + AUDIO_SCHEDULE_LEAD_SEC;
   const totalB = totalBeats(chords);
 
   // Click track

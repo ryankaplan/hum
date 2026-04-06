@@ -81,6 +81,13 @@ export function FinalReview() {
       ),
     [documentState, orderedTracks],
   );
+  const primaryRecordingIds = useMemo(
+    () =>
+      documentState.trackOrder.map((trackId) =>
+        model.tracksDocument.getPrimaryRecordingIdForTrack(trackId),
+      ),
+    [documentState.clipsById, documentState.trackOrder],
+  );
   const timelinesRef = useRef<TrackClip[][]>(timelines);
 
   const selection = editorState.selection;
@@ -333,12 +340,8 @@ export function FinalReview() {
   }, [
     baseDurationSec,
     ctx,
-    documentState.clipsById,
-    documentState.recordingsById,
     documentState.trackOrder,
-    documentState.tracksById,
-    orderedTracks,
-    reverbWet,
+    primaryRecordingIds,
     stopPlaybackEngine,
     trackCount,
   ]);

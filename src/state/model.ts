@@ -304,12 +304,6 @@ class AppModel {
       buildWaveformPeaks(decoded, sourceStartSec, durationSec, computedBuckets),
     );
 
-    this.tracksDocument.initializeTrackFromRecording(
-      trackId,
-      recordingId,
-      sourceStartSec,
-      durationSec,
-    );
     return true;
   }
 

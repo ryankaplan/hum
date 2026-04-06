@@ -11,6 +11,8 @@
 // start). This offset is stored with each take and applied as a negative
 // offset to the buffer start so that beat-1 of every take aligns to `when`.
 
+import { AUDIO_SCHEDULE_LEAD_SEC } from "../transport/core";
+
 export type MonitorTrack = {
   buffer: AudioBuffer;
   // How many seconds into the buffer the music actually starts
@@ -120,7 +122,10 @@ export function createMonitorPlayer(
         source.loopStart = Math.max(0, track.trimOffsetSec);
         source.loopEnd = track.buffer.duration;
         source.connect(gain);
-        source.start(ctx.currentTime + 0.05, Math.max(0, track.trimOffsetSec));
+        source.start(
+          ctx.currentTime + AUDIO_SCHEDULE_LEAD_SEC,
+          Math.max(0, track.trimOffsetSec),
+        );
         activeSources.push(source);
       }
     },

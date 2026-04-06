@@ -34,6 +34,17 @@ export function startCompositor(
     [cellW, cellH],
   ];
 
+  const frameCache = Array.from({ length: 4 }, () => {
+    const canvasEl = document.createElement("canvas");
+    canvasEl.width = cellW;
+    canvasEl.height = cellH;
+    return {
+      canvas: canvasEl,
+      ctx: canvasEl.getContext("2d"),
+      hasFrame: false,
+    };
+  });
+
   let rafId: number;
 
   function draw() {
@@ -44,9 +55,17 @@ export function startCompositor(
       const video = videos[i];
       const pos = positions[i]!;
       const active = opts?.isVideoActive?.(i) ?? true;
+      const cache = frameCache[i];
+
       if (video != null && active && video.readyState >= 2) {
-        // Cover-fit: center-crop the video into the cell
+        // Cover-fit: center-crop the video into the cell.
         drawCoverFit(ctx, video, pos[0], pos[1], cellW, cellH);
+        if (cache?.ctx != null) {
+          drawCoverFit(cache.ctx, video, 0, 0, cellW, cellH);
+          cache.hasFrame = true;
+        }
+      } else if (active && cache?.hasFrame) {
+        ctx.drawImage(cache.canvas, pos[0], pos[1], cellW, cellH);
       } else {
         ctx.fillStyle = "#111";
         ctx.fillRect(pos[0], pos[1], cellW, cellH);

@@ -20,7 +20,7 @@ export type {
   TakeRecord,
 } from "./tracksModel";
 
-export type AppScreen = "setup" | "recording" | "review";
+export type AppScreen = "setup" | "calibration" | "recording" | "review";
 
 export type PartState =
   | { status: "idle" }
@@ -124,6 +124,8 @@ class AppModel {
   readonly audioContext = new Observable<AudioContext | null>(null);
   readonly currentPartIndex = new Observable<PartIndex>(0);
   readonly permissionError = new Observable<string | null>(null);
+  readonly latencyCorrectionSec = new Observable<number>(0);
+  readonly isCalibrated = new Observable<boolean>(false);
 
   readonly partStates = new Observable<PartState[]>(
     createIdlePartStates(this.totalPartsInput.get()),
@@ -351,10 +353,21 @@ class AppModel {
       .map((state) => (state.status === "kept" ? state.blob : null));
   }
 
+  setCalibrationOffset(correctionSec: number): void {
+    this.latencyCorrectionSec.set(correctionSec);
+    this.isCalibrated.set(true);
+  }
+
+  clearCalibration(): void {
+    this.latencyCorrectionSec.set(0);
+    this.isCalibrated.set(false);
+  }
+
   resetSession(): void {
     this.currentPartIndex.set(0);
     this.partStates.set(createIdlePartStates(this.totalPartsInput.get()));
     this.permissionError.set(null);
+    this.clearCalibration();
 
     const removedTakes = this.tracks.reset(this.totalPartsInput.get());
     for (const take of removedTakes) {

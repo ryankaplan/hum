@@ -21,6 +21,8 @@ export const mediaStream = model.mediaStream;
 export const audioContext = model.audioContext;
 export const currentPartIndex = model.currentPartIndex;
 export const permissionError = model.permissionError;
+export const latencyCorrectionSec = model.latencyCorrectionSec;
+export const isCalibrated = model.isCalibrated;
 
 export const chordsInput = model.chordsInput;
 export const tempoInput = model.tempoInput;

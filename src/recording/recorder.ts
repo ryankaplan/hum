@@ -32,6 +32,7 @@ export type RecordingOpts = {
   harmonyLine: HarmonyLine | null;
   beatsPerBar: number;
   tempo: number;
+  latencyCorrectionSec?: number;
   monitorPlayer?: MonitorPlayer | null;
   callbacks?: RecordingCallbacks;
 };
@@ -46,6 +47,7 @@ export async function recordTake(opts: RecordingOpts): Promise<RecordingResult> 
     harmonyLine,
     beatsPerBar,
     tempo,
+    latencyCorrectionSec = 0,
     monitorPlayer,
     callbacks,
   } = opts;
@@ -93,7 +95,8 @@ export async function recordTake(opts: RecordingOpts): Promise<RecordingResult> 
   mediaRecorder.start(100);
   const recorderStartCtxTime = ctx.currentTime;
   callbacks?.onRecordingStart?.();
-  const trimOffsetSec = recordingStartTime - recorderStartCtxTime;
+  const baseTrimOffsetSec = recordingStartTime - recorderStartCtxTime;
+  const trimOffsetSec = baseTrimOffsetSec + latencyCorrectionSec;
 
   // 4. Start playback passing the count-in's grid-aligned recordingStartTime.
   //    This means the recording transport is continuous with the count-in —

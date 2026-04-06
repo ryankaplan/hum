@@ -10,12 +10,10 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useObservable } from "../observable";
 import {
-  consumePendingCalibrationDraft,
   MANUAL_SHIFT_MAX_SEC,
   MANUAL_SHIFT_MIN_SEC,
   manualShiftToCorrectionSec,
   runBestEffortAutoCalibration,
-  shouldAutoApplyCalibration,
   startCalibrationPreview,
   type AutoCalibrationEstimate,
   type CalibrationPreviewSession,
@@ -268,20 +266,6 @@ export function LatencyCalibrationScreen() {
   const canContinue = capture != null && !busy;
 
   useEffect(() => {
-    const draft = consumePendingCalibrationDraft();
-    if (draft == null) return;
-    setCapture(draft.capture);
-    setManualShiftSec(
-      clamp(
-        draft.suggestedManualShiftSec,
-        MANUAL_SHIFT_MIN_SEC,
-        MANUAL_SHIFT_MAX_SEC,
-      ),
-    );
-    setAutoEstimate(draft.estimate);
-  }, []);
-
-  useEffect(() => {
     function enumerate() {
       navigator.mediaDevices
         .enumerateDevices()
@@ -296,14 +280,6 @@ export function LatencyCalibrationScreen() {
       navigator.mediaDevices.removeEventListener("devicechange", enumerate);
     };
   }, []);
-
-  useEffect(() => {
-    if (stream == null) return;
-    const track = stream.getAudioTracks()[0];
-    if (track != null) {
-      setSelectedMicId(track.getSettings().deviceId ?? "");
-    }
-  }, [stream]);
 
   useEffect(() => {
     return () => {
@@ -401,12 +377,6 @@ export function LatencyCalibrationScreen() {
       setAutoEstimate(estimate);
       model.clearCalibration();
 
-      if (estimate != null && shouldAutoApplyCalibration(estimate)) {
-        model.setCalibrationOffset(estimate.correctionSec);
-        model.appScreen.set("recording");
-        return;
-      }
-
       setCapture(nextCapture);
       setManualShiftSec(
         clamp(
@@ -474,8 +444,8 @@ export function LatencyCalibrationScreen() {
               Speech Sync Calibration
             </Heading>
             <Text color={dsColors.textMuted} fontSize="sm" mt={1}>
-              Hear 2 bars. Listen during bar 1, then say “one, two, three, four”
-              on bar 2.
+              Choose your mic, then press Record. You will hear 2 bars: listen
+              during bar 1, then say “one, two, three, four” on bar 2.
             </Text>
           </Box>
 
@@ -498,6 +468,9 @@ export function LatencyCalibrationScreen() {
                 borderRadius="xl"
                 _focus={{ borderColor: dsColors.focusRing }}
               >
+                <option value="" disabled>
+                  Select microphone...
+                </option>
                 {micDevices.map((d, i) => (
                   <option key={d.deviceId} value={d.deviceId}>
                     {d.label || `Microphone ${i + 1}`}
@@ -610,9 +583,9 @@ export function LatencyCalibrationScreen() {
               onClick={handleRunCalibration}
               disabled={busy || selectedMicId === ""}
               loading={busy}
-              loadingText="Capturing…"
+              loadingText="Recording…"
             >
-              {capture == null ? "Capture Speech" : "Re-capture"}
+              {capture == null ? "Record" : "Record Again"}
             </Button>
             <Button
               {...dsOutlineButton}

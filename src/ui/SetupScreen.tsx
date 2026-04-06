@@ -246,15 +246,31 @@ function SetupCard({
 
         {parsed.length > 0 && voicing != null && (
           <Box bg={dsColors.surfaceRaised} borderRadius="xl" p={4}>
-            <Text
-              color={dsColors.textMuted}
-              fontSize="xs"
-              mb={2}
-              fontWeight="semibold"
-            >
-              ARRANGEMENT - {parsed.length} chord
-              {parsed.length !== 1 ? "s" : ""}
-            </Text>
+            <Flex justify="space-between" align="center" mb={2} gap={2}>
+              <Text
+                color={dsColors.textMuted}
+                fontSize="xs"
+                fontWeight="semibold"
+              >
+                ARRANGEMENT - {parsed.length} chord
+                {parsed.length !== 1 ? "s" : ""}
+              </Text>
+              <Button
+                {...dsOutlineButton}
+                size="xs"
+                h={7}
+                px={2.5}
+                borderRadius="full"
+                borderColor={previewing ? dsColors.focusRing : dsColors.outline}
+                color={previewing ? dsColors.accent : dsColors.textMuted}
+                onClick={previewing ? onStopPreview : onPreview}
+                aria-label={
+                  previewing ? "Stop harmony preview" : "Play harmony preview"
+                }
+              >
+                {previewing ? "■" : "▶"}
+              </Button>
+            </Flex>
             <Flex gap={2} flexWrap="wrap">
               {parsed.map((c, i) => (
                 <Box
@@ -308,19 +324,6 @@ function SetupCard({
               ))}
             </Flex>
           </Box>
-        )}
-
-        {isValid && (
-          <Button
-            {...dsOutlineButton}
-            size="md"
-            borderColor={previewing ? dsColors.focusRing : dsColors.outline}
-            color={previewing ? dsColors.accent : dsColors.textMuted}
-            onClick={previewing ? onStopPreview : onPreview}
-            w="100%"
-          >
-            {previewing ? "Stop Preview" : "Preview Harmony"}
-          </Button>
         )}
 
         {error != null && (

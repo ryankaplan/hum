@@ -10,7 +10,7 @@ import {
   Stack,
   Text,
 } from "@chakra-ui/react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useObservable } from "../observable";
 import { acquirePermissionsAndStart } from "../recording/permissions";
 import type { Meter } from "../music/types";
@@ -72,11 +72,13 @@ const METER_OPTIONS: { label: string; value: Meter }[] = [
 type SetupCardProps = {
   arrangement: ArrangementInfo;
   meterLabel: string;
+  tempoInputValue: string;
   previewing: boolean;
   starting: boolean;
   error: string | null;
   onChordsChange: (value: string) => void;
-  onTempoChange: (value: number) => void;
+  onTempoInputChange: (value: string) => void;
+  onTempoInputBlur: () => void;
   onMeterLabelChange: (label: string) => void;
   onRangeLowChange: (value: string) => void;
   onRangeHighChange: (value: string) => void;
@@ -89,11 +91,13 @@ type SetupCardProps = {
 function SetupCard({
   arrangement,
   meterLabel,
+  tempoInputValue,
   previewing,
   starting,
   error,
   onChordsChange,
-  onTempoChange,
+  onTempoInputChange,
+  onTempoInputBlur,
   onMeterLabelChange,
   onRangeLowChange,
   onRangeHighChange,
@@ -110,7 +114,6 @@ function SetupCard({
   } = arrangement;
   const {
     chordsInput: chords,
-    tempo,
     vocalRangeLow: rangeLow,
     vocalRangeHigh: rangeHigh,
     totalParts,
@@ -162,13 +165,11 @@ function SetupCard({
               <Field.Label color={dsColors.text}>Tempo (BPM)</Field.Label>
               <Input
                 type="number"
-                value={tempo}
+                value={tempoInputValue}
                 min={40}
                 max={240}
-                onChange={(e) => {
-                  const v = parseInt(e.target.value, 10);
-                  if (!isNaN(v)) onTempoChange(v);
-                }}
+                onChange={(e) => onTempoInputChange(e.target.value)}
+                onBlur={onTempoInputBlur}
                 {...controlStyles}
               />
             </Field.Root>
@@ -366,6 +367,9 @@ export function SetupScreen() {
 
   const [previewing, setPreviewing] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [tempoInputValue, setTempoInputValue] = useState(
+    String(arrangement.input.tempo),
+  );
   const previewSessionRef = useRef<PlaybackSession | null>(null);
 
   const meter = arrangement.input.meter;
@@ -373,6 +377,10 @@ export function SetupScreen() {
     METER_OPTIONS.find(
       (o) => o.value[0] === meter[0] && o.value[1] === meter[1],
     )?.label ?? "4/4";
+
+  useEffect(() => {
+    setTempoInputValue(String(arrangement.input.tempo));
+  }, [arrangement.input.tempo]);
 
   async function handlePreview() {
     const parsed = arrangement.parsedChords;
@@ -427,6 +435,32 @@ export function SetupScreen() {
     model.setArrangementInput({ totalParts: value === "2" ? 2 : 4 });
   }
 
+  function handleTempoInputChange(value: string) {
+    setTempoInputValue(value);
+    if (value.trim() === "") return;
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isNaN(parsed)) return;
+    model.setArrangementInput({ tempo: parsed });
+  }
+
+  function handleTempoInputBlur() {
+    const raw = tempoInputValue.trim();
+    if (raw === "") {
+      setTempoInputValue(String(arrangement.input.tempo));
+      return;
+    }
+    const parsed = Number.parseInt(raw, 10);
+    if (Number.isNaN(parsed)) {
+      setTempoInputValue(String(arrangement.input.tempo));
+      return;
+    }
+    const clamped = Math.min(240, Math.max(40, parsed));
+    if (clamped !== arrangement.input.tempo) {
+      model.setArrangementInput({ tempo: clamped });
+    }
+    setTempoInputValue(String(clamped));
+  }
+
   async function handleStart() {
     if (starting) return;
     setStarting(true);
@@ -440,13 +474,14 @@ export function SetupScreen() {
   const sharedCardProps = {
     arrangement,
     meterLabel,
+    tempoInputValue,
     previewing,
     starting,
     error,
     onChordsChange: (value: string) =>
       model.setArrangementInput({ chordsInput: value }),
-    onTempoChange: (value: number) =>
-      model.setArrangementInput({ tempo: value }),
+    onTempoInputChange: handleTempoInputChange,
+    onTempoInputBlur: handleTempoInputBlur,
     onMeterLabelChange: handleMeterLabelChange,
     onRangeLowChange: (value: string) =>
       model.setArrangementInput({ vocalRangeLow: value }),

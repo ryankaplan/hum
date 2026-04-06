@@ -21,7 +21,7 @@ import { model } from "../state/model";
 import { getPartLabel } from "../music/types";
 import { progressionDurationSec } from "../music/playback";
 import { startCompositor } from "../video/compositor";
-import { exportWebM } from "../video/exporter";
+import { exportVideo, getPreferredExportFormat } from "../video/exporter";
 import { createMixer } from "../audio/mixer";
 import {
   getActiveSegmentAtTime,
@@ -98,9 +98,13 @@ export function FinalReview() {
   const exporting = tracksState.export.exporting;
   const exportProgress = tracksState.export.progress;
   const exportedUrl = tracksState.export.exportedUrl;
+  const exportedFormat = tracksState.export.format;
   const volumes = tracksState.mix.volumes;
   const muted = tracksState.mix.muted;
   const reverbWet = tracksState.mix.reverbWet;
+  const preferredExportFormat = useMemo(() => getPreferredExportFormat(), []);
+  const ctaExportFormat = exportedFormat ?? preferredExportFormat;
+  const showWebmFallbackMessage = preferredExportFormat === "webm";
 
   const baseDurationSec = progressionDurationSec(chords, tempo);
   const beatSec = tempo > 0 ? 60 / tempo : 0;
@@ -640,7 +644,7 @@ export function FinalReview() {
     startPlaybackClock("export", startCtxTime, 0, timelineEndSec);
 
     try {
-      const blob = await exportWebM({
+      const result = await exportVideo({
         canvas: canvasRef.current,
         audioContext: ctx,
         mixer,
@@ -648,8 +652,12 @@ export function FinalReview() {
         onProgress: (progress) => model.tracks.updateExportProgress(progress),
       });
 
-      const nextUrl = URL.createObjectURL(blob);
-      model.tracks.completeExport(nextUrl);
+      const nextUrl = URL.createObjectURL(result.blob);
+      model.tracks.completeExport({
+        url: nextUrl,
+        format: result.format,
+        mimeType: result.mimeType,
+      });
     } catch (err) {
       console.error("Export failed", err);
       model.tracks.failOrResetExport();
@@ -662,7 +670,7 @@ export function FinalReview() {
     if (exportedUrl == null) return;
     const a = document.createElement("a");
     a.href = exportedUrl;
-    a.download = "hum-harmony.webm";
+    a.download = `hum-harmony.${ctaExportFormat}`;
     a.click();
   }
 
@@ -1113,7 +1121,7 @@ export function FinalReview() {
           {exportedUrl != null ? (
             <Stack gap={3}>
               <Button colorPalette="brand" size="lg" onClick={handleDownload}>
-                Download WebM
+                Download {formatLabel(ctaExportFormat)}
               </Button>
               <Button
                 variant="ghost"
@@ -1134,8 +1142,14 @@ export function FinalReview() {
               loading={exporting}
               loadingText="Exporting…"
             >
-              Export WebM
+              Export {formatLabel(ctaExportFormat)}
             </Button>
+          )}
+
+          {showWebmFallbackMessage && (
+            <Text color="gray.500" fontSize="xs" mt={-3}>
+              MP4 is not supported in this browser, so export will use WebM.
+            </Text>
           )}
 
           <Button
@@ -1293,4 +1307,8 @@ function formatTime(sec: number): string {
   const whole = Math.floor(rem);
   const hundredths = Math.floor((rem - whole) * 100);
   return `${mins}:${String(whole).padStart(2, "0")}.${String(hundredths).padStart(2, "0")}`;
+}
+
+function formatLabel(format: "mp4" | "webm"): string {
+  return format === "mp4" ? "MP4" : "WebM";
 }

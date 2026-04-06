@@ -28,6 +28,8 @@ export type TakeRecord = {
   trimOffsetSec: number;
 };
 
+export type ExportVideoFormat = "mp4" | "webm";
+
 export type TracksState = {
   takesById: Record<string, TakeRecord>;
   laneTakeIds: (string | null)[];
@@ -46,6 +48,8 @@ export type TracksState = {
     exporting: boolean;
     progress: number;
     exportedUrl: string | null;
+    format: ExportVideoFormat | null;
+    mimeType: string | null;
   };
 };
 
@@ -76,6 +80,8 @@ export function createEmptyTracks(totalParts: number): TracksState {
       exporting: false,
       progress: 0,
       exportedUrl: null,
+      format: null,
+      mimeType: null,
     },
   };
 }
@@ -457,6 +463,8 @@ export class TracksModel {
         ...current.export,
         exporting: true,
         progress: 0,
+        format: null,
+        mimeType: null,
       },
       editor: {
         ...current.editor,
@@ -476,7 +484,12 @@ export class TracksModel {
     }));
   }
 
-  completeExport(url: string): void {
+  completeExport(input: {
+    url: string;
+    format: ExportVideoFormat;
+    mimeType: string;
+  }): void {
+    const { url, format, mimeType } = input;
     this.setTracks((current) => {
       const prevUrl = current.export.exportedUrl;
       if (prevUrl != null && prevUrl !== url) {
@@ -490,6 +503,8 @@ export class TracksModel {
           exporting: false,
           progress: 1,
           exportedUrl: url,
+          format,
+          mimeType,
         },
       };
     });
@@ -502,6 +517,8 @@ export class TracksModel {
         ...current.export,
         exporting: false,
         progress: 0,
+        format: null,
+        mimeType: null,
       },
     }));
   }
@@ -518,6 +535,8 @@ export class TracksModel {
         export: {
           ...current.export,
           exportedUrl: null,
+          format: null,
+          mimeType: null,
         },
       };
     });

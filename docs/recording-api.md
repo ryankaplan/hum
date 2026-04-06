@@ -129,7 +129,7 @@ The compositor runs a `requestAnimationFrame` loop that draws four muted `<video
 
 A second `MediaRecorder` records the combined `MediaStream` (canvas video track + audio destination track) for the full duration of the progression. This is effectively a screen-capture of the composition pass.
 
-The output is again a WebM blob, which is offered for download.
+The exporter now prefers MP4 (`video/mp4`) when supported by `MediaRecorder` and automatically falls back to WebM when MP4 is unavailable in the current browser. The selected output format is reflected in the export/download UI.
 
 ---
 

@@ -17,7 +17,7 @@ import {
   useState,
 } from "react";
 import { useObservable } from "../observable";
-import { model } from "../state/model";
+import { model, type TrackClip } from "../state/model";
 import { getPartLabel } from "../music/types";
 import { progressionDurationSec } from "../music/playback";
 import { startCompositor } from "../video/compositor";
@@ -32,6 +32,11 @@ import {
   FRAME_READY_TIMEOUT_MS,
 } from "../transport/core";
 import {
+  type ClipAutomationLane,
+  evaluateAutomationLaneAtTime,
+  getVolumeAutomationLane,
+} from "../state/clipAutomation";
+import {
   getActiveSegmentAtTime,
   getTimelineEndSec,
   samplePeaksForSegment,
@@ -39,8 +44,6 @@ import {
 } from "./timeline";
 import type {
   EditorSelection,
-  TimelineSegment,
-  TrackTimeline,
 } from "./timeline";
 import {
   dsColors,
@@ -53,7 +56,21 @@ import {
 const TIMELINE_PX_PER_SEC = 110;
 const TIMELINE_RIGHT_PAD_PX = 48;
 const LANE_HEIGHT_PX = 72;
-const TRACK_RAIL_WIDTH_PX = 72;
+const TRACK_RAIL_WIDTH_PX = 200;
+const WAVEFORM_BARS_PER_SEC = 12;
+const WAVEFORM_BARS_MIN = 12;
+const WAVEFORM_BARS_MAX = 280;
+const WAVEFORM_BUCKETS_PER_SEC = 72;
+const VOLUME_BRUSH_RADIUS_SEC = 2;
+const VOLUME_BRUSH_GAIN_PER_PX = 1 / 180;
+const VOLUME_LINE_HIT_RADIUS_PX = 11;
+
+type VolumeBrushPreview = {
+  laneIndex: number;
+  segmentId: string;
+  startSec: number;
+  endSec: number;
+};
 
 type ActiveAudioSource = {
   source: AudioBufferSourceNode;
@@ -80,11 +97,11 @@ export function FinalReview() {
 
   const activeSourcesRef = useRef<ActiveAudioSource[]>([]);
 
-  const timelines = useMemo<TrackTimeline[]>(
+  const timelines = useMemo<TrackClip[][]>(
     () => tracksState.lanes.map((lane) => lane.clips),
     [tracksState],
   );
-  const timelinesRef = useRef<TrackTimeline[]>(timelines);
+  const timelinesRef = useRef<TrackClip[][]>(timelines);
 
   const selection = tracksState.editor.selection;
   const playheadSec = tracksState.editor.playheadSec;
@@ -96,6 +113,8 @@ export function FinalReview() {
 
   const [timelineViewportWidth, setTimelineViewportWidth] = useState(0);
   const [waveformVersion, setWaveformVersion] = useState(0);
+  const [volumeBrushPreview, setVolumeBrushPreview] =
+    useState<VolumeBrushPreview | null>(null);
 
   const exporting = tracksState.export.exporting;
   const exportProgress = tracksState.export.progress;
@@ -150,6 +169,7 @@ export function FinalReview() {
       stopAudio();
       setIsPlaying(false);
       setIsSyncingFrames(false);
+      setVolumeBrushPreview(null);
 
       if (!preservePlayhead) {
         model.tracks.setPlayhead(0);
@@ -170,13 +190,10 @@ export function FinalReview() {
       stopAudio();
 
       for (let lane = 0; lane < trackCount; lane++) {
-        const track = timelinesRef.current[lane] as
-          | Array<TimelineSegment & { takeId?: string }>
-          | undefined;
+        const track = timelinesRef.current[lane];
         if (track == null) continue;
 
         for (const segment of track) {
-          if (segment.takeId == null) continue;
           const buffer = model.getTakeAudioBuffer(segment.takeId);
           if (buffer == null) continue;
 
@@ -200,10 +217,22 @@ export function FinalReview() {
           if (cappedDuration <= 0) continue;
 
           const source = ctx.createBufferSource();
+          const clipGain = ctx.createGain();
           source.buffer = buffer;
-          model.mixer.connectSource(lane, source);
 
           const startAt = startCtxTime + (playFrom - startTimelineSec);
+          const localSegmentStartSec = Math.max(0, playFrom - segStart);
+          scheduleClipVolumeGain({
+            gain: clipGain.gain,
+            lane: getVolumeAutomationLane(segment.automation, segment.durationSec),
+            segmentDurationSec: segment.durationSec,
+            segmentStartSec: localSegmentStartSec,
+            playDurationSec: cappedDuration,
+            startAtSec: startAt,
+          });
+
+          source.connect(clipGain);
+          model.mixer.connectSource(lane, clipGain);
           source.start(startAt, sourceOffset, cappedDuration);
           activeSourcesRef.current.push({ source });
         }
@@ -226,7 +255,7 @@ export function FinalReview() {
 
   function findSegmentBySelection(
     sel: EditorSelection,
-  ): TimelineSegment | null {
+  ): TrackClip | null {
     if (sel.laneIndex == null || sel.segmentId == null) return null;
     const track = timelines[sel.laneIndex] ?? [];
     return track.find((segment) => segment.id === sel.segmentId) ?? null;
@@ -303,7 +332,7 @@ export function FinalReview() {
           ctx,
           videoEl,
           maxDurationSec: baseDurationSec,
-          waveformBuckets: 400,
+          waveformBucketsPerSec: WAVEFORM_BUCKETS_PER_SEC,
         })
         .then((ingested) => {
           if (cancelled || !ingested) return;
@@ -500,17 +529,97 @@ export function FinalReview() {
   function handleSegmentPointerDown(
     e: ReactPointerEvent<HTMLDivElement>,
     laneIndex: number,
-    segment: TimelineSegment,
+    segment: TrackClip,
   ) {
     e.stopPropagation();
     if (exporting || isPlaying || isSyncingFrames) return;
 
     model.tracks.setSelection({ laneIndex, segmentId: segment.id });
 
+    const rect = e.currentTarget.getBoundingClientRect();
+    const widthPx = Math.max(1, rect.width);
+    const heightPx = Math.max(1, rect.height);
+    const volumeLane = getVolumeAutomationLane(
+      segment.automation,
+      segment.durationSec,
+    );
+    const toLocalTimeSec = (clientX: number): number => {
+      const ratio = clamp((clientX - rect.left) / widthPx, 0, 1);
+      return ratio * segment.durationSec;
+    };
+
+    const pointerDownLocalSec = toLocalTimeSec(e.clientX);
+    const pointerDownGain = evaluateAutomationLaneAtTime(
+      volumeLane,
+      pointerDownLocalSec,
+      segment.durationSec,
+    );
+    const pointerDownY = e.clientY - rect.top;
+    const volumeLineY = gainToLineYPx(pointerDownGain, heightPx);
+    const isVolumeGesture =
+      Math.abs(pointerDownY - volumeLineY) <= VOLUME_LINE_HIT_RADIUS_PX;
+
+    if (isVolumeGesture) {
+      let lastClientY = e.clientY;
+
+      setVolumeBrushPreview({
+        laneIndex,
+        segmentId: segment.id,
+        startSec: Math.max(0, pointerDownLocalSec - VOLUME_BRUSH_RADIUS_SEC),
+        endSec: Math.min(
+          segment.durationSec,
+          pointerDownLocalSec + VOLUME_BRUSH_RADIUS_SEC,
+        ),
+      });
+
+      const onBrushMove = (event: PointerEvent) => {
+        const centerSec = toLocalTimeSec(event.clientX);
+        const deltaValue = (lastClientY - event.clientY) * VOLUME_BRUSH_GAIN_PER_PX;
+        lastClientY = event.clientY;
+
+        if (Math.abs(deltaValue) > 1e-6) {
+          model.tracks.applyClipAutomationBrush({
+            laneIndex,
+            clipId: segment.id,
+            param: "volume",
+            centerSec,
+            deltaValue,
+            radiusSec: VOLUME_BRUSH_RADIUS_SEC,
+          });
+        }
+
+        setVolumeBrushPreview({
+          laneIndex,
+          segmentId: segment.id,
+          startSec: Math.max(0, centerSec - VOLUME_BRUSH_RADIUS_SEC),
+          endSec: Math.min(
+            segment.durationSec,
+            centerSec + VOLUME_BRUSH_RADIUS_SEC,
+          ),
+        });
+      };
+
+      const onBrushUp = () => {
+        window.removeEventListener("pointermove", onBrushMove);
+        window.removeEventListener("pointerup", onBrushUp);
+        setVolumeBrushPreview((prev) =>
+          prev != null &&
+          prev.segmentId === segment.id &&
+          prev.laneIndex === laneIndex
+            ? null
+            : prev,
+        );
+      };
+
+      window.addEventListener("pointermove", onBrushMove);
+      window.addEventListener("pointerup", onBrushUp);
+      return;
+    }
+
     const startClientX = e.clientX;
     const originStartSec = segment.timelineStartSec;
 
-    const onMove = (event: PointerEvent) => {
+    const onMoveClip = (event: PointerEvent) => {
       const deltaPx = event.clientX - startClientX;
       const deltaSec = deltaPx / TIMELINE_PX_PER_SEC;
       let desiredStartSec = originStartSec + deltaSec;
@@ -522,13 +631,13 @@ export function FinalReview() {
       model.tracks.moveClip(laneIndex, segment.id, desiredStartSec);
     };
 
-    const onUp = () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
+    const onMoveClipUp = () => {
+      window.removeEventListener("pointermove", onMoveClip);
+      window.removeEventListener("pointerup", onMoveClipUp);
     };
 
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointermove", onMoveClip);
+    window.addEventListener("pointerup", onMoveClipUp);
   }
 
   function handleSeek(valueSec: number) {
@@ -823,23 +932,71 @@ export function FinalReview() {
                         <Flex
                           key={`rail-${lane}`}
                           h={`${LANE_HEIGHT_PX}px`}
-                          align="center"
+                          direction="column"
+                          align="stretch"
                           justify="center"
                           borderBottomWidth="1px"
                           borderColor="appBorderMuted"
-                          px={2}
+                          px={2.5}
+                          py={2}
+                          gap={1.5}
                         >
                           <Text
                             fontSize="10px"
                             fontWeight="medium"
                             color="appTextMuted"
-                            textAlign="center"
+                            textAlign="left"
                             lineHeight="1.25"
                             textTransform="uppercase"
                             letterSpacing="0.06em"
+                            lineClamp={1}
                           >
                             {getPartLabel(lane, trackCount)}
                           </Text>
+                          <Flex align="center" gap={1.5} minW={0}>
+                            <Button
+                              size="xs"
+                              variant="ghost"
+                              color={muted[lane] ? dsColors.errorText : dsColors.textSubtle}
+                              bg={muted[lane] ? dsColors.errorBg : "transparent"}
+                              fontWeight="bold"
+                              onClick={() => handleMuteToggle(lane)}
+                              w={7}
+                              h={6}
+                              minW={7}
+                              p={0}
+                              fontSize="11px"
+                              flexShrink={0}
+                              disabled={exporting || isSyncingFrames}
+                            >
+                              M
+                            </Button>
+                            <input
+                              type="range"
+                              className="mix-slider"
+                              min={0}
+                              max={150}
+                              step={1}
+                              value={Math.round((volumes[lane] ?? 1) * 100)}
+                              onChange={(event) =>
+                                handleVolumeChange(
+                                  lane,
+                                  parseInt(event.target.value, 10) / 100,
+                                )
+                              }
+                              disabled={exporting || isSyncingFrames}
+                            />
+                            <Text
+                              color="appTextSubtle"
+                              fontSize="10px"
+                              w={10}
+                              textAlign="right"
+                              flexShrink={0}
+                              fontVariantNumeric="tabular-nums"
+                            >
+                              {Math.round((volumes[lane] ?? 1) * 100)}%
+                            </Text>
+                          </Flex>
                         </Flex>
                       ))}
                     </Box>
@@ -901,8 +1058,11 @@ export function FinalReview() {
                                   selection.segmentId === segment.id;
 
                                 const bars = Math.max(
-                                  8,
-                                  Math.min(220, Math.floor(widthPx / 5)),
+                                  WAVEFORM_BARS_MIN,
+                                  Math.min(
+                                    WAVEFORM_BARS_MAX,
+                                    Math.round(segment.durationSec * WAVEFORM_BARS_PER_SEC),
+                                  ),
                                 );
                                 const relativeSourceStart = Math.max(
                                   0,
@@ -915,6 +1075,30 @@ export function FinalReview() {
                                   segment.durationSec,
                                   bars,
                                 );
+                                const volumeLane = getVolumeAutomationLane(
+                                  segment.automation,
+                                  segment.durationSec,
+                                );
+                                const volumeLine = buildVolumePolylinePoints(
+                                  volumeLane,
+                                  segment.durationSec,
+                                );
+                                const activeBrush =
+                                  volumeBrushPreview != null &&
+                                  volumeBrushPreview.laneIndex === lane &&
+                                  volumeBrushPreview.segmentId === segment.id
+                                    ? volumeBrushPreview
+                                    : null;
+                                const brushLeftPercent =
+                                  activeBrush == null || segment.durationSec <= 0
+                                    ? 0
+                                    : (activeBrush.startSec / segment.durationSec) * 100;
+                                const brushWidthPercent =
+                                  activeBrush == null || segment.durationSec <= 0
+                                    ? 0
+                                    : ((activeBrush.endSec - activeBrush.startSec) /
+                                        segment.durationSec) *
+                                      100;
 
                                 return (
                                   <Box
@@ -935,6 +1119,23 @@ export function FinalReview() {
                                         />
                                       ))}
                                     </Box>
+                                    {activeBrush != null && (
+                                      <Box
+                                        className="segment-volume-brush"
+                                        left={`${brushLeftPercent}%`}
+                                        w={`${Math.max(0, brushWidthPercent)}%`}
+                                      />
+                                    )}
+                                    <svg
+                                      className="segment-volume-svg"
+                                      viewBox="0 0 100 100"
+                                      preserveAspectRatio="none"
+                                    >
+                                      <polyline
+                                        className="segment-volume-line"
+                                        points={volumeLine}
+                                      />
+                                    </svg>
                                   </Box>
                                 );
                               })}
@@ -985,63 +1186,11 @@ export function FinalReview() {
               MIX
             </Text>
             <Stack gap={2}>
-              {Array.from({ length: trackCount }).map((_, i) => (
-                <Flex key={i} align="center" gap={3}>
-                  <Text
-                    color="appTextMuted"
-                    fontSize="xs"
-                    w="24"
-                    flexShrink={0}
-                    lineClamp={1}
-                  >
-                    {getPartLabel(i, trackCount)}
-                  </Text>
-                  <Button
-                    size="xs"
-                    variant="ghost"
-                    color={muted[i] ? dsColors.errorText : dsColors.textSubtle}
-                    bg={muted[i] ? dsColors.errorBg : "transparent"}
-                    fontWeight="bold"
-                    onClick={() => handleMuteToggle(i)}
-                    w={7}
-                    h={6}
-                    minW={7}
-                    p={0}
-                    fontSize="11px"
-                    flexShrink={0}
-                    disabled={exporting || isSyncingFrames}
-                  >
-                    M
-                  </Button>
-                  <input
-                    type="range"
-                    className="mix-slider"
-                    min={0}
-                    max={150}
-                    step={1}
-                    value={Math.round((volumes[i] ?? 1) * 100)}
-                    onChange={(e) =>
-                      handleVolumeChange(i, parseInt(e.target.value, 10) / 100)
-                    }
-                    disabled={exporting || isSyncingFrames}
-                  />
-                  <Text
-                    color="appTextSubtle"
-                    fontSize="xs"
-                    w={8}
-                    textAlign="right"
-                    flexShrink={0}
-                  >
-                    {Math.round((volumes[i] ?? 1) * 100)}%
-                  </Text>
-                </Flex>
-              ))}
-
               <Flex align="center" gap={3} mt={1}>
                 <Text color="appTextMuted" fontSize="xs" w="24" flexShrink={0}>
                   Reverb
                 </Text>
-                <Box w={7} flexShrink={0} />
+                <Box w={2} flexShrink={0} />
                 <input
                   type="range"
                   className="mix-slider"
@@ -1150,6 +1299,74 @@ export function FinalReview() {
   );
 }
 
+function scheduleClipVolumeGain(input: {
+  gain: AudioParam;
+  lane: ClipAutomationLane;
+  segmentDurationSec: number;
+  segmentStartSec: number;
+  playDurationSec: number;
+  startAtSec: number;
+}): void {
+  const {
+    gain,
+    lane,
+    segmentDurationSec,
+    segmentStartSec,
+    playDurationSec,
+    startAtSec,
+  } = input;
+  if (playDurationSec <= 0) return;
+
+  const localStartSec = clamp(segmentStartSec, 0, segmentDurationSec);
+  const localEndSec = clamp(
+    segmentStartSec + playDurationSec,
+    0,
+    segmentDurationSec,
+  );
+
+  const startValue = evaluateAutomationLaneAtTime(
+    lane,
+    localStartSec,
+    segmentDurationSec,
+  );
+  gain.setValueAtTime(startValue, startAtSec);
+
+  for (const point of lane.points) {
+    if (point.timeSec <= localStartSec || point.timeSec >= localEndSec) continue;
+    gain.linearRampToValueAtTime(
+      point.value,
+      startAtSec + (point.timeSec - localStartSec),
+    );
+  }
+
+  const endValue = evaluateAutomationLaneAtTime(
+    lane,
+    localEndSec,
+    segmentDurationSec,
+  );
+  gain.linearRampToValueAtTime(endValue, startAtSec + playDurationSec);
+}
+
+function buildVolumePolylinePoints(
+  lane: ClipAutomationLane,
+  durationSec: number,
+): string {
+  if (durationSec <= 0) return "0,50";
+  const sorted = [...lane.points].sort((a, b) => a.timeSec - b.timeSec);
+  return sorted
+    .map((point) => {
+      const x = clamp((point.timeSec / durationSec) * 100, 0, 100);
+      const y = clamp((1 - point.value / 2) * 100, 2, 98);
+      return `${x},${y}`;
+    })
+    .join(" ");
+}
+
+function gainToLineYPx(gain: number, heightPx: number): number {
+  const ratio = clamp(1 - gain / 2, 0, 1);
+  return ratio * heightPx;
+}
+
 function formatTime(sec: number): string {
   if (!Number.isFinite(sec) || sec < 0) return "0:00.00";
   const mins = Math.floor(sec / 60);
@@ -1169,4 +1386,8 @@ function formatLaneWarning(unavailableLanes: number[], trackCount: number): stri
     .map((lane) => getPartLabel(lane, trackCount))
     .join(", ");
   return `Some lanes were not frame-ready in time and were skipped for this run: ${labels}.`;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
 }

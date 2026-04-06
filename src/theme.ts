@@ -116,6 +116,7 @@ const config = defineConfig({
       alignItems: "center",
       cursor: "grab",
       overflow: "hidden",
+      isolation: "isolate",
     },
     ".timeline-segment:active": {
       cursor: "grabbing",
@@ -135,13 +136,40 @@ const config = defineConfig({
       height: "100%",
       padding: "0 4px",
       pointerEvents: "none",
+      position: "relative",
+      zIndex: "1",
     },
     ".segment-bar": {
-      width: "2px",
+      width: "1.5px",
       borderRadius: "999px",
       background:
         "color-mix(in srgb, var(--app-text-muted) 45%, transparent)",
       alignSelf: "center",
+    },
+    ".segment-volume-svg": {
+      position: "absolute",
+      inset: "0",
+      width: "100%",
+      height: "100%",
+      pointerEvents: "none",
+      zIndex: "3",
+    },
+    ".segment-volume-line": {
+      fill: "none",
+      stroke: "color-mix(in srgb, var(--app-accent) 76%, white)",
+      strokeWidth: "2.25",
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+      filter: "drop-shadow(0 0 2px color-mix(in srgb, var(--app-accent) 35%, transparent))",
+    },
+    ".segment-volume-brush": {
+      position: "absolute",
+      top: "0",
+      bottom: "0",
+      background:
+        "color-mix(in srgb, var(--app-accent) 18%, transparent)",
+      pointerEvents: "none",
+      zIndex: "2",
     },
     ".timeline-playhead": {
       position: "absolute",

@@ -64,6 +64,7 @@ export type RuntimeTakeMediaIngestInput = {
   videoEl: HTMLVideoElement;
   maxDurationSec: number;
   waveformBuckets?: number;
+  waveformBucketsPerSec?: number;
 };
 
 export type TakeSourceWindow = {
@@ -248,7 +249,8 @@ class AppModel {
       ctx,
       videoEl,
       maxDurationSec,
-      waveformBuckets = 400,
+      waveformBuckets,
+      waveformBucketsPerSec = 72,
     } = input;
 
     this.videoElByTakeId.set(takeId, videoEl);
@@ -276,9 +278,13 @@ class AppModel {
       sourceStartSec,
       durationSec,
     });
+    const computedBuckets = waveformBuckets ?? Math.max(
+      64,
+      Math.min(4096, Math.round(durationSec * Math.max(16, waveformBucketsPerSec))),
+    );
     this.waveformPeaksByTakeId.set(
       takeId,
-      buildWaveformPeaks(decoded, sourceStartSec, durationSec, waveformBuckets),
+      buildWaveformPeaks(decoded, sourceStartSec, durationSec, computedBuckets),
     );
 
     this.tracks.initializeTrackFromTake(

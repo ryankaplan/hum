@@ -1,5 +1,16 @@
 import { Observable } from "../observable";
 import type { Mixer } from "../audio/mixer";
+import {
+  type ClipAutomation,
+  type ClipAutomationLane,
+  type AutomationParam,
+  VOLUME_AUTOMATION_PARAM,
+  applyAutomationBrush,
+  createDefaultClipAutomation,
+  getVolumeAutomationLane,
+  splitClipAutomationAtTime,
+  withUpdatedVolumeLane,
+} from "./clipAutomation";
 
 export type TrackClip = {
   id: string;
@@ -8,6 +19,7 @@ export type TrackClip = {
   timelineStartSec: number;
   sourceStartSec: number;
   durationSec: number;
+  automation: ClipAutomation;
 };
 
 export type TrackLane = {
@@ -29,6 +41,15 @@ export type TakeRecord = {
 };
 
 export type ExportVideoFormat = "mp4" | "webm";
+
+export type ApplyClipAutomationBrushInput = {
+  laneIndex: number;
+  clipId: string;
+  param: AutomationParam;
+  centerSec: number;
+  deltaValue: number;
+  radiusSec: number;
+};
 
 export type TracksState = {
   takesById: Record<string, TakeRecord>;
@@ -137,6 +158,7 @@ export class TracksModel {
                   timelineStartSec: 0,
                   sourceStartSec: Math.max(0, sourceStartSec),
                   durationSec: Math.max(0, durationSec),
+                  automation: createDefaultClipAutomation(Math.max(0, durationSec)),
                 },
               ],
             }
@@ -180,6 +202,7 @@ export class TracksModel {
         timelineStartSec: 0,
         sourceStartSec,
         durationSec,
+        automation: createDefaultClipAutomation(durationSec),
       };
 
       const firstClip = lane.clips[0];
@@ -197,6 +220,7 @@ export class TracksModel {
                 ...firstClip,
                 sourceStartSec,
                 durationSec,
+                automation: createDefaultClipAutomation(durationSec),
               },
             ],
           }
@@ -255,11 +279,17 @@ export class TracksModel {
       const leftDuration = playheadSec - clipStart;
       const rightDuration = clipEnd - playheadSec;
       if (leftDuration <= EPSILON || rightDuration <= EPSILON) return current;
+      const splitAutomation = splitClipAutomationAtTime(
+        clip.automation,
+        leftDuration,
+        clip.durationSec,
+      );
 
       const left: TrackClip = {
         ...clip,
         id: this.makeClipId(),
         durationSec: leftDuration,
+        automation: splitAutomation.left,
       };
 
       const right: TrackClip = {
@@ -268,6 +298,7 @@ export class TracksModel {
         timelineStartSec: playheadSec,
         sourceStartSec: clip.sourceStartSec + leftDuration,
         durationSec: rightDuration,
+        automation: splitAutomation.right,
       };
 
       const nextClips = [
@@ -454,6 +485,60 @@ export class TracksModel {
     }));
 
     this.options.getMixer()?.setReverbWet(wet);
+  }
+
+  applyClipAutomationBrush(input: ApplyClipAutomationBrushInput): void {
+    if (input.param !== VOLUME_AUTOMATION_PARAM) return;
+    if (Math.abs(input.deltaValue) <= 1e-6 || input.radiusSec <= 0) return;
+
+    this.setTracks((current) => {
+      const lane = current.lanes[input.laneIndex];
+      if (lane == null) return current;
+
+      const clipIndex = lane.clips.findIndex((clip) => clip.id === input.clipId);
+      if (clipIndex < 0) return current;
+      const clip = lane.clips[clipIndex];
+      if (clip == null || clip.durationSec <= 0) return current;
+
+      const currentLane = getVolumeAutomationLane(
+        clip.automation,
+        clip.durationSec,
+      );
+      const nextLane = applyAutomationBrush({
+        lane: currentLane,
+        durationSec: clip.durationSec,
+        centerSec: input.centerSec,
+        deltaValue: input.deltaValue,
+        radiusSec: input.radiusSec,
+      });
+
+      if (isSameVolumeLane(currentLane, nextLane)) {
+        return current;
+      }
+
+      const nextClip: TrackClip = {
+        ...clip,
+        automation: withUpdatedVolumeLane(
+          clip.automation,
+          nextLane,
+          clip.durationSec,
+        ),
+      };
+
+      const nextClips = [...lane.clips];
+      nextClips[clipIndex] = nextClip;
+
+      const nextLanes = [...current.lanes];
+      nextLanes[input.laneIndex] = {
+        ...lane,
+        clips: nextClips,
+      };
+
+      return {
+        ...current,
+        lanes: nextLanes,
+      };
+    });
   }
 
   beginExport(): void {
@@ -676,4 +761,16 @@ export class TracksModel {
     this.nextClipId += 1;
     return `clip-${this.nextClipId}`;
   }
+}
+
+function isSameVolumeLane(a: ClipAutomationLane, b: ClipAutomationLane): boolean {
+  if (a.points.length !== b.points.length) return false;
+  for (let i = 0; i < a.points.length; i++) {
+    const left = a.points[i];
+    const right = b.points[i];
+    if (left == null || right == null) return false;
+    if (Math.abs(left.timeSec - right.timeSec) > 1e-6) return false;
+    if (Math.abs(left.value - right.value) > 1e-6) return false;
+  }
+  return true;
 }

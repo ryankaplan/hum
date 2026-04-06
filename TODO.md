@@ -1,7 +1,9 @@
+Chordus
+Chorum
+
 - [ ] Let user drag tracks to negative start times, to align them better
 - [ ] Better timing / singing visualization while recording, maybe just sheet music?
-- [ ] Polish whole flow
-- [ ] Pitch scores
+- [ ] Harmony polisher, 7th chords
 
 Medium
 
@@ -10,6 +12,7 @@ Medium
 Later
 
 - [ ] Sheet music editor
+- [ ] Pitch scores
 
 Done
 

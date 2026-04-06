@@ -15,27 +15,56 @@ export type MediaAssetId = string;
 export type TrackRole = "harmony" | "melody";
 
 export type TrackClip = {
+  // Generated locally by the document model and used as stable clip identity.
   id: ClipId;
+
+  // Foreign key into `tracksById` for the track that owns this clip.
   trackId: TrackId;
+
+  // Foreign key into `recordingsById` for the committed recording backing
+  // this clip.
   recordingId: RecordingId;
+
+  // Clip start in the edited timeline.
   timelineStartSec: number;
+
+  // Start offset into the underlying committed recording media.
   sourceStartSec: number;
+
   durationSec: number;
   volumeEnvelope: ClipVolumeEnvelope;
 };
 
 export type TrackRecord = {
+  // Stable ID for one arranged track in the document.
   id: TrackId;
+
+  // Used to preserve the intended musical role as part count changes.
   role: TrackRole;
+
+  // Ordered clip ids for this track. The order here is the source of truth
+  // for clip traversal and editing within the track.
   clipIds: ClipId[];
+
+  // Persisted per-track mix state.
   volume: number;
   muted: boolean;
 };
 
 export type RecordingRecord = {
+  // Stable ID for one committed recording in a track.
   id: RecordingId;
+
+  // Owning track for this recording.
   trackId: TrackId;
+
+  // Reference to the original recorded media asset. In this app that asset is
+  // the recorded video file, whose audio is later decoded for playback/editing.
   mediaAssetId: MediaAssetId;
+
+  // Seconds to skip from the beginning of the recorded media before the usable
+  // recording starts. This trims leading latency/silence so timeline playback
+  // aligns to the beat.
   trimOffsetSec: number;
 };
 
@@ -45,10 +74,15 @@ export type TracksEditorSelection = {
 };
 
 export type TracksDocumentState = {
+  // Ordered track ids for UI/rendering. This is the only place where track
+  // position is stored; callers should prefer ids elsewhere.
   trackOrder: TrackId[];
+
   tracksById: Record<TrackId, TrackRecord>;
   clipsById: Record<ClipId, TrackClip>;
   recordingsById: Record<RecordingId, RecordingRecord>;
+
+  // Global mix state that still applies across the full track document.
   reverbWet: number;
 };
 

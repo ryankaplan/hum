@@ -3,17 +3,20 @@ import { model } from "./model";
 export type {
   AppScreen,
   ArrangementInfo,
-  LaneRuntimeWaveform,
+  ExportState,
   KeepTakeInput,
+  LaneRuntimeWaveform,
   PartState,
   RuntimeTakeMediaIngestInput,
   TakeSourceWindow,
+  TakeRecord,
   TotalPartCount,
   TrackClip,
-  TrackEditorSelection,
   TrackLane,
-  TakeRecord,
-  TracksState,
+  TracksDocumentState,
+  TracksEditorSelection,
+  TracksEditorState,
+  TracksMixState,
 } from "./model";
 
 export const appScreen = model.appScreen;
@@ -36,7 +39,9 @@ export const parsedChords = model.parsedChords;
 export const harmonyVoicing = model.harmonyVoicing;
 
 export const partStates = model.partStates;
-export const tracks = model.tracks.tracks;
+export const tracksDocument = model.tracksDocument.document;
+export const tracksEditor = model.tracksEditor.editor;
+export const tracksExport = model.tracksExport;
 
 export function updatePartState(
   index: number,

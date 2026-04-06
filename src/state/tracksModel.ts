@@ -12,20 +12,18 @@ import {
   withUpdatedVolumeLane,
 } from "./clipAutomation";
 
-// Implementation idea: what if we gave lanes ids, and used laneId instead of laneIndex?
-
 export type TrackClip = {
-  // NEEDS COMMENT: how is this assigned?
+  // Generated locally by the document model and used only as timeline clip identity.
   id: string;
   laneIndex: number;
 
-  // NEEDS COMMENT: is this the id of... a blob? idk
-  // how do i find it?
+  // Foreign key into `takesById` for the kept take backing this clip.
   takeId: string;
 
-  // NEEDS COMMENT: How exactly should I read this offset?
-  // how is it different than sourceStartSec?
+  // Clip start in the edited timeline.
   timelineStartSec: number;
+
+  // Start offset into the underlying kept take media.
   sourceStartSec: number;
 
   durationSec: number;
@@ -37,23 +35,34 @@ export type TrackLane = {
   clips: TrackClip[];
 };
 
-export type TrackEditorSelection = {
+export type TracksEditorSelection = {
   laneIndex: number | null;
-  segmentId: string | null;
+  clipId: string | null;
 };
 
-// NEEDS COMMENT: Comment what this is; I think it's a single take
-// that the user did. What's blob? url? Name these audio / video as
-// appropriate. What's trimOffsetSec?
+export type TracksMixState = {
+  volumes: number[];
+  muted: boolean[];
+  reverbWet: number;
+};
+
 export type TakeRecord = {
+  // Stable ID for one kept take in a lane.
   id: string;
   laneIndex: number;
+
+  // Original recorded media for the kept take. In this app the blob is the
+  // recorded video file, and its audio track is later decoded for playback/editing.
   blob: Blob;
+
+  // Object URL created from `blob` so the recorded video can be loaded into
+  // <video> elements for preview, compositing, and review.
   url: string;
+
+  // Seconds to skip from the beginning of the recorded media before the usable
+  // take starts. This trims leading latency/silence so timeline playback aligns.
   trimOffsetSec: number;
 };
-
-export type ExportVideoFormat = "mp4" | "webm";
 
 export type ApplyClipAutomationBrushInput = {
   laneIndex: number;
@@ -64,41 +73,35 @@ export type ApplyClipAutomationBrushInput = {
   radiusSec: number;
 };
 
-export type TracksState = {
+export type TracksDocumentState = {
   takesById: Record<string, TakeRecord>;
   laneTakeIds: (string | null)[];
   lanes: TrackLane[];
-
-  // Idea: This seems like UI state. Make sure to split out user data model state
-  // vs UI state.
-  editor: {
-    selection: TrackEditorSelection;
-    playheadSec: number;
-    snapToBeat: boolean;
-  };
-  mix: {
-    volumes: number[];
-    muted: boolean[];
-    reverbWet: number;
-  };
-
-  // This seems like not TracksState, it's something separate called ExportState.
-  // Should live separately.
-  export: {
-    exporting: boolean;
-    progress: number;
-    exportedUrl: string | null;
-    format: ExportVideoFormat | null;
-    mimeType: string | null;
-  };
+  mix: TracksMixState;
 };
 
-type TracksModelOptions = {
+export type TracksEditorState = {
+  selection: TracksEditorSelection;
+  playheadSec: number;
+  snapToBeat: boolean;
+};
+
+type TracksDocumentModelOptions = {
   totalParts: number;
   getMixer: () => Mixer | null;
 };
 
-export function createEmptyTracks(totalParts: number): TracksState {
+export function createEmptyTracksMixState(totalParts: number): TracksMixState {
+  return {
+    volumes: Array.from({ length: totalParts }, () => 1),
+    muted: Array.from({ length: totalParts }, () => false),
+    reverbWet: 0.15,
+  };
+}
+
+export function createEmptyTracksDocument(
+  totalParts: number,
+): TracksDocumentState {
   return {
     takesById: {},
     laneTakeIds: Array.from({ length: totalParts }, () => null),
@@ -106,34 +109,26 @@ export function createEmptyTracks(totalParts: number): TracksState {
       laneIndex,
       clips: [],
     })),
-    editor: {
-      selection: { laneIndex: null, segmentId: null },
-      playheadSec: 0,
-      snapToBeat: false,
-    },
-    mix: {
-      volumes: Array.from({ length: totalParts }, () => 1),
-      muted: Array.from({ length: totalParts }, () => false),
-      reverbWet: 0.15,
-    },
-    export: {
-      exporting: false,
-      progress: 0,
-      exportedUrl: null,
-      format: null,
-      mimeType: null,
-    },
+    mix: createEmptyTracksMixState(totalParts),
   };
 }
 
-export class TracksModel {
+export function createEmptyTracksEditorState(): TracksEditorState {
+  return {
+    selection: { laneIndex: null, clipId: null },
+    playheadSec: 0,
+    snapToBeat: false,
+  };
+}
+
+export class TracksDocumentModel {
   private nextClipId = 0;
 
-  readonly tracks: Observable<TracksState>;
+  readonly document: Observable<TracksDocumentState>;
 
-  constructor(private options: TracksModelOptions) {
-    this.tracks = new Observable<TracksState>(
-      createEmptyTracks(options.totalParts),
+  constructor(private options: TracksDocumentModelOptions) {
+    this.document = new Observable<TracksDocumentState>(
+      createEmptyTracksDocument(options.totalParts),
     );
   }
 
@@ -142,12 +137,12 @@ export class TracksModel {
     take: TakeRecord;
     sourceStartSec: number;
     durationSec: number;
-  }): TakeRecord | null {
+  }): { replacedTake: TakeRecord | null; clipId: string | null } {
     const { laneIndex, take, sourceStartSec, durationSec } = input;
     const clipId = this.makeClipId();
     let replacedTake: TakeRecord | null = null;
 
-    this.setTracks((current) => {
+    this.setDocument((current) => {
       if (laneIndex < 0 || laneIndex >= current.lanes.length) return current;
 
       const previousTakeId = current.laneTakeIds[laneIndex];
@@ -193,17 +188,10 @@ export class TracksModel {
         takesById: nextTakesById,
         laneTakeIds: nextLaneTakeIds,
         lanes: nextLanes,
-        editor: {
-          ...current.editor,
-          selection: {
-            laneIndex,
-            segmentId: clipId,
-          },
-        },
       };
     });
 
-    return replacedTake;
+    return { replacedTake, clipId };
   }
 
   initializeTrackFromTake(
@@ -212,7 +200,7 @@ export class TracksModel {
     sourceStartSec: number,
     durationSec: number,
   ): void {
-    this.setTracks((current) => {
+    this.setDocument((current) => {
       if (laneIndex < 0 || laneIndex >= current.lanes.length) return current;
 
       const lane = current.lanes[laneIndex];
@@ -259,37 +247,26 @@ export class TracksModel {
       const nextLanes = [...current.lanes];
       nextLanes[laneIndex] = nextLane;
 
-      const hasSelection = current.editor.selection.segmentId != null;
-
       return {
         ...current,
         lanes: nextLanes,
-        editor: hasSelection
-          ? current.editor
-          : {
-              ...current.editor,
-              selection: {
-                laneIndex,
-                segmentId: nextLane.clips[0]?.id ?? null,
-              },
-            },
       };
     });
   }
 
-  splitSelectedClipAtPlayhead(): void {
-    this.setTracks((current) => {
-      const { selection, playheadSec } = current.editor;
-      if (selection.laneIndex == null || selection.segmentId == null)
-        return current;
+  splitClipAtTime(input: {
+    laneIndex: number;
+    clipId: string;
+    splitTimeSec: number;
+  }): { leftClipId: string; rightClipId: string } | null {
+    const { laneIndex, clipId, splitTimeSec } = input;
+    let result: { leftClipId: string; rightClipId: string } | null = null;
 
-      const laneIndex = selection.laneIndex;
+    this.setDocument((current) => {
       const lane = current.lanes[laneIndex];
       if (lane == null) return current;
 
-      const idx = lane.clips.findIndex(
-        (clip) => clip.id === selection.segmentId,
-      );
+      const idx = lane.clips.findIndex((clip) => clip.id === clipId);
       if (idx < 0) return current;
 
       const clip = lane.clips[idx];
@@ -299,13 +276,13 @@ export class TracksModel {
       const clipEnd = clip.timelineStartSec + clip.durationSec;
       const EPSILON = 1e-6;
       if (
-        !(playheadSec > clipStart + EPSILON && playheadSec < clipEnd - EPSILON)
+        !(splitTimeSec > clipStart + EPSILON && splitTimeSec < clipEnd - EPSILON)
       ) {
         return current;
       }
 
-      const leftDuration = playheadSec - clipStart;
-      const rightDuration = clipEnd - playheadSec;
+      const leftDuration = splitTimeSec - clipStart;
+      const rightDuration = clipEnd - splitTimeSec;
       if (leftDuration <= EPSILON || rightDuration <= EPSILON) return current;
       const splitAutomation = splitClipAutomationAtTime(
         clip.automation,
@@ -323,7 +300,7 @@ export class TracksModel {
       const right: TrackClip = {
         ...clip,
         id: this.makeClipId(),
-        timelineStartSec: playheadSec,
+        timelineStartSec: splitTimeSec,
         sourceStartSec: clip.sourceStartSec + leftDuration,
         durationSec: rightDuration,
         automation: splitAutomation.right,
@@ -342,22 +319,22 @@ export class TracksModel {
         clips: nextClips,
       };
 
+      result = {
+        leftClipId: left.id,
+        rightClipId: right.id,
+      };
+
       return {
         ...current,
         lanes: nextLanes,
-        editor: {
-          ...current.editor,
-          selection: {
-            laneIndex,
-            segmentId: right.id,
-          },
-        },
       };
     });
+
+    return result;
   }
 
   moveClip(laneIndex: number, clipId: string, desiredStartSec: number): void {
-    this.setTracks((current) => {
+    this.setDocument((current) => {
       const lane = current.lanes[laneIndex];
       if (lane == null) return current;
 
@@ -399,19 +376,15 @@ export class TracksModel {
     });
   }
 
-  deleteSelectedClip(): void {
-    this.setTracks((current) => {
-      const { selection, playheadSec } = current.editor;
-      if (selection.laneIndex == null || selection.segmentId == null)
-        return current;
+  deleteClip(input: { laneIndex: number; clipId: string }): { deleted: boolean } {
+    const { laneIndex, clipId } = input;
+    let deleted = false;
 
-      const laneIndex = selection.laneIndex;
+    this.setDocument((current) => {
       const lane = current.lanes[laneIndex];
       if (lane == null) return current;
 
-      const nextClips = lane.clips.filter(
-        (clip) => clip.id !== selection.segmentId,
-      );
+      const nextClips = lane.clips.filter((clip) => clip.id !== clipId);
       if (nextClips.length === lane.clips.length) return current;
 
       const nextLanes = [...current.lanes];
@@ -419,120 +392,26 @@ export class TracksModel {
         ...lane,
         clips: nextClips,
       };
-
-      const after = nextClips.find(
-        (clip) => clip.timelineStartSec >= playheadSec,
-      );
-      const nextSelectionId =
-        after?.id ?? nextClips[nextClips.length - 1]?.id ?? null;
+      deleted = true;
 
       return {
         ...current,
         lanes: nextLanes,
-        editor: {
-          ...current.editor,
-          selection:
-            nextSelectionId != null
-              ? { laneIndex, segmentId: nextSelectionId }
-              : { laneIndex: null, segmentId: null },
-        },
-      };
-    });
-  }
-
-  setPlayhead(sec: number): void {
-    this.setTracks((current) => ({
-      ...current,
-      editor: {
-        ...current.editor,
-        playheadSec: Math.max(0, sec),
-      },
-    }));
-  }
-
-  setSelection(selection: TrackEditorSelection): void {
-    this.setTracks((current) => ({
-      ...current,
-      editor: {
-        ...current.editor,
-        selection,
-      },
-    }));
-  }
-
-  setSnapToBeat(enabled: boolean): void {
-    this.setTracks((current) => ({
-      ...current,
-      editor: {
-        ...current.editor,
-        snapToBeat: enabled,
-      },
-    }));
-  }
-
-  setTrackVolume(laneIndex: number, volume: number): void {
-    if (laneIndex < 0 || laneIndex >= this.tracks.get().mix.volumes.length) {
-      return;
-    }
-
-    this.setTracks((current) => {
-      const nextVolumes = [...current.mix.volumes];
-      nextVolumes[laneIndex] = volume;
-      return {
-        ...current,
-        mix: {
-          ...current.mix,
-          volumes: nextVolumes,
-        },
       };
     });
 
-    this.options.getMixer()?.setTrackVolume(laneIndex, volume);
-  }
-
-  setTrackMuted(laneIndex: number, muted: boolean): void {
-    if (laneIndex < 0 || laneIndex >= this.tracks.get().mix.muted.length) {
-      return;
-    }
-
-    this.setTracks((current) => {
-      const nextMuted = [...current.mix.muted];
-      nextMuted[laneIndex] = muted;
-      return {
-        ...current,
-        mix: {
-          ...current.mix,
-          muted: nextMuted,
-        },
-      };
-    });
-
-    this.options.getMixer()?.setTrackMuted(laneIndex, muted);
-  }
-
-  setReverbWet(wet: number): void {
-    this.setTracks((current) => ({
-      ...current,
-      mix: {
-        ...current.mix,
-        reverbWet: wet,
-      },
-    }));
-
-    this.options.getMixer()?.setReverbWet(wet);
+    return { deleted };
   }
 
   applyClipAutomationBrush(input: ApplyClipAutomationBrushInput): void {
     if (input.param !== VOLUME_AUTOMATION_PARAM) return;
     if (Math.abs(input.deltaValue) <= 1e-6 || input.radiusSec <= 0) return;
 
-    this.setTracks((current) => {
+    this.setDocument((current) => {
       const lane = current.lanes[input.laneIndex];
       if (lane == null) return current;
 
-      const clipIndex = lane.clips.findIndex(
-        (clip) => clip.id === input.clipId,
-      );
+      const clipIndex = lane.clips.findIndex((clip) => clip.id === input.clipId);
       if (clipIndex < 0) return current;
       const clip = lane.clips[clipIndex];
       if (clip == null || clip.durationSec <= 0) return current;
@@ -578,96 +457,62 @@ export class TracksModel {
     });
   }
 
-  beginExport(): void {
-    this.setTracks((current) => ({
-      ...current,
-      export: {
-        ...current.export,
-        exporting: true,
-        progress: 0,
-        format: null,
-        mimeType: null,
-      },
-      editor: {
-        ...current.editor,
-        playheadSec: 0,
-      },
-    }));
-  }
+  setTrackVolume(laneIndex: number, volume: number): void {
+    if (laneIndex < 0 || laneIndex >= this.document.get().mix.volumes.length) {
+      return;
+    }
 
-  updateExportProgress(progress: number): void {
-    const clamped = Math.min(1, Math.max(0, progress));
-    this.setTracks((current) => ({
-      ...current,
-      export: {
-        ...current.export,
-        progress: clamped,
-      },
-    }));
-  }
-
-  completeExport(input: {
-    url: string;
-    format: ExportVideoFormat;
-    mimeType: string;
-  }): void {
-    const { url, format, mimeType } = input;
-    this.setTracks((current) => {
-      const prevUrl = current.export.exportedUrl;
-      if (prevUrl != null && prevUrl !== url) {
-        URL.revokeObjectURL(prevUrl);
-      }
-
+    this.setDocument((current) => {
+      const nextVolumes = [...current.mix.volumes];
+      nextVolumes[laneIndex] = volume;
       return {
         ...current,
-        export: {
-          ...current.export,
-          exporting: false,
-          progress: 1,
-          exportedUrl: url,
-          format,
-          mimeType,
+        mix: {
+          ...current.mix,
+          volumes: nextVolumes,
         },
       };
     });
+
+    this.options.getMixer()?.setTrackVolume(laneIndex, volume);
   }
 
-  failOrResetExport(): void {
-    this.setTracks((current) => ({
-      ...current,
-      export: {
-        ...current.export,
-        exporting: false,
-        progress: 0,
-        format: null,
-        mimeType: null,
-      },
-    }));
-  }
+  setTrackMuted(laneIndex: number, muted: boolean): void {
+    if (laneIndex < 0 || laneIndex >= this.document.get().mix.muted.length) {
+      return;
+    }
 
-  clearExportedUrl(): void {
-    this.setTracks((current) => {
-      const prevUrl = current.export.exportedUrl;
-      if (prevUrl != null) {
-        URL.revokeObjectURL(prevUrl);
-      }
-
+    this.setDocument((current) => {
+      const nextMuted = [...current.mix.muted];
+      nextMuted[laneIndex] = muted;
       return {
         ...current,
-        export: {
-          ...current.export,
-          exportedUrl: null,
-          format: null,
-          mimeType: null,
+        mix: {
+          ...current.mix,
+          muted: nextMuted,
         },
       };
     });
+
+    this.options.getMixer()?.setTrackMuted(laneIndex, muted);
+  }
+
+  setReverbWet(wet: number): void {
+    this.setDocument((current) => ({
+      ...current,
+      mix: {
+        ...current.mix,
+        reverbWet: wet,
+      },
+    }));
+
+    this.options.getMixer()?.setReverbWet(wet);
   }
 
   clearLane(laneIndex: number): TakeRecord | null {
     let removedTake: TakeRecord | null = null;
 
-    this.setTracks((current) => {
+    this.setDocument((current) => {
       if (laneIndex < 0 || laneIndex >= current.lanes.length) return current;
 
       const takeId = current.laneTakeIds[laneIndex];
@@ -697,11 +542,6 @@ export class TracksModel {
         laneTakeIds: nextLaneTakeIds,
         takesById: nextTakesById,
         lanes: nextLanes,
-        editor: {
-          ...current.editor,
-          selection: { laneIndex: null, segmentId: null },
-          playheadSec: 0,
-        },
       };
     });
 
@@ -711,7 +551,7 @@ export class TracksModel {
   resizeForPartCount(totalParts: number): TakeRecord[] {
     const removedTakes: TakeRecord[] = [];
 
-    this.setTracks((current) => {
+    this.setDocument((current) => {
       const currentLaneTakeIds = current.laneTakeIds.slice(0, totalParts);
       const currentLanes = current.lanes.slice(0, totalParts);
       const currentVolumes = current.mix.volumes.slice(0, totalParts);
@@ -746,21 +586,11 @@ export class TracksModel {
         }
       }
 
-      const laneHasSelection =
-        current.editor.selection.laneIndex != null &&
-        current.editor.selection.laneIndex < totalParts;
-
       return {
         ...current,
         takesById: nextTakesById,
         laneTakeIds: currentLaneTakeIds,
         lanes: currentLanes,
-        editor: {
-          ...current.editor,
-          selection: laneHasSelection
-            ? current.editor.selection
-            : { laneIndex: null, segmentId: null },
-        },
         mix: {
           ...current.mix,
           volumes: currentVolumes,
@@ -773,30 +603,67 @@ export class TracksModel {
   }
 
   reset(totalParts: number): TakeRecord[] {
-    const removedTakes = Object.values(this.tracks.get().takesById);
-
-    this.setTracks((current) => {
-      const prevUrl = current.export.exportedUrl;
-      if (prevUrl != null) {
-        URL.revokeObjectURL(prevUrl);
-      }
-      return createEmptyTracks(totalParts);
-    });
-
+    const removedTakes = Object.values(this.document.get().takesById);
+    this.document.set(createEmptyTracksDocument(totalParts));
     return removedTakes;
   }
 
-  private setTracks(updater: (current: TracksState) => TracksState): void {
-    const current = this.tracks.get();
+  private setDocument(
+    updater: (current: TracksDocumentState) => TracksDocumentState,
+  ): void {
+    const current = this.document.get();
     const next = updater(current);
     if (next !== current) {
-      this.tracks.set(next);
+      this.document.set(next);
     }
   }
 
   private makeClipId(): string {
     this.nextClipId += 1;
     return `clip-${this.nextClipId}`;
+  }
+}
+
+export class TracksEditorModel {
+  readonly editor = new Observable<TracksEditorState>(
+    createEmptyTracksEditorState(),
+  );
+
+  setPlayhead(sec: number): void {
+    this.setEditor((current) => ({
+      ...current,
+      playheadSec: Math.max(0, sec),
+    }));
+  }
+
+  setSelection(selection: TracksEditorSelection): void {
+    this.setEditor((current) => ({
+      ...current,
+      selection,
+    }));
+  }
+
+  setSnapToBeat(enabled: boolean): void {
+    this.setEditor((current) => ({
+      ...current,
+      snapToBeat: enabled,
+    }));
+  }
+
+  clearSelection(): void {
+    this.setSelection({ laneIndex: null, clipId: null });
+  }
+
+  reset(): void {
+    this.editor.set(createEmptyTracksEditorState());
+  }
+
+  private setEditor(updater: (current: TracksEditorState) => TracksEditorState) {
+    const current = this.editor.get();
+    const next = updater(current);
+    if (next !== current) {
+      this.editor.set(next);
+    }
   }
 }
 

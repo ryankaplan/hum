@@ -29,7 +29,7 @@ const VOLUME_LINE_HIT_RADIUS_PX = 11;
 
 type VolumeBrushPreview = {
   laneIndex: number;
-  segmentId: string;
+  clipId: string;
   startSec: number;
   endSec: number;
 };
@@ -93,7 +93,7 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
   function handleSegmentPointerDown(
     e: ReactPointerEvent<HTMLDivElement>,
     laneIndex: number,
-    segmentId: string,
+    clipId: string,
     segmentStartSec: number,
     segmentDurationSec: number,
     segmentAutomation: ClipAutomationLane,
@@ -101,7 +101,7 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
     e.stopPropagation();
     if (view.exporting || view.isPlaying || view.isSyncingFrames) return;
 
-    onCommand({ type: "select_segment", laneIndex, segmentId });
+    onCommand({ type: "select_segment", laneIndex, clipId });
 
     const rect = e.currentTarget.getBoundingClientRect();
     const widthPx = Math.max(1, rect.width);
@@ -128,7 +128,7 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
 
       setVolumeBrushPreview({
         laneIndex,
-        segmentId,
+        clipId,
         startSec: Math.max(0, pointerDownLocalSec - VOLUME_BRUSH_RADIUS_SEC),
         endSec: Math.min(segmentDurationSec, pointerDownLocalSec + VOLUME_BRUSH_RADIUS_SEC),
       });
@@ -142,7 +142,7 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
           onCommand({
             type: "apply_volume_brush",
             laneIndex,
-            segmentId,
+            clipId,
             centerSec,
             deltaValue,
             radiusSec: VOLUME_BRUSH_RADIUS_SEC,
@@ -151,7 +151,7 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
 
         setVolumeBrushPreview({
           laneIndex,
-          segmentId,
+          clipId,
           startSec: Math.max(0, centerSec - VOLUME_BRUSH_RADIUS_SEC),
           endSec: Math.min(segmentDurationSec, centerSec + VOLUME_BRUSH_RADIUS_SEC),
         });
@@ -161,7 +161,7 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
         window.removeEventListener("pointermove", onBrushMove);
         window.removeEventListener("pointerup", onBrushUp);
         setVolumeBrushPreview((prev) =>
-          prev != null && prev.segmentId === segmentId && prev.laneIndex === laneIndex
+          prev != null && prev.clipId === clipId && prev.laneIndex === laneIndex
             ? null
             : prev,
         );
@@ -186,7 +186,7 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
       onCommand({
         type: "move_segment",
         laneIndex,
-        segmentId,
+        clipId,
         desiredStartSec,
       });
     };
@@ -457,7 +457,7 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
                   {lane.segments.map((segment) => {
                     const leftPx = segment.timelineStartSec * TIMELINE_PX_PER_SEC;
                     const widthPx = Math.max(8, segment.durationSec * TIMELINE_PX_PER_SEC);
-                    const isSelected = view.selection.segmentId === segment.id;
+                    const isSelected = view.selection.clipId === segment.id;
 
                     const bars = Math.max(
                       WAVEFORM_BARS_MIN,
@@ -488,7 +488,7 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
                     const activeBrush =
                       volumeBrushPreview != null &&
                       volumeBrushPreview.laneIndex === lane.laneIndex &&
-                      volumeBrushPreview.segmentId === segment.id
+                      volumeBrushPreview.clipId === segment.id
                         ? volumeBrushPreview
                         : null;
                     const brushLeftPercent =

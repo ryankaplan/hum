@@ -10,7 +10,7 @@ export type TrackTimeline = TimelineSegment[];
 
 export type EditorSelection = {
   laneIndex: number | null;
-  segmentId: string | null;
+  clipId: string | null;
 };
 
 export type WaveformPeaks = number[];
@@ -89,17 +89,17 @@ export function splitSegmentAtPlayhead(
 
 export function deleteSegmentById(
   track: TrackTimeline,
-  segmentId: string,
+  clipId: string,
 ): TrackTimeline {
-  return track.filter((segment) => segment.id !== segmentId);
+  return track.filter((segment) => segment.id !== clipId);
 }
 
 export function moveSegmentWithClamp(
   track: TrackTimeline,
-  segmentId: string,
+  clipId: string,
   desiredStartSec: number,
 ): TrackTimeline {
-  const index = track.findIndex((segment) => segment.id === segmentId);
+  const index = track.findIndex((segment) => segment.id === clipId);
   if (index < 0) return track;
   const current = track[index];
   if (current == null) return track;

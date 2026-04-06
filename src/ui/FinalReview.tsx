@@ -8,13 +8,7 @@ import {
   Stack,
   Text,
 } from "@chakra-ui/react";
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useObservable } from "../observable";
 import { model, type TrackClip } from "../state/model";
 import { getPartLabel } from "../music/types";
@@ -35,13 +29,8 @@ import {
   evaluateAutomationLaneAtTime,
   getVolumeAutomationLane,
 } from "../state/clipAutomation";
-import {
-  getActiveSegmentAtTime,
-  getTimelineEndSec,
-} from "./timeline";
-import type {
-  EditorSelection,
-} from "./timeline";
+import { getActiveSegmentAtTime, getTimelineEndSec } from "./timeline";
+import type { EditorSelection } from "./timeline";
 import {
   dsOutlineButton,
   dsPrimaryButton,
@@ -60,48 +49,44 @@ type ActiveAudioSource = {
 };
 
 export function FinalReview() {
-  const tracksState = useObservable(model.tracks.tracks);
+  const documentState = useObservable(model.tracksDocument.document);
+  const editorState = useObservable(model.tracksEditor.editor);
+  const exportState = useObservable(model.tracksExport);
   const chords = useObservable(model.parsedChords);
   const tempo = useObservable(model.tempoInput);
   const ctx = useObservable(model.audioContext);
-  const trackCount = tracksState.lanes.length;
+  const trackCount = documentState.lanes.length;
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  const videoRefs = useRef<(HTMLVideoElement | null)[]>(
-    Array.from({ length: trackCount }, () => null),
-  );
   const activeVideoMaskRef = useRef<boolean[]>(
     Array.from({ length: trackCount }, () => false),
   );
   const reviewTransportRef = useRef<ReviewTransport | null>(null);
   const startRequestTokenRef = useRef(0);
-
   const activeSourcesRef = useRef<ActiveAudioSource[]>([]);
 
   const timelines = useMemo<TrackClip[][]>(
-    () => tracksState.lanes.map((lane) => lane.clips),
-    [tracksState],
+    () => documentState.lanes.map((lane) => lane.clips),
+    [documentState],
   );
   const timelinesRef = useRef<TrackClip[][]>(timelines);
 
-  const selection = tracksState.editor.selection;
-  const playheadSec = tracksState.editor.playheadSec;
-  const snapToBeat = tracksState.editor.snapToBeat;
+  const selection = editorState.selection;
+  const playheadSec = editorState.playheadSec;
+  const snapToBeat = editorState.snapToBeat;
+  const volumes = documentState.mix.volumes;
+  const muted = documentState.mix.muted;
+  const reverbWet = documentState.mix.reverbWet;
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isSyncingFrames, setIsSyncingFrames] = useState(false);
   const [syncWarning, setSyncWarning] = useState<string | null>(null);
-
   const [waveformVersion, setWaveformVersion] = useState(0);
 
-  const exporting = tracksState.export.exporting;
-  const exportProgress = tracksState.export.progress;
-  const exportedUrl = tracksState.export.exportedUrl;
-  const exportedFormat = tracksState.export.format;
-  const volumes = tracksState.mix.volumes;
-  const muted = tracksState.mix.muted;
-  const reverbWet = tracksState.mix.reverbWet;
+  const exporting = exportState.exporting;
+  const exportProgress = exportState.progress;
+  const exportedUrl = exportState.exportedUrl;
+  const exportedFormat = exportState.format;
   const preferredExportFormat = useMemo(() => getPreferredExportFormat(), []);
   const ctaExportFormat = exportedFormat ?? preferredExportFormat;
   const showWebmFallbackMessage = preferredExportFormat === "webm";
@@ -109,9 +94,7 @@ export function FinalReview() {
   const baseDurationSec = progressionDurationSec(chords, tempo);
   const beatSec = tempo > 0 ? 60 / tempo : 0;
 
-  const timelineEndSec = useMemo(() => {
-    return getTimelineEndSec(timelines);
-  }, [timelines]);
+  const timelineEndSec = useMemo(() => getTimelineEndSec(timelines), [timelines]);
 
   const beatLineTimes = useMemo(() => {
     if (beatSec <= 0 || timelineEndSec <= 0) return [] as number[];
@@ -144,7 +127,7 @@ export function FinalReview() {
       setIsSyncingFrames(false);
 
       if (!preservePlayhead) {
-        model.tracks.setPlayhead(0);
+        model.tracksEditor.setPlayhead(0);
         reviewTransportRef.current?.syncPaused(0);
       }
     },
@@ -171,8 +154,7 @@ export function FinalReview() {
 
           const segStart = segment.timelineStartSec;
           const segEnd = segment.timelineStartSec + segment.durationSec;
-          if (segEnd <= startTimelineSec || segStart >= endTimelineSec)
-            continue;
+          if (segEnd <= startTimelineSec || segStart >= endTimelineSec) continue;
 
           const playFrom = Math.max(startTimelineSec, segStart);
           const playTo = Math.min(endTimelineSec, segEnd);
@@ -225,30 +207,27 @@ export function FinalReview() {
     [],
   );
 
-  function findSegmentBySelection(
-    sel: EditorSelection,
-  ): TrackClip | null {
-    if (sel.laneIndex == null || sel.segmentId == null) return null;
+  function findSegmentBySelection(sel: EditorSelection): TrackClip | null {
+    if (sel.laneIndex == null || sel.clipId == null) return null;
     const track = timelines[sel.laneIndex] ?? [];
-    return track.find((segment) => segment.id === sel.segmentId) ?? null;
+    return track.find((segment) => segment.id === sel.clipId) ?? null;
   }
 
-  // Build video elements, mixer, compositor and decode track audio once.
   useEffect(() => {
     if (ctx == null) return;
 
     let cancelled = false;
     const videos: HTMLVideoElement[] = [];
-    const activeLaneTakeIds = tracksState.laneTakeIds;
+    const activeLaneTakeIds = documentState.laneTakeIds;
 
     model.clearRuntimeTakeMedia();
-    model.tracks.setPlayhead(0);
-    model.tracks.setSelection({ laneIndex: null, segmentId: null });
+    model.tracksEditor.setPlayhead(0);
+    model.tracksEditor.clearSelection();
     setWaveformVersion((v) => v + 1);
 
     for (let i = 0; i < trackCount; i++) {
       const takeId = activeLaneTakeIds[i];
-      const take = takeId != null ? tracksState.takesById[takeId] : null;
+      const take = takeId != null ? documentState.takesById[takeId] : null;
       const video = document.createElement("video");
       video.muted = true;
       video.playsInline = true;
@@ -257,16 +236,15 @@ export function FinalReview() {
       if (take != null) {
         video.src = take.url;
       }
-      videoRefs.current[i] = video;
       videos.push(video);
     }
 
     const mixer = createMixer(ctx, trackCount);
     for (let i = 0; i < trackCount; i++) {
-      mixer.setTrackVolume(i, tracksState.mix.volumes[i] ?? 1);
-      mixer.setTrackMuted(i, tracksState.mix.muted[i] ?? false);
+      mixer.setTrackVolume(i, volumes[i] ?? 1);
+      mixer.setTrackMuted(i, muted[i] ?? false);
     }
-    mixer.setReverbWet(tracksState.mix.reverbWet);
+    mixer.setReverbWet(reverbWet);
     model.mixer = mixer;
 
     if (canvasRef.current != null) {
@@ -287,9 +265,9 @@ export function FinalReview() {
     reviewTransportRef.current.syncPaused(0);
 
     for (let i = 0; i < trackCount; i++) {
-      const takeId = tracksState.laneTakeIds[i];
+      const takeId = documentState.laneTakeIds[i];
       if (takeId == null) continue;
-      const take = tracksState.takesById[takeId];
+      const take = documentState.takesById[takeId];
       if (take == null) continue;
 
       const videoEl = videos[i];
@@ -335,13 +313,15 @@ export function FinalReview() {
   }, [
     baseDurationSec,
     ctx,
+    documentState.laneTakeIds,
+    documentState.takesById,
+    muted,
+    reverbWet,
     stopPlaybackEngine,
     trackCount,
-    tracksState.laneTakeIds,
-    tracksState.takesById,
+    volumes,
   ]);
 
-  // Keep mixer graph in sync with UI controls after mount.
   useEffect(() => {
     const mixer = model.mixer;
     if (mixer == null) return;
@@ -352,39 +332,16 @@ export function FinalReview() {
     mixer.setReverbWet(reverbWet);
   }, [muted, reverbWet, trackCount, volumes]);
 
-  // Keep a current frame visible while paused.
   useEffect(() => {
     if (isPlaying || exporting || isSyncingFrames) return;
     reviewTransportRef.current?.syncPaused(playheadSec);
-  }, [
-    exporting,
-    isPlaying,
-    isSyncingFrames,
-    playheadSec,
-    timelines,
-    waveformVersion,
-  ]);
+  }, [exporting, isPlaying, isSyncingFrames, playheadSec, timelines, waveformVersion]);
 
-  // Ensure selection always points to an existing segment.
   useEffect(() => {
     const selected = findSegmentBySelection(selection);
     if (selected != null) return;
-
-    for (let lane = 0; lane < trackCount; lane++) {
-      const first = timelines[lane]?.[0] ?? null;
-      if (first != null) {
-        if (selection.laneIndex === lane && selection.segmentId === first.id) {
-          return;
-        }
-        model.tracks.setSelection({ laneIndex: lane, segmentId: first.id });
-        return;
-      }
-    }
-
-    if (selection.laneIndex != null || selection.segmentId != null) {
-      model.tracks.setSelection({ laneIndex: null, segmentId: null });
-    }
-  }, [selection, timelines, trackCount]);
+    model.ensureValidEditorSelection();
+  }, [selection, timelines]);
 
   useEffect(() => {
     return () => {
@@ -419,7 +376,7 @@ export function FinalReview() {
       }
 
       const startCtxTime = ctx.currentTime + AUDIO_SCHEDULE_LEAD_SEC;
-      model.tracks.setPlayhead(startTimelineSec);
+      model.tracksEditor.setPlayhead(startTimelineSec);
       startAudioFromTimeline(startCtxTime, startTimelineSec, timelineEndSec);
 
       transport.startRun({
@@ -428,12 +385,12 @@ export function FinalReview() {
         startTimelineSec,
         endTimelineSec: timelineEndSec,
         onTick: (timelineSec) => {
-          model.tracks.setPlayhead(timelineSec);
+          model.tracksEditor.setPlayhead(timelineSec);
         },
         onEnded: () => {
           stopAudio();
           setIsPlaying(false);
-          model.tracks.setPlayhead(timelineEndSec);
+          model.tracksEditor.setPlayhead(timelineEndSec);
         },
       });
       setIsPlaying(true);
@@ -450,52 +407,52 @@ export function FinalReview() {
         if (exporting || isSyncingFrames) return;
         if (selection.laneIndex == null) return;
         if (isPlaying) stopPlaybackEngine(true);
-        model.tracks.splitSelectedClipAtPlayhead();
+        model.splitSelectedClipAtPlayhead();
         return;
       }
       case "delete_selected": {
         if (exporting || isSyncingFrames) return;
-        if (selection.laneIndex == null || selection.segmentId == null) return;
+        if (selection.laneIndex == null || selection.clipId == null) return;
         if (isPlaying) stopPlaybackEngine(true);
-        model.tracks.deleteSelectedClip();
+        model.deleteSelectedClip();
         return;
       }
       case "toggle_snap": {
         if (exporting || isPlaying || isSyncingFrames) return;
-        model.tracks.setSnapToBeat(!snapToBeat);
+        model.tracksEditor.setSnapToBeat(!snapToBeat);
         return;
       }
       case "select_lane": {
         if (exporting || isSyncingFrames || isPlaying) return;
-        model.tracks.setSelection({
+        model.tracksEditor.setSelection({
           laneIndex: command.laneIndex,
-          segmentId: selection.segmentId,
+          clipId: selection.clipId,
         });
-        model.tracks.setPlayhead(command.timelineSec);
+        model.tracksEditor.setPlayhead(command.timelineSec);
         return;
       }
       case "select_segment": {
         if (exporting || isSyncingFrames || isPlaying) return;
-        model.tracks.setSelection({
+        model.tracksEditor.setSelection({
           laneIndex: command.laneIndex,
-          segmentId: command.segmentId,
+          clipId: command.clipId,
         });
         return;
       }
       case "move_segment": {
         if (exporting || isSyncingFrames || isPlaying) return;
-        model.tracks.moveClip(
+        model.tracksDocument.moveClip(
           command.laneIndex,
-          command.segmentId,
+          command.clipId,
           command.desiredStartSec,
         );
         return;
       }
       case "apply_volume_brush": {
         if (exporting || isSyncingFrames || isPlaying) return;
-        model.tracks.applyClipAutomationBrush({
+        model.tracksDocument.applyClipAutomationBrush({
           laneIndex: command.laneIndex,
-          clipId: command.segmentId,
+          clipId: command.clipId,
           param: "volume",
           centerSec: command.centerSec,
           deltaValue: command.deltaValue,
@@ -506,16 +463,16 @@ export function FinalReview() {
       case "seek": {
         if (isPlaying || exporting || isSyncingFrames) return;
         const next = Math.max(0, Math.min(command.valueSec, timelineEndSec));
-        model.tracks.setPlayhead(next);
+        model.tracksEditor.setPlayhead(next);
         return;
       }
       case "set_lane_volume": {
-        model.tracks.setTrackVolume(command.laneIndex, command.value);
+        model.tracksDocument.setTrackVolume(command.laneIndex, command.value);
         return;
       }
       case "toggle_lane_mute": {
         const nextMuted = !(muted[command.laneIndex] ?? false);
-        model.tracks.setTrackMuted(command.laneIndex, nextMuted);
+        model.tracksDocument.setTrackMuted(command.laneIndex, nextMuted);
         return;
       }
       default:
@@ -524,7 +481,7 @@ export function FinalReview() {
   }
 
   function handleReverbChange(wet: number) {
-    model.tracks.setReverbWet(wet);
+    model.tracksDocument.setReverbWet(wet);
   }
 
   function handleRedoPart(index: number) {
@@ -540,7 +497,7 @@ export function FinalReview() {
     if (timelineEndSec <= 0) return;
 
     stopPlaybackEngine(false);
-    model.tracks.beginExport();
+    model.beginExport();
     setSyncWarning(null);
     const requestToken = startRequestTokenRef.current + 1;
     startRequestTokenRef.current = requestToken;
@@ -551,7 +508,7 @@ export function FinalReview() {
       if (startRequestTokenRef.current !== requestToken) return;
       const transport = reviewTransportRef.current;
       if (transport == null) {
-        model.tracks.failOrResetExport();
+        model.failOrResetExport();
         return;
       }
       if (unavailableLanes.length > 0) {
@@ -566,10 +523,10 @@ export function FinalReview() {
         startTimelineSec: 0,
         endTimelineSec: timelineEndSec,
         onTick: (timelineSec) => {
-          model.tracks.setPlayhead(timelineSec);
+          model.tracksEditor.setPlayhead(timelineSec);
         },
         onEnded: () => {
-          model.tracks.setPlayhead(timelineEndSec);
+          model.tracksEditor.setPlayhead(timelineEndSec);
         },
       });
 
@@ -578,18 +535,18 @@ export function FinalReview() {
         audioContext: ctx,
         mixer,
         durationMs: timelineEndSec * 1000,
-        onProgress: (progress) => model.tracks.updateExportProgress(progress),
+        onProgress: (progress) => model.updateExportProgress(progress),
       });
 
       const nextUrl = URL.createObjectURL(result.blob);
-      model.tracks.completeExport({
+      model.completeExport({
         url: nextUrl,
         format: result.format,
         mimeType: result.mimeType,
       });
     } catch (err) {
       console.error("Export failed", err);
-      model.tracks.failOrResetExport();
+      model.failOrResetExport();
     } finally {
       if (startRequestTokenRef.current === requestToken) {
         setIsSyncingFrames(false);
@@ -619,6 +576,7 @@ export function FinalReview() {
     selection.laneIndex != null &&
     getActiveSegmentAtTime(timelines[selection.laneIndex] ?? [], playheadSec) !=
       null;
+
   const tracksEditorView = useMemo<TracksEditorView>(() => {
     return {
       lanes: timelines.map((segments, laneIndex) => {
@@ -648,22 +606,22 @@ export function FinalReview() {
       canDelete,
     };
   }, [
-    timelines,
-    trackCount,
-    volumes,
-    muted,
-    selection,
-    playheadSec,
-    timelineEndSec,
     beatLineTimes,
-    snapToBeat,
     beatSec,
+    canDelete,
+    canSplit,
     exporting,
     isPlaying,
     isSyncingFrames,
+    muted,
+    playheadSec,
+    selection,
+    snapToBeat,
     syncWarning,
-    canSplit,
-    canDelete,
+    timelineEndSec,
+    timelines,
+    trackCount,
+    volumes,
   ]);
 
   return (
@@ -781,7 +739,7 @@ export function FinalReview() {
                 variant="ghost"
                 color="appTextMuted"
                 onClick={() => {
-                  model.tracks.clearExportedUrl();
+                  model.clearExportedUrl();
                 }}
               >
                 Export Again
@@ -817,7 +775,6 @@ export function FinalReview() {
           </Button>
         </Stack>
       </Box>
-
     </Flex>
   );
 }

@@ -7,18 +7,36 @@ import type { Chord, HarmonyVoicing, Meter, PartIndex } from "../music/types";
 import type { Mixer } from "../audio/mixer";
 import type { CompositorHandle } from "../video/compositor";
 import { buildWaveformPeaks } from "../ui/timeline";
-import { TracksModel } from "./tracksModel";
-import type { TakeRecord } from "./tracksModel";
+import {
+  TracksDocumentModel,
+  TracksEditorModel,
+  type TakeRecord,
+  type TracksDocumentState,
+  type TracksEditorSelection,
+} from "./tracksModel";
 
 type WaveformPeaks = number[];
 
 export type {
+  ApplyClipAutomationBrushInput,
   TrackClip,
   TrackLane,
-  TrackEditorSelection,
-  TracksState,
   TakeRecord,
+  TracksDocumentState,
+  TracksEditorSelection,
+  TracksEditorState,
+  TracksMixState,
 } from "./tracksModel";
+
+export type ExportVideoFormat = "mp4" | "webm";
+
+export type ExportState = {
+  exporting: boolean;
+  progress: number;
+  exportedUrl: string | null;
+  format: ExportVideoFormat | null;
+  mimeType: string | null;
+};
 
 export type AppScreen = "setup" | "calibration" | "recording" | "review";
 
@@ -88,6 +106,16 @@ function createIdlePartStates(totalParts: number): PartState[] {
   }));
 }
 
+function createEmptyExportState(): ExportState {
+  return {
+    exporting: false,
+    progress: 0,
+    exportedUrl: null,
+    format: null,
+    mimeType: null,
+  };
+}
+
 class AppModel {
   private nextTakeId = 0;
   private audioBuffersByTakeId = new Map<string, AudioBuffer>();
@@ -136,14 +164,18 @@ class AppModel {
     this.computeArrangementInfo(),
   );
 
+  readonly tracksExport = new Observable<ExportState>(createEmptyExportState());
+
   // Mutable runtime systems remain exposed.
   mixer: Mixer | null = null;
   compositor: CompositorHandle | null = null;
 
-  readonly tracks = new TracksModel({
+  readonly tracksDocument = new TracksDocumentModel({
     totalParts: this.totalPartsInput.get(),
     getMixer: () => this.mixer,
   });
+
+  readonly tracksEditor = new TracksEditorModel();
 
   readonly parsedChords = new Derived<Chord[]>(
     () => this.arrangementInfo.get().parsedChords,
@@ -225,12 +257,19 @@ class AppModel {
       trimOffsetSec,
     };
 
-    const replacedTake = this.tracks.stageKeptTake({
+    const { replacedTake, clipId } = this.tracksDocument.stageKeptTake({
       laneIndex,
       take,
       sourceStartSec: Math.max(0, trimOffsetSec),
       durationSec: Math.max(0, arrangement.progressionDurationSec),
     });
+
+    if (clipId != null) {
+      this.tracksEditor.setSelection({
+        laneIndex,
+        clipId,
+      });
+    }
 
     if (replacedTake != null) {
       URL.revokeObjectURL(replacedTake.url);
@@ -258,7 +297,7 @@ class AppModel {
     const raw = await blob.arrayBuffer();
     const decoded = await ctx.decodeAudioData(raw);
 
-    const current = this.tracks.tracks.get();
+    const current = this.tracksDocument.document.get();
     if (current.laneTakeIds[laneIndex] !== takeId) {
       return false;
     }
@@ -287,7 +326,7 @@ class AppModel {
       buildWaveformPeaks(decoded, sourceStartSec, durationSec, computedBuckets),
     );
 
-    this.tracks.initializeTrackFromTake(
+    this.tracksDocument.initializeTrackFromTake(
       laneIndex,
       takeId,
       sourceStartSec,
@@ -313,7 +352,7 @@ class AppModel {
   }
 
   getLaneRuntimeWaveform(laneIndex: number): LaneRuntimeWaveform {
-    const takeId = this.tracks.tracks.get().laneTakeIds[laneIndex];
+    const takeId = this.tracksDocument.document.get().laneTakeIds[laneIndex];
     if (takeId == null) return null;
 
     const peaks = this.getTakeWaveform(takeId);
@@ -341,12 +380,150 @@ class AppModel {
     this.takeSourceWindowByTakeId.delete(takeId);
   }
 
+  splitSelectedClipAtPlayhead(): void {
+    const editor = this.tracksEditor.editor.get();
+    const { laneIndex, clipId } = editor.selection;
+    if (laneIndex == null || clipId == null) return;
+
+    const result = this.tracksDocument.splitClipAtTime({
+      laneIndex,
+      clipId,
+      splitTimeSec: editor.playheadSec,
+    });
+
+    if (result != null) {
+      this.tracksEditor.setSelection({
+        laneIndex,
+        clipId: result.rightClipId,
+      });
+    }
+  }
+
+  deleteSelectedClip(): void {
+    const editor = this.tracksEditor.editor.get();
+    const { laneIndex, clipId } = editor.selection;
+    if (laneIndex == null || clipId == null) return;
+
+    const { deleted } = this.tracksDocument.deleteClip({ laneIndex, clipId });
+    if (!deleted) return;
+
+    const nextLane = this.tracksDocument.document.get().lanes[laneIndex];
+    const nextClips = nextLane?.clips ?? [];
+    const after = nextClips.find(
+      (clip) => clip.timelineStartSec >= editor.playheadSec,
+    );
+    const nextSelectionClipId =
+      after?.id ?? nextClips[nextClips.length - 1]?.id ?? null;
+
+    if (nextSelectionClipId != null) {
+      this.tracksEditor.setSelection({
+        laneIndex,
+        clipId: nextSelectionClipId,
+      });
+      return;
+    }
+
+    this.tracksEditor.clearSelection();
+  }
+
+  ensureValidEditorSelection(): void {
+    const document = this.tracksDocument.document.get();
+    const selection = this.tracksEditor.editor.get().selection;
+
+    if (this.findClipBySelection(document, selection) != null) {
+      return;
+    }
+
+    for (let lane = 0; lane < document.lanes.length; lane++) {
+      const first = document.lanes[lane]?.clips[0] ?? null;
+      if (first != null) {
+        this.tracksEditor.setSelection({ laneIndex: lane, clipId: first.id });
+        return;
+      }
+    }
+
+    this.tracksEditor.clearSelection();
+  }
+
+  beginExport(): void {
+    this.setTracksExport((current) => ({
+      ...current,
+      exporting: true,
+      progress: 0,
+      format: null,
+      mimeType: null,
+    }));
+  }
+
+  updateExportProgress(progress: number): void {
+    const clamped = Math.min(1, Math.max(0, progress));
+    this.setTracksExport((current) => ({
+      ...current,
+      progress: clamped,
+    }));
+  }
+
+  completeExport(input: {
+    url: string;
+    format: ExportVideoFormat;
+    mimeType: string;
+  }): void {
+    const { url, format, mimeType } = input;
+    this.setTracksExport((current) => {
+      const prevUrl = current.exportedUrl;
+      if (prevUrl != null && prevUrl !== url) {
+        URL.revokeObjectURL(prevUrl);
+      }
+
+      return {
+        ...current,
+        exporting: false,
+        progress: 1,
+        exportedUrl: url,
+        format,
+        mimeType,
+      };
+    });
+  }
+
+  failOrResetExport(): void {
+    this.setTracksExport((current) => ({
+      ...current,
+      exporting: false,
+      progress: 0,
+      format: null,
+      mimeType: null,
+    }));
+  }
+
+  clearExportedUrl(): void {
+    this.setTracksExport((current) => {
+      const prevUrl = current.exportedUrl;
+      if (prevUrl != null) {
+        URL.revokeObjectURL(prevUrl);
+      }
+
+      return {
+        ...current,
+        exportedUrl: null,
+        format: null,
+        mimeType: null,
+      };
+    });
+  }
+
   redoPart(index: number): void {
     this.updatePartState(index, { status: "idle" });
     this.currentPartIndex.set(index);
     this.appScreen.set("recording");
 
-    const removedTake = this.tracks.clearLane(index);
+    const removedTake = this.tracksDocument.clearLane(index);
+    const selection = this.tracksEditor.editor.get().selection;
+    if (selection.laneIndex === index) {
+      this.tracksEditor.clearSelection();
+      this.tracksEditor.setPlayhead(0);
+    }
+
     if (removedTake != null) {
       URL.revokeObjectURL(removedTake.url);
       this.removeTakeRuntimeMedia(removedTake.id);
@@ -370,17 +547,21 @@ class AppModel {
   }
 
   resetSession(): void {
+    const totalParts = this.totalPartsInput.get();
+
     this.currentPartIndex.set(0);
-    this.partStates.set(createIdlePartStates(this.totalPartsInput.get()));
+    this.partStates.set(createIdlePartStates(totalParts));
     this.permissionError.set(null);
     this.clearCalibration();
 
-    const removedTakes = this.tracks.reset(this.totalPartsInput.get());
+    const removedTakes = this.tracksDocument.reset(totalParts);
     for (const take of removedTakes) {
       URL.revokeObjectURL(take.url);
     }
 
     this.clearRuntimeTakeMedia();
+    this.tracksEditor.reset();
+    this.resetExportState();
 
     this.mixer?.dispose();
     this.mixer = null;
@@ -439,10 +620,16 @@ class AppModel {
     );
     this.currentPartIndex.set(clampedPartIndex);
 
-    const removedTakes = this.tracks.resizeForPartCount(totalParts);
+    const removedTakes = this.tracksDocument.resizeForPartCount(totalParts);
+
     for (const take of removedTakes) {
       URL.revokeObjectURL(take.url);
       this.removeTakeRuntimeMedia(take.id);
+    }
+
+    const selection = this.tracksEditor.editor.get().selection;
+    if (selection.laneIndex != null && selection.laneIndex >= totalParts) {
+      this.tracksEditor.clearSelection();
     }
   }
 
@@ -455,6 +642,36 @@ class AppModel {
       next.push({ status: "idle" });
     }
     return next;
+  }
+
+  private findClipBySelection(
+    document: TracksDocumentState,
+    selection: TracksEditorSelection,
+  ) {
+    if (selection.laneIndex == null || selection.clipId == null) {
+      return null;
+    }
+    const lane = document.lanes[selection.laneIndex] ?? null;
+    if (lane == null) return null;
+    return lane.clips.find((clip) => clip.id === selection.clipId) ?? null;
+  }
+
+  private resetExportState(): void {
+    const prevUrl = this.tracksExport.get().exportedUrl;
+    if (prevUrl != null) {
+      URL.revokeObjectURL(prevUrl);
+    }
+    this.tracksExport.set(createEmptyExportState());
+  }
+
+  private setTracksExport(
+    updater: (current: ExportState) => ExportState,
+  ): void {
+    const current = this.tracksExport.get();
+    const next = updater(current);
+    if (next !== current) {
+      this.tracksExport.set(next);
+    }
   }
 
   private makeTakeId(): string {

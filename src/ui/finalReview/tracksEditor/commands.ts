@@ -3,12 +3,12 @@ export type TracksEditorCommand =
   | { type: "delete_selected" }
   | { type: "toggle_snap" }
   | { type: "select_lane"; laneIndex: number; timelineSec: number }
-  | { type: "select_segment"; laneIndex: number; segmentId: string }
-  | { type: "move_segment"; laneIndex: number; segmentId: string; desiredStartSec: number }
+  | { type: "select_segment"; laneIndex: number; clipId: string }
+  | { type: "move_segment"; laneIndex: number; clipId: string; desiredStartSec: number }
   | {
       type: "apply_volume_brush";
       laneIndex: number;
-      segmentId: string;
+      clipId: string;
       centerSec: number;
       deltaValue: number;
       radiusSec: number;

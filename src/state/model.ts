@@ -8,6 +8,7 @@ import {
   createDefaultArrangementDocState,
   parseArrangementDocState,
 } from "./arrangementModel";
+import { createShortUuid } from "./id";
 import type {
   ArrangementDocState,
   ArrangementInfo as DerivedArrangementInfo,
@@ -119,8 +120,6 @@ function createEmptyExportState(): ExportState {
 }
 
 class AppModel {
-  private nextRecordingId = 0;
-  private nextMediaAssetId = 0;
   private mediaBlobsByAssetId = new Map<MediaAssetId, Blob>();
   private objectUrlsByAssetId = new Map<MediaAssetId, string>();
   private audioBuffersByRecordingId = new Map<RecordingId, AudioBuffer>();
@@ -642,13 +641,11 @@ class AppModel {
   }
 
   private makeRecordingId(): RecordingId {
-    this.nextRecordingId += 1;
-    return `recording-${this.nextRecordingId}`;
+    return `recording-${createShortUuid()}`;
   }
 
   private makeMediaAssetId(): MediaAssetId {
-    this.nextMediaAssetId += 1;
-    return `media-asset-${this.nextMediaAssetId}`;
+    return `media-asset-${createShortUuid()}`;
   }
 }
 

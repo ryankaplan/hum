@@ -6,6 +6,7 @@ import {
   createDefaultClipVolumeEnvelope,
   splitClipVolumeEnvelopeAtTime,
 } from "./clipAutomation";
+import { createShortUuid } from "./id";
 
 export type TrackId = string;
 export type ClipId = string;
@@ -154,9 +155,6 @@ export function createEmptyTracksEditorState(): TracksEditorState {
 }
 
 export class TracksDocumentModel {
-  private nextTrackId = 0;
-  private nextClipId = 0;
-
   readonly document: Observable<TracksDocumentState>;
 
   constructor(private options: TracksDocumentModelOptions) {
@@ -742,13 +740,11 @@ export class TracksDocumentModel {
   }
 
   private makeTrackId(): TrackId {
-    this.nextTrackId += 1;
-    return `track-${this.nextTrackId}`;
+    return `track-${createShortUuid()}`;
   }
 
   private makeClipId(): ClipId {
-    this.nextClipId += 1;
-    return `clip-${this.nextClipId}`;
+    return `clip-${createShortUuid()}`;
   }
 }
 

@@ -49,6 +49,7 @@ export function SetupScreen() {
   const error = useObservable(model.permissionError);
 
   const [previewing, setPreviewing] = useState(false);
+  const [starting, setStarting] = useState(false);
   const previewSessionRef = useRef<PlaybackSession | null>(null);
 
   async function handlePreview() {
@@ -90,6 +91,16 @@ export function SetupScreen() {
 
   function handlePartCountChange(e: React.ChangeEvent<HTMLSelectElement>) {
     model.setArrangementInput({ totalParts: e.target.value === "2" ? 2 : 4 });
+  }
+
+  async function handleStart() {
+    if (starting) return;
+    setStarting(true);
+    try {
+      await acquirePermissionsAndStart();
+    } finally {
+      setStarting(false);
+    }
   }
 
   const meterLabel =
@@ -334,12 +345,20 @@ export function SetupScreen() {
           <Button
             colorPalette="brand"
             size="lg"
-            onClick={acquirePermissionsAndStart}
-            disabled={!isValid}
+            onClick={handleStart}
+            disabled={!isValid || starting}
+            loading={starting}
+            loadingText="Starting calibration…"
             w="100%"
           >
             Start Calibration
           </Button>
+
+          {starting && (
+            <Text color="gray.500" fontSize="xs" textAlign="center">
+              Listen for bar 1, then say “one, two, three, four” on bar 2.
+            </Text>
+          )}
 
           {!isValid && parsed.length === 0 && (
             <Text color="gray.600" fontSize="xs" textAlign="center">

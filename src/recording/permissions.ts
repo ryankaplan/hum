@@ -1,4 +1,9 @@
 import { model } from "../state/model";
+import {
+  runBestEffortAutoCalibration,
+  setPendingCalibrationDraft,
+  shouldAutoApplyCalibration,
+} from "./latencyCalibration";
 
 // Called when the user clicks "Start Recording" on the setup screen.
 // Acquires camera + mic, sets up AudioContext, then transitions to calibration.
@@ -47,6 +52,31 @@ export async function acquirePermissionsAndStart(): Promise<void> {
   model.audioContext.set(ctx);
 
   model.resetSession();
+  setPendingCalibrationDraft(null);
+
+  try {
+    const { capture, estimate } = await runBestEffortAutoCalibration({
+      ctx,
+      stream,
+      tempo: model.tempoInput.get(),
+    });
+
+    if (shouldAutoApplyCalibration(estimate)) {
+      model.setCalibrationOffset(estimate.correctionSec);
+      model.appScreen.set("recording");
+      return;
+    }
+
+    setPendingCalibrationDraft({
+      capture,
+      suggestedManualShiftSec: estimate?.manualShiftSec ?? 0,
+      estimate,
+    });
+  } catch (err) {
+    console.warn("Auto calibration attempt failed; falling back to manual.", err);
+    setPendingCalibrationDraft(null);
+  }
+
   model.appScreen.set("calibration");
 }
 

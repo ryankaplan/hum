@@ -10,18 +10,18 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useObservable } from "../observable";
 import {
-  captureSpeechCalibration,
-  CORRECTION_MAX_SEC,
-  CORRECTION_MIN_SEC,
+  consumePendingCalibrationDraft,
+  MANUAL_SHIFT_MAX_SEC,
+  MANUAL_SHIFT_MIN_SEC,
   manualShiftToCorrectionSec,
+  runBestEffortAutoCalibration,
+  shouldAutoApplyCalibration,
   startCalibrationPreview,
+  type AutoCalibrationEstimate,
   type CalibrationPreviewSession,
   type SpeechCalibrationCapture,
 } from "../recording/latencyCalibration";
 import { model } from "../state/model";
-
-const MIN_MANUAL_SHIFT_SEC = -CORRECTION_MAX_SEC;
-const MAX_MANUAL_SHIFT_SEC = -CORRECTION_MIN_SEC;
 
 type CalibrationTimelineProps = {
   capture: SpeechCalibrationCapture;
@@ -141,8 +141,8 @@ function CalibrationTimeline({
       onShiftChange(
         clamp(
           startShiftSec + deltaSec,
-          MIN_MANUAL_SHIFT_SEC,
-          MAX_MANUAL_SHIFT_SEC,
+          MANUAL_SHIFT_MIN_SEC,
+          MANUAL_SHIFT_MAX_SEC,
         ),
       );
     };
@@ -232,6 +232,9 @@ export function LatencyCalibrationScreen() {
   const [manualShiftSec, setManualShiftSec] = useState(0);
   const [previewPlaying, setPreviewPlaying] = useState(false);
   const [captureBeat, setCaptureBeat] = useState(-1);
+  const [autoEstimate, setAutoEstimate] = useState<AutoCalibrationEstimate | null>(
+    null,
+  );
 
   const previewSessionRef = useRef<CalibrationPreviewSession | null>(null);
 
@@ -242,6 +245,20 @@ export function LatencyCalibrationScreen() {
 
   const correctionSec = manualShiftToCorrectionSec(manualShiftSec);
   const canContinue = capture != null && !busy;
+
+  useEffect(() => {
+    const draft = consumePendingCalibrationDraft();
+    if (draft == null) return;
+    setCapture(draft.capture);
+    setManualShiftSec(
+      clamp(
+        draft.suggestedManualShiftSec,
+        MANUAL_SHIFT_MIN_SEC,
+        MANUAL_SHIFT_MAX_SEC,
+      ),
+    );
+    setAutoEstimate(draft.estimate);
+  }, []);
 
   useEffect(() => {
     function enumerate() {
@@ -290,6 +307,8 @@ export function LatencyCalibrationScreen() {
       durationSec: capture.durationSec,
       tempo,
       manualShiftSec,
+      previewSpeechGain: capture.previewSpeechGain,
+      previewClickGain: capture.previewClickGain,
     });
     setPreviewPlaying(true);
   }
@@ -324,6 +343,7 @@ export function LatencyCalibrationScreen() {
       setCapture(null);
       setManualShiftSec(0);
       setCaptureBeat(-1);
+      setAutoEstimate(null);
       model.clearCalibration();
       model.mediaStream.set(nextStream);
       setSelectedMicId(deviceId);
@@ -339,24 +359,40 @@ export function LatencyCalibrationScreen() {
     setBusy(true);
     setError(null);
     setCaptureBeat(-1);
+    setAutoEstimate(null);
 
     try {
-      const nextCapture = await captureSpeechCalibration({
+      const { capture: nextCapture, estimate } = await runBestEffortAutoCalibration({
         ctx,
         stream,
         tempo,
         onBeat: (beat) => setCaptureBeat(beat),
       });
-      setCapture(nextCapture);
-      setManualShiftSec(0);
       setCaptureBeat(-1);
+      setAutoEstimate(estimate);
       model.clearCalibration();
+
+      if (shouldAutoApplyCalibration(estimate)) {
+        model.setCalibrationOffset(estimate.correctionSec);
+        model.appScreen.set("recording");
+        return;
+      }
+
+      setCapture(nextCapture);
+      setManualShiftSec(
+        clamp(
+          estimate?.manualShiftSec ?? 0,
+          MANUAL_SHIFT_MIN_SEC,
+          MANUAL_SHIFT_MAX_SEC,
+        ),
+      );
     } catch (err) {
       console.error("Calibration capture failed", err);
       setError("Capture failed. Please try again in a quieter environment.");
       setCapture(null);
       setManualShiftSec(0);
       setCaptureBeat(-1);
+      setAutoEstimate(null);
       model.clearCalibration();
     } finally {
       setBusy(false);
@@ -514,6 +550,26 @@ export function LatencyCalibrationScreen() {
                   </Text>
                 </Text>
               </Flex>
+
+              {autoEstimate != null && (
+                <Box
+                  mt={3}
+                  bg="blackAlpha.500"
+                  border="1px solid"
+                  borderColor="gray.700"
+                  borderRadius="md"
+                  p={2}
+                >
+                  <Text color="gray.300" fontSize="xs">
+                    Auto estimate:{" "}
+                    <Text as="span" color="white" fontWeight="semibold">
+                      {Math.round(autoEstimate.manualShiftSec * 1000)} ms
+                    </Text>{" "}
+                    ({Math.round(autoEstimate.confidence * 100)}% confidence).
+                    Fine-tune if it sounds off.
+                  </Text>
+                </Box>
+              )}
 
               <Box mt={4}>
                 <CalibrationTimeline

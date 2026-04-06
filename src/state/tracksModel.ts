@@ -688,6 +688,10 @@ export class TracksDocumentModel {
     return removedRecordings;
   }
 
+  replaceDocument(document: TracksDocumentState): void {
+    this.document.set(document);
+  }
+
   private collectRemovedTrackRecordings(
     current: TracksDocumentState,
     trackId: TrackId,

@@ -46,7 +46,7 @@ export async function acquirePermissionsAndStart(): Promise<void> {
   }
   model.audioContext.set(ctx);
 
-  model.resetSession();
+  model.resetRuntimeSession();
   if (shouldSkipCalibrationFromUrl()) {
     // Debug path: bypass calibration and use zero correction.
     model.setCalibrationOffset(0);

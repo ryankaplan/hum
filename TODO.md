@@ -1,3 +1,7 @@
+hum
+
+harmome
+
 Chordus
 Chorum
 

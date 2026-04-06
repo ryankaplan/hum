@@ -17,6 +17,7 @@ import type {
 import {
   TracksDocumentModel,
   TracksEditorModel,
+  createEmptyTracksDocument,
   type ApplyClipVolumeBrushInput,
   type ClipId,
   type MediaAssetId,
@@ -103,9 +104,35 @@ export type TrackRuntimeWaveform = {
   sourceWindow: RecordingSourceWindow;
 } | null;
 
+type ProjectSnapshot = {
+  document: HumDocument;
+  mediaAssets: Map<MediaAssetId, Blob>;
+};
+
 function createDefaultExportPreferences(): ExportPreferences {
   return {
     preferredFormat: null,
+  };
+}
+
+function parseAppScreen(raw: unknown): AppScreen {
+  return raw === "calibration" ||
+    raw === "recording" ||
+    raw === "review"
+    ? raw
+    : "setup";
+}
+
+export function createDefaultHumDocument(
+  arrangement: ArrangementDocState = createDefaultArrangementDocState(),
+): HumDocument {
+  return {
+    arrangement,
+    tracks: createEmptyTracksDocument(
+      arrangement.totalParts,
+      () => `track-${createShortUuid()}`,
+    ),
+    exportPreferences: createDefaultExportPreferences(),
   };
 }
 
@@ -119,7 +146,7 @@ function createEmptyExportState(): ExportState {
   };
 }
 
-class AppModel {
+export class AppModel {
   private mediaBlobsByAssetId = new Map<MediaAssetId, Blob>();
   private objectUrlsByAssetId = new Map<MediaAssetId, string>();
   private audioBuffersByRecordingId = new Map<RecordingId, AudioBuffer>();
@@ -130,17 +157,19 @@ class AppModel {
     RecordingSourceWindow
   >();
 
-  readonly arrangementDocument = new PersistedObservable<ArrangementDocState>(
-    "hum.arrangementDoc",
-    createDefaultArrangementDocState(),
-    { schema: parseArrangementDocState },
+  readonly arrangementDocument = new Observable<ArrangementDocState>(
+    parseArrangementDocState(createDefaultArrangementDocState()),
   );
 
   readonly exportPreferences = new Observable<ExportPreferences>(
     createDefaultExportPreferences(),
   );
 
-  readonly appScreen = new Observable<AppScreen>("setup");
+  readonly appScreen = new PersistedObservable<AppScreen>(
+    "hum.appScreen",
+    "setup",
+    { schema: parseAppScreen },
+  );
   readonly mediaStream = new Observable<MediaStream | null>(null);
   readonly audioContext = new Observable<AudioContext | null>(null);
   readonly currentPartIndex = new Observable<PartIndex>(0);
@@ -206,6 +235,47 @@ class AppModel {
       tracks: this.tracksDocument.document.get(),
       exportPreferences: this.exportPreferences.get(),
     };
+  }
+
+  getReferencedMediaAssets(): Map<MediaAssetId, Blob> {
+    const mediaAssets = new Map<MediaAssetId, Blob>();
+
+    for (const recording of Object.values(this.tracksDocument.document.get().recordingsById)) {
+      const blob = this.mediaBlobsByAssetId.get(recording.mediaAssetId);
+      if (blob != null) {
+        mediaAssets.set(recording.mediaAssetId, blob);
+      }
+    }
+
+    return mediaAssets;
+  }
+
+  loadProjectSnapshot(snapshot: ProjectSnapshot): void {
+    this.clearAllMediaAssets();
+    this.arrangementDocument.set(snapshot.document.arrangement);
+    this.tracksDocument.replaceDocument(snapshot.document.tracks);
+    this.exportPreferences.set(snapshot.document.exportPreferences);
+
+    for (const [mediaAssetId, blob] of snapshot.mediaAssets.entries()) {
+      this.registerMediaAsset(mediaAssetId, blob);
+    }
+  }
+
+  getSuggestedCurrentPartIndex(): number {
+    const trackOrder = this.tracksDocument.document.get().trackOrder;
+    if (trackOrder.length === 0) {
+      return 0;
+    }
+
+    for (let index = 0; index < trackOrder.length; index++) {
+      const trackId = trackOrder[index];
+      if (trackId == null) continue;
+      if (this.tracksDocument.getPrimaryRecordingIdForTrack(trackId) == null) {
+        return index;
+      }
+    }
+
+    return Math.max(0, trackOrder.length - 1);
   }
 
   getTrackIdForPartIndex(index: number): TrackId | null {
@@ -530,17 +600,10 @@ class AppModel {
     this.isCalibrated.set(false);
   }
 
-  resetSession(): void {
-    const totalParts = this.arrangementDocument.get().totalParts;
-
-    this.currentPartIndex.set(0);
+  resetRuntimeSession(): void {
+    this.currentPartIndex.set(this.getSuggestedCurrentPartIndex());
     this.permissionError.set(null);
     this.clearCalibration();
-
-    const removedRecordings = this.tracksDocument.reset(totalParts);
-    for (const removed of removedRecordings) {
-      this.releaseRecording(removed);
-    }
 
     this.clearDecodedRuntimeMedia();
     this.tracksEditor.reset();
@@ -551,6 +614,19 @@ class AppModel {
 
     this.compositor?.stop();
     this.compositor = null;
+  }
+
+  resetProjectDocument(): void {
+    const totalParts = this.arrangementDocument.get().totalParts;
+    const removedRecordings = this.tracksDocument.reset(totalParts);
+    for (const removed of removedRecordings) {
+      this.releaseRecording(removed);
+    }
+    this.resetRuntimeSession();
+  }
+
+  resetSession(): void {
+    this.resetProjectDocument();
   }
 
   private registerMediaAsset(mediaAssetId: MediaAssetId, blob: Blob): void {
@@ -646,6 +722,14 @@ class AppModel {
 
   private makeMediaAssetId(): MediaAssetId {
     return `media-asset-${createShortUuid()}`;
+  }
+
+  private clearAllMediaAssets(): void {
+    for (const url of this.objectUrlsByAssetId.values()) {
+      URL.revokeObjectURL(url);
+    }
+    this.objectUrlsByAssetId.clear();
+    this.mediaBlobsByAssetId.clear();
   }
 }
 

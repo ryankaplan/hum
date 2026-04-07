@@ -2,6 +2,7 @@ export { TracksEditorPanel } from "./TracksEditorPanel";
 export type { TracksEditorCommand } from "./commands";
 export type {
   TracksEditorLaneView,
+  TracksEditorSegmentRenderAsset,
   TracksEditorSegmentView,
-  TracksEditorView,
+  TracksEditorStaticView,
 } from "./viewTypes";

@@ -8,6 +8,7 @@ import { dsColors, dsPanel } from "./designSystem";
 type Props = {
   ctx: AudioContext;
   chords: Chord[];
+  lyricsByChord: string[];
   harmonyLine: HarmonyLine | null; // null for melody part
   activeChordIndex: number;
   currentAbsoluteBeat: number;
@@ -22,6 +23,7 @@ const NOTE_TRACK_PAD_BOTTOM_PX = 10;
 const NOTE_TRACK_PAD_X_PX = 6;
 const MEASURE_WIDTH_PX = 80;
 const NOTE_PITCH_PADDING = 2;
+const LYRIC_LANE_HEIGHT_PX = 34;
 
 type NoteSegment = {
   chordIndex: number;
@@ -34,6 +36,7 @@ type NoteSegment = {
 export function NoteDisplay({
   ctx,
   chords,
+  lyricsByChord,
   harmonyLine,
   activeChordIndex,
   currentAbsoluteBeat,
@@ -41,12 +44,34 @@ export function NoteDisplay({
   tempo,
   transportActive,
 }: Props) {
+  const lyricSegments = chords.map((chord, index) => ({
+    chordIndex: index,
+    lyric: lyricsByChord[index] ?? "",
+    beats: chord.beats,
+  }));
+  const hasLyrics = lyricSegments.some((segment) => segment.lyric.trim().length > 0);
+
   if (harmonyLine == null) {
     return (
       <Box w="100%" p={4} {...dsPanel}>
-        <Text color={dsColors.textMuted} fontSize="sm" textAlign="center">
-          Melody — sing freely over the harmonies
+        <Text color={dsColors.textMuted} fontSize="xs" mb={hasLyrics ? 3 : 0}>
+          YOUR NOTES
         </Text>
+        {hasLyrics ? (
+          <LyricLane
+            chords={chords}
+            lyricSegments={lyricSegments}
+            activeChordIndex={activeChordIndex}
+            currentAbsoluteBeat={currentAbsoluteBeat}
+            beatsPerBar={beatsPerBar}
+            tempo={tempo}
+            transportActive={transportActive}
+          />
+        ) : (
+          <Text color={dsColors.textMuted} fontSize="sm" textAlign="center">
+            Melody — sing freely over the harmonies
+          </Text>
+        )}
       </Box>
     );
   }
@@ -97,7 +122,8 @@ export function NoteDisplay({
   const trackHeightPx =
     NOTE_TRACK_PAD_TOP_PX +
     NOTE_TRACK_PAD_BOTTOM_PX +
-    pitchRows * NOTE_ROW_HEIGHT_PX;
+    pitchRows * NOTE_ROW_HEIGHT_PX +
+    (hasLyrics ? LYRIC_LANE_HEIGHT_PX : 0);
   const trackWidthPx = Math.max(
     280,
     Math.ceil(
@@ -291,10 +317,151 @@ export function NoteDisplay({
               </Box>
             );
           })}
+
+          {hasLyrics &&
+            renderLyricSegments({
+              chords,
+              lyricSegments,
+              activeChordIndex,
+              notePxPerBeat,
+              trackHeightPx,
+            })}
         </Box>
       </Box>
     </Box>
   );
+}
+
+type LyricSegment = {
+  chordIndex: number;
+  lyric: string;
+  beats: number;
+};
+
+type LyricLaneProps = {
+  chords: Chord[];
+  lyricSegments: LyricSegment[];
+  activeChordIndex: number;
+  currentAbsoluteBeat: number;
+  beatsPerBar: number;
+  tempo: number;
+  transportActive: boolean;
+};
+
+function LyricLane({
+  chords,
+  lyricSegments,
+  activeChordIndex,
+  currentAbsoluteBeat,
+  beatsPerBar,
+  tempo,
+  transportActive,
+}: LyricLaneProps) {
+  const totalBeats = chords.reduce((sum, chord) => sum + chord.beats, 0);
+  const trackWidthPx = Math.max(
+    280,
+    Math.ceil(
+      totalBeats * (MEASURE_WIDTH_PX / Math.max(1, beatsPerBar)) +
+        NOTE_TRACK_PAD_X_PX * 2,
+    ),
+  );
+  const notePxPerBeat = MEASURE_WIDTH_PX / Math.max(1, beatsPerBar);
+  const beatGuideCount = Math.max(1, Math.ceil(totalBeats) + 1);
+  const hasActiveBeat = currentAbsoluteBeat >= 0;
+  const playheadX = hasActiveBeat
+    ? NOTE_TRACK_PAD_X_PX + Math.max(0, currentAbsoluteBeat) * notePxPerBeat
+    : 0;
+
+  return (
+    <Box
+      borderRadius="xl"
+      border="1px solid"
+      borderColor={dsColors.border}
+      bg={dsColors.surfaceSubtle}
+      overflowX="auto"
+      overflowY="hidden"
+    >
+      <Box position="relative" w={`${trackWidthPx}px`} h={`${LYRIC_LANE_HEIGHT_PX}px`}>
+        {Array.from({ length: beatGuideCount }).map((_, beat) => {
+          const x = NOTE_TRACK_PAD_X_PX + beat * notePxPerBeat;
+          return (
+            <Box
+              key={`melody-lyric-guide-${beat}`}
+              className="record-note-beat-line"
+              position="absolute"
+              top={0}
+              bottom={0}
+              left={`${x}px`}
+            />
+          );
+        })}
+        {hasActiveBeat && transportActive && (
+          <Box
+            className="record-note-playhead"
+            position="absolute"
+            top={0}
+            bottom={0}
+            left={`${playheadX}px`}
+          />
+        )}
+        {renderLyricSegments({
+          chords,
+          lyricSegments,
+          activeChordIndex,
+          notePxPerBeat,
+          trackHeightPx: LYRIC_LANE_HEIGHT_PX,
+        })}
+      </Box>
+    </Box>
+  );
+}
+
+function renderLyricSegments(input: {
+  chords: Chord[];
+  lyricSegments: LyricSegment[];
+  activeChordIndex: number;
+  notePxPerBeat: number;
+  trackHeightPx: number;
+}) {
+  const { chords, lyricSegments, activeChordIndex, notePxPerBeat, trackHeightPx } =
+    input;
+  let startBeat = 0;
+  return lyricSegments.map((segment, index) => {
+    const chord = chords[index];
+    const x = NOTE_TRACK_PAD_X_PX + startBeat * notePxPerBeat + 2;
+    const w = Math.max(32, segment.beats * notePxPerBeat - 4);
+    startBeat += chord?.beats ?? 0;
+    return (
+      <Box
+        key={`lyric-${segment.chordIndex}`}
+        position="absolute"
+        left={`${x}px`}
+        bottom="6px"
+        w={`${w}px`}
+        px={2}
+        py={1}
+        borderRadius="md"
+        bg={
+          segment.chordIndex === activeChordIndex
+            ? "color-mix(in srgb, var(--app-accent) 18%, transparent)"
+            : "transparent"
+        }
+        overflow="hidden"
+      >
+        <Text
+          color={
+            segment.chordIndex === activeChordIndex
+              ? dsColors.text
+              : dsColors.textMuted
+          }
+          fontSize="xs"
+          whiteSpace="nowrap"
+        >
+          {segment.lyric}
+        </Text>
+      </Box>
+    );
+  });
 }
 
 function clamp(value: number, min: number, max: number): number {

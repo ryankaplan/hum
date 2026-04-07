@@ -198,6 +198,7 @@ function deserializeTracksDocument(
         sourceStartSec: clip.sourceStartSec,
         durationSec: clip.durationSec,
         volumeEnvelope: deserializeVolumeEnvelope(clip.volumeEnvelope),
+        volumeEnvelopeRevision: 0,
       },
     ]),
   );

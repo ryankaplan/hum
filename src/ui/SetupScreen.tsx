@@ -9,11 +9,13 @@ import {
   NativeSelect,
   Stack,
   Text,
+  Textarea,
   Tooltip,
 } from "@chakra-ui/react";
 import { useEffect, useRef, useState } from "react";
 import { useObservable } from "../observable";
 import { acquirePermissionsAndStart } from "../recording/permissions";
+import { flattenArrangementLyrics } from "../state/arrangementModel";
 import { triadPitchClassNames } from "../music/parse";
 import type { Meter } from "../music/types";
 import {
@@ -86,16 +88,21 @@ function SetupCard({
 }: SetupCardProps) {
   const {
     input,
+    measures,
     parsedChords: parsed,
+    invalidChordIds,
+    parseIssues,
     harmonyVoicing: voicing,
     isValid,
   } = arrangement;
   const {
-    chordsInput: chords,
+    chordsInput,
     vocalRangeLow: rangeLow,
     vocalRangeHigh: rangeHigh,
     totalParts,
   } = input;
+  const lyricsByChord = flattenArrangementLyrics(measures);
+  const chordPreviewItems = measures.flatMap((measure) => measure.chords);
   const selectedRangeValue =
     RANGE_OPTIONS.find(
       (option) => option.low === rangeLow && option.high === rangeHigh,
@@ -126,11 +133,11 @@ function SetupCard({
         </Box>
 
         <Stack gap={4}>
-          <Field.Root>
-            <Flex align="center" justify="space-between" gap={3} width="100%">
-              <Field.Label color={dsColors.text} mb={0}>
+          <Box>
+            <Flex align="center" justify="space-between" gap={3} mb={2}>
+              <Text color={dsColors.text} fontSize="sm" fontWeight="medium">
                 Chord progression
-              </Field.Label>
+              </Text>
               <Tooltip.Root
                 openDelay={0}
                 closeDelay={250}
@@ -165,20 +172,25 @@ function SetupCard({
                     boxShadow="md"
                     fontSize="xs"
                   >
-                    One chord per bar, space separated - repeat a chord to hold
-                    it: "Am Am G F F E". Use brackets for shared bars: "[A E]" =
-                    two chords in one bar.
+                    Spaces separate full-measure chords. Add `.` for half a
+                    measure, `..` for a quarter measure, and place lyric lines
+                    directly under chord lines in monospaced text.
                   </Tooltip.Content>
                 </Tooltip.Positioner>
               </Tooltip.Root>
             </Flex>
-            <Input
-              value={chords}
+            <Textarea
+              rows={6}
+              value={chordsInput}
               onChange={(e) => onChordsChange(e.target.value)}
-              placeholder="A A F#m F#m D D E E"
+              placeholder={"A Bm C\n\nA. Bm. C\n\nA          E    F#m     D      A    E\nWhere are we?   What the hell is going on?"}
+              fontFamily="'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', monospace"
+              lineHeight="1.45"
+              spellCheck={false}
+              resize="vertical"
               {...controlStyles}
             />
-          </Field.Root>
+          </Box>
 
           <Grid templateColumns={{ base: "1fr", md: "1fr 1fr 1fr" }} gap={4}>
             <Field.Root>
@@ -257,7 +269,8 @@ function SetupCard({
                 fontSize="xs"
                 fontWeight="semibold"
               >
-                ARRANGEMENT - {parsed.length} chord
+                ARRANGEMENT - {measures.length} measure
+                {measures.length !== 1 ? "s" : ""}, {parsed.length} chord
                 {parsed.length !== 1 ? "s" : ""}
               </Text>
               <Button
@@ -276,91 +289,109 @@ function SetupCard({
                 aria-label={
                   previewing ? "Stop harmony preview" : "Play harmony preview"
                 }
-                  lineHeight={0}
-                >
-                  {previewing ? (
+                lineHeight={0}
+              >
+                {previewing ? (
                   <StopIcon size={16} strokeWidth={2.1} />
                 ) : (
                   <PlayIcon size={16} strokeWidth={2.1} />
                 )}
               </Button>
             </Flex>
-            <Flex gap={2} flexWrap="wrap">
-              {parsed.map((c, i) => {
-                const annotation = voicing.annotations[i];
-                const voicingKind = annotation?.strategy ?? "closed";
-                const voicingLabel =
-                  voicingKind === "closed" ? "Closed" : "Drop 2";
-                const degrees =
-                  annotation?.chordTones ??
-                  (c.quality === "minor" ? "R b3 5" : "R 3 5");
-                const notes = triadPitchClassNames(c);
-                const tooltipText = `${degrees} - ${notes}`;
-                return (
-                  <Tooltip.Root
-                    key={i}
-                    openDelay={0}
-                    closeDelay={250}
-                    interactive
-                    positioning={{ gutter: 8 }}
-                  >
-                    <Tooltip.Trigger asChild>
-                      <Box
-                        as="span"
-                        bg={dsColors.surfaceSubtle}
-                        borderRadius="full"
-                        px={3}
-                        py={1}
-                        fontSize="sm"
-                        color={dsColors.text}
-                        display="inline-flex"
-                        alignItems="baseline"
-                        gap={2}
-                        cursor="help"
-                        userSelect="none"
-                        border="1px solid"
-                        borderColor="transparent"
-                        _hover={{
-                          borderColor: dsColors.borderMuted,
-                          bg: dsColors.surfaceRaised,
-                        }}
-                        aria-label={tooltipText}
-                      >
-                        <Text as="span" fontWeight="semibold">
-                          {c.root}
-                          {c.quality === "minor" ? "m" : ""}
-                        </Text>
-                        <Text
+            <Stack gap={3}>
+              <Flex gap={2} flexWrap="wrap">
+                {parsed.map((c, i) => {
+                  const annotation = voicing.annotations[i];
+                  const degrees =
+                    annotation?.chordTones ??
+                    (c.quality === "minor" ? "R b3 5" : "R 3 5");
+                  const notes = triadPitchClassNames(c);
+                  const tooltipText = `${degrees} - ${notes}`;
+                  const previewItem = chordPreviewItems[i];
+                  return (
+                    <Tooltip.Root
+                      key={i}
+                      openDelay={0}
+                      closeDelay={250}
+                      interactive
+                      positioning={{ gutter: 8 }}
+                    >
+                      <Tooltip.Trigger asChild>
+                        <Box
                           as="span"
-                          fontSize="xs"
-                          color={dsColors.textMuted}
-                          fontWeight="medium"
-                          whiteSpace="nowrap"
+                          bg={dsColors.surfaceSubtle}
+                          borderRadius="2xl"
+                          px={3}
+                          py={2}
+                          fontSize="sm"
+                          color={dsColors.text}
+                          display="inline-flex"
+                          flexDirection="column"
+                          alignItems="flex-start"
+                          gap={0.5}
+                          cursor="help"
+                          userSelect="none"
+                          border="1px solid"
+                          borderColor="transparent"
+                          _hover={{
+                            borderColor: dsColors.borderMuted,
+                            bg: dsColors.surfaceRaised,
+                          }}
+                          aria-label={tooltipText}
                         >
-                          {voicingLabel}
-                        </Text>
-                      </Box>
-                    </Tooltip.Trigger>
-                    <Tooltip.Positioner>
-                      <Tooltip.Content
-                        px={3}
-                        py={2}
-                        borderRadius="md"
-                        maxW="sm"
-                        bg={dsColors.surfaceRaised}
-                        color={dsColors.text}
-                        borderWidth="1px"
-                        borderColor={dsColors.border}
-                        boxShadow="md"
-                        fontSize="xs"
-                      >
-                        {tooltipText}
-                      </Tooltip.Content>
-                    </Tooltip.Positioner>
-                  </Tooltip.Root>
-                );
-              })}
-            </Flex>
+                          <Text as="span" fontWeight="semibold">
+                            {previewItem?.chordText ?? `${c.root}${c.quality === "minor" ? "m" : ""}`}
+                          </Text>
+                          {previewItem?.lyrics.trim() ? (
+                            <Text
+                              as="span"
+                              fontSize="xs"
+                              color={dsColors.textMuted}
+                              fontWeight="medium"
+                              whiteSpace="nowrap"
+                            >
+                              {previewItem.lyrics}
+                            </Text>
+                          ) : null}
+                        </Box>
+                      </Tooltip.Trigger>
+                      <Tooltip.Positioner>
+                        <Tooltip.Content
+                          px={3}
+                          py={2}
+                          borderRadius="md"
+                          maxW="sm"
+                          bg={dsColors.surfaceRaised}
+                          color={dsColors.text}
+                          borderWidth="1px"
+                          borderColor={dsColors.border}
+                          boxShadow="md"
+                          fontSize="xs"
+                        >
+                          {tooltipText}
+                        </Tooltip.Content>
+                      </Tooltip.Positioner>
+                    </Tooltip.Root>
+                  );
+                })}
+              </Flex>
+            </Stack>
+          </Box>
+        )}
+
+        {(invalidChordIds.length > 0 || parseIssues.length > 0) && (
+          <Box
+            bg={dsColors.errorBg}
+            border="1px solid"
+            borderColor={dsColors.errorBorder}
+            borderRadius="lg"
+            p={4}
+          >
+            <Text color={dsColors.errorText} fontSize="sm">
+              {invalidChordIds.length > 0
+                ? "Some chord tokens are unsupported right now. Use supported chord spellings before continuing."
+                : parseIssues[0]}
+            </Text>
           </Box>
         )}
 

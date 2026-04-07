@@ -1,4 +1,4 @@
-import { triadSemitones } from "./parse";
+import { chordSemitones } from "./parse";
 import type {
   Chord,
   HarmonyChordAnnotation,
@@ -115,12 +115,29 @@ function voiceChord(
 }
 
 function chordToneFormula(chord: Chord): HarmonyChordAnnotation["chordTones"] {
-  return chord.quality === "major" ? "R 3 5" : "R b3 5";
+  switch (chord.quality) {
+    case "major":
+      return "R 3 5";
+    case "minor":
+      return "R b3 5";
+    case "diminished":
+      return "R b3 b5";
+    case "major6":
+      return "R 3 6";
+    case "minor6":
+      return "R b3 6";
+    case "dominant7":
+      return "R 3 b7";
+    case "minor7":
+      return "R b3 b7";
+    case "major7":
+      return "R 3 7";
+  }
 }
 
-// Returns the 3 pitch classes (0–11) for a chord's triad.
+// Returns the 3 pitch classes (0–11) used to voice the chord.
 function triadClasses(chord: Chord): Set<number> {
-  const [r, t, f] = triadSemitones(chord.root, chord.quality);
+  const [r, t, f] = chordSemitones(chord.root, chord.quality);
   return new Set([r % 12, t % 12, f % 12]);
 }
 

@@ -16,7 +16,7 @@ import { useEffect, useRef, useState } from "react";
 import { useObservable } from "../observable";
 import { acquirePermissionsAndStart } from "../recording/permissions";
 import { flattenArrangementLyrics } from "../state/arrangementModel";
-import { triadPitchClassNames } from "../music/parse";
+import { chordPitchClassNames } from "../music/parse";
 import type { Meter } from "../music/types";
 import {
   playHarmonyPreview,
@@ -304,8 +304,16 @@ function SetupCard({
                   const annotation = voicing.annotations[i];
                   const degrees =
                     annotation?.chordTones ??
-                    (c.quality === "minor" ? "R b3 5" : "R 3 5");
-                  const notes = triadPitchClassNames(c);
+                    c.quality === "minor"
+                      ? "R b3 5"
+                      : c.quality === "diminished"
+                        ? "R b3 b5"
+                        : c.quality === "major6"
+                          ? "R 3 6"
+                          : c.quality === "minor6"
+                            ? "R b3 6"
+                        : "R 3 5";
+                  const notes = chordPitchClassNames(c);
                   const tooltipText = `${degrees} - ${notes}`;
                   const previewItem = chordPreviewItems[i];
                   return (

@@ -12,11 +12,19 @@ export type NoteName =
   | "A#"
   | "B";
 
-export type TriadQuality = "major" | "minor";
+export type ChordQuality =
+  | "major"
+  | "minor"
+  | "diminished"
+  | "major6"
+  | "minor6"
+  | "dominant7"
+  | "minor7"
+  | "major7";
 
 export type Chord = {
   root: NoteName;
-  quality: TriadQuality;
+  quality: ChordQuality;
   // How many beats this chord lasts (e.g. "A x2" in 4/4 = 8 beats)
   beats: number;
 };
@@ -35,7 +43,15 @@ export type VocalRange = {
 
 export type HarmonyVoicingStrategy = "drop2" | "closed";
 
-export type ChordToneFormula = "R 3 5" | "R b3 5";
+export type ChordToneFormula =
+  | "R 3 5"
+  | "R b3 5"
+  | "R b3 b5"
+  | "R 3 6"
+  | "R b3 6"
+  | "R 3 b7"
+  | "R b3 b7"
+  | "R 3 7";
 
 export type HarmonyChordAnnotation = {
   strategy: HarmonyVoicingStrategy;

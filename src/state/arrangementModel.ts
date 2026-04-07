@@ -187,7 +187,7 @@ function isChordLine(parsed: ParsedChordLine): boolean {
 }
 
 function parseChordLine(line: string, lineIndex: number): ParsedChordLine {
-  const tokenPattern = /[A-G][#b]?m?\.{0,2}/g;
+  const tokenPattern = /[A-G][#b]?(?:maj7|M7|m7|-7|m6|-6|6|dim|o|m|-|7)?\.{0,2}/gi;
   const tokens: ParsedChordToken[] = [];
   const invalidChordIds: string[] = [];
   let match: RegExpExecArray | null;

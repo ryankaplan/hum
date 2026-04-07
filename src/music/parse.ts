@@ -1,4 +1,4 @@
-import type { Chord, NoteName, TriadQuality } from "./types";
+import type { Chord, ChordQuality, NoteName } from "./types";
 import { NOTE_NAMES } from "./types";
 
 // Parses a chord progression string like "A A F#m F#m D D E E"
@@ -48,16 +48,45 @@ function parseGroupedBarToken(token: string, beatsPerBar: number): Chord[] {
 }
 
 export function parseChordText(token: string, beats: number): Chord | null {
-  // Match chord name only: "A", "F#m", "Bb", "C#m"
-  const match = token.match(/^([A-G][#b]?)(m?)$/i);
+  const match = token.match(/^([A-G][#b]?)(maj7|M7|m7|-7|m6|-6|6|dim|o|m|-|7)?$/i);
   if (match == null) return null;
 
   const root = normalizeRoot(match[1]!);
   if (root == null) return null;
 
-  const quality: TriadQuality = match[2] === "m" ? "minor" : "major";
+  const suffix = match[2] ?? "";
+  const quality = parseChordQualitySuffix(suffix);
+  if (quality == null) return null;
 
   return { root, quality, beats };
+}
+
+function parseChordQualitySuffix(raw: string): ChordQuality | null {
+  switch (raw) {
+    case "":
+      return "major";
+    case "m":
+    case "-":
+      return "minor";
+    case "dim":
+    case "o":
+      return "diminished";
+    case "6":
+      return "major6";
+    case "m6":
+    case "-6":
+      return "minor6";
+    case "7":
+      return "dominant7";
+    case "m7":
+    case "-7":
+      return "minor7";
+    case "maj7":
+    case "M7":
+      return "major7";
+    default:
+      return null;
+  }
 }
 
 function tokenizeProgression(input: string): string[] {
@@ -154,21 +183,36 @@ export function rootSemitone(root: NoteName): number {
   return semitones[root];
 }
 
-// Returns the 3 semitone intervals [root, third, fifth] relative to C0
-// for a given chord in a specific octave
-export function triadSemitones(
+// Returns the 3 semitone intervals used for voicing and display.
+// Seventh chords intentionally omit the fifth and use 3 notes only.
+export function chordSemitones(
   root: NoteName,
-  quality: TriadQuality,
+  quality: ChordQuality,
 ): [number, number, number] {
   const r = rootSemitone(root);
-  const third = quality === "major" ? r + 4 : r + 3;
-  const fifth = r + 7;
-  return [r, third, fifth];
+  switch (quality) {
+    case "major":
+      return [r, r + 4, r + 7];
+    case "minor":
+      return [r, r + 3, r + 7];
+    case "diminished":
+      return [r, r + 3, r + 6];
+    case "major6":
+      return [r, r + 4, r + 9];
+    case "minor6":
+      return [r, r + 3, r + 9];
+    case "dominant7":
+      return [r, r + 4, r + 10];
+    case "minor7":
+      return [r, r + 3, r + 10];
+    case "major7":
+      return [r, r + 4, r + 11];
+  }
 }
 
-/** Root-position triad spellings as pitch-class note names, e.g. `"C E G"`. */
-export function triadPitchClassNames(chord: Chord): string {
-  const [r, t, f] = triadSemitones(chord.root, chord.quality);
+/** Root-position chord spellings as pitch-class note names, e.g. `"C E G"`. */
+export function chordPitchClassNames(chord: Chord): string {
+  const [r, t, f] = chordSemitones(chord.root, chord.quality);
   const a = NOTE_NAMES[((r % 12) + 12) % 12]!;
   const b = NOTE_NAMES[((t % 12) + 12) % 12]!;
   const c = NOTE_NAMES[((f % 12) + 12) % 12]!;

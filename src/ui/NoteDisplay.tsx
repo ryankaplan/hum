@@ -437,7 +437,7 @@ function renderLyricSegments(input: {
         position="absolute"
         left={`${x}px`}
         bottom="6px"
-        w={`${w}px`}
+        minW={`${w}px`}
         px={2}
         py={1}
         borderRadius="md"
@@ -446,7 +446,7 @@ function renderLyricSegments(input: {
             ? "color-mix(in srgb, var(--app-accent) 18%, transparent)"
             : "transparent"
         }
-        overflow="hidden"
+        overflow="visible"
       >
         <Text
           color={

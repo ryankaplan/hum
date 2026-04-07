@@ -102,6 +102,7 @@ function SetupCard({
     totalParts,
   } = input;
   const lyricsByChord = flattenArrangementLyrics(measures);
+  const chordPreviewItems = measures.flatMap((measure) => measure.chords);
   const selectedRangeValue =
     RANGE_OPTIONS.find(
       (option) => option.low === rangeLow && option.high === rangeHigh,
@@ -301,14 +302,12 @@ function SetupCard({
               <Flex gap={2} flexWrap="wrap">
                 {parsed.map((c, i) => {
                   const annotation = voicing.annotations[i];
-                  const voicingKind = annotation?.strategy ?? "closed";
-                  const voicingLabel =
-                    voicingKind === "closed" ? "Closed" : "Drop 2";
                   const degrees =
                     annotation?.chordTones ??
                     (c.quality === "minor" ? "R b3 5" : "R 3 5");
                   const notes = triadPitchClassNames(c);
                   const tooltipText = `${degrees} - ${notes}`;
+                  const previewItem = chordPreviewItems[i];
                   return (
                     <Tooltip.Root
                       key={i}
@@ -321,14 +320,15 @@ function SetupCard({
                         <Box
                           as="span"
                           bg={dsColors.surfaceSubtle}
-                          borderRadius="full"
+                          borderRadius="2xl"
                           px={3}
-                          py={1}
+                          py={2}
                           fontSize="sm"
                           color={dsColors.text}
                           display="inline-flex"
-                          alignItems="baseline"
-                          gap={2}
+                          flexDirection="column"
+                          alignItems="flex-start"
+                          gap={0.5}
                           cursor="help"
                           userSelect="none"
                           border="1px solid"
@@ -340,18 +340,19 @@ function SetupCard({
                           aria-label={tooltipText}
                         >
                           <Text as="span" fontWeight="semibold">
-                            {c.root}
-                            {c.quality === "minor" ? "m" : ""}
+                            {previewItem?.chordText ?? `${c.root}${c.quality === "minor" ? "m" : ""}`}
                           </Text>
-                          <Text
-                            as="span"
-                            fontSize="xs"
-                            color={dsColors.textMuted}
-                            fontWeight="medium"
-                            whiteSpace="nowrap"
-                          >
-                            {voicingLabel}
-                          </Text>
+                          {previewItem?.lyrics.trim() ? (
+                            <Text
+                              as="span"
+                              fontSize="xs"
+                              color={dsColors.textMuted}
+                              fontWeight="medium"
+                              whiteSpace="nowrap"
+                            >
+                              {previewItem.lyrics}
+                            </Text>
+                          ) : null}
                         </Box>
                       </Tooltip.Trigger>
                       <Tooltip.Positioner>
@@ -374,25 +375,6 @@ function SetupCard({
                   );
                 })}
               </Flex>
-              {lyricsByChord.some((lyrics) => lyrics.trim().length > 0) && (
-                <Flex gap={2} flexWrap="wrap">
-                  {lyricsByChord.map((lyrics, index) => (
-                    <Box
-                      key={`lyrics-preview-${index}`}
-                      px={3}
-                      py={1}
-                      borderRadius="full"
-                      bg={dsColors.surface}
-                      color={dsColors.textMuted}
-                      fontSize="xs"
-                      border="1px solid"
-                      borderColor={dsColors.border}
-                    >
-                      {lyrics || " "}
-                    </Box>
-                  ))}
-                </Flex>
-              )}
             </Stack>
           </Box>
         )}

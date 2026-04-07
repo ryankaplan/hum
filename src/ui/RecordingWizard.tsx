@@ -402,12 +402,21 @@ export function RecordingWizard() {
     });
   }
 
+  function stopTransportAudio() {
+    listenSessionRef.current?.stop();
+    listenSessionRef.current = null;
+    recordSessionRef.current?.stop();
+    recordSessionRef.current = null;
+    monitorPlayerRef.current?.stop();
+    stopAllPlayback();
+  }
+
   // ─── Listen (no recording) ──────────────────────────────────────────────────
 
   function handleListen() {
-    // Stop preview loop and any ongoing listen session first
-    monitorPlayerRef.current?.stop();
-    listenSessionRef.current?.stop();
+    // Fully clear any previously scheduled transport audio before starting
+    // a fresh listen pass so clicks cannot overlap.
+    stopTransportAudio();
 
     setPhase("listening");
     setActiveChordIndex(0);
@@ -457,8 +466,7 @@ export function RecordingWizard() {
   }
 
   function handleStopListening() {
-    listenSessionRef.current?.stop();
-    listenSessionRef.current = null;
+    stopTransportAudio();
     setPhase("pre-roll");
     setActiveChordIndex(0);
     setCurrentAbsoluteBeat(-1);
@@ -469,10 +477,9 @@ export function RecordingWizard() {
   async function handleRecord() {
     if (stream == null || recordSessionRef.current != null) return;
 
-    // Stop preview loop and any ongoing listen session before recording
-    monitorPlayerRef.current?.stop();
-    listenSessionRef.current?.stop();
-    listenSessionRef.current = null;
+    // Fully clear any practice/listen playback so record starts from a clean
+    // transport state with only one count-in/metronome.
+    stopTransportAudio();
 
     setPhase("counting-in");
     setActiveChordIndex(0);
@@ -567,19 +574,14 @@ export function RecordingWizard() {
   }
 
   function handleRedo() {
-    recordSessionRef.current?.stop();
-    recordSessionRef.current = null;
-    stopAllPlayback();
+    stopTransportAudio();
     setPhase("pre-roll");
     setReviewUrl(null);
     currentBlobRef.current = null;
   }
 
   function handleBack() {
-    recordSessionRef.current?.stop();
-    recordSessionRef.current = null;
-    stopAllPlayback();
-    listenSessionRef.current = null;
+    stopTransportAudio();
     if (partIndex > 0) {
       model.currentPartIndex.set(partIndex - 1);
     } else {

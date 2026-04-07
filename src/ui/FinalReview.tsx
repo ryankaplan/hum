@@ -585,7 +585,7 @@ export function FinalReview() {
   function handleStartOver() {
     if (isSyncingFrames) return;
     stopPlaybackEngine(false);
-    model.resetSession();
+    model.resetProjectDocument();
     model.appScreen.set("setup");
   }
 

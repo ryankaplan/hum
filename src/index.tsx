@@ -7,15 +7,18 @@ import { SetupScreen } from "./ui/SetupScreen";
 import { LatencyCalibrationScreen } from "./ui/LatencyCalibrationScreen";
 import { RecordingWizard } from "./ui/RecordingWizard";
 import { FinalReview } from "./ui/FinalReview";
+import { ProjectShell } from "./ui/ProjectShell";
 
 function App() {
   const screen = useObservable(model.appScreen);
 
-  if (screen === "setup") return <SetupScreen />;
-  if (screen === "calibration") return <LatencyCalibrationScreen />;
-  if (screen === "recording") return <RecordingWizard />;
-  if (screen === "review") return <FinalReview />;
-  return null;
+  let content = null;
+  if (screen === "setup") content = <SetupScreen />;
+  if (screen === "calibration") content = <LatencyCalibrationScreen />;
+  if (screen === "recording") content = <RecordingWizard />;
+  if (screen === "review") content = <FinalReview />;
+
+  return <ProjectShell>{content}</ProjectShell>;
 }
 
 const root = document.getElementById("root");

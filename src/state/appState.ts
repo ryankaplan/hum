@@ -55,3 +55,11 @@ export function redoPart(index: number): void {
 export function resetSession(): void {
   model.resetSession();
 }
+
+export function resetRuntimeSession(): void {
+  model.resetRuntimeSession();
+}
+
+export function resetProjectDocument(): void {
+  model.resetProjectDocument();
+}

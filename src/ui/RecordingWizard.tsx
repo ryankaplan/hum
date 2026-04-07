@@ -642,19 +642,6 @@ export function RecordingWizard() {
             </Text>
           </Box>
 
-          {/* Recording list */}
-          <RecordingList
-            stream={stream}
-            totalParts={totalParts}
-            partIndex={partIndex}
-            keptUrls={keptUrls}
-            phase={phase}
-            reviewUrl={reviewUrl}
-            reviewVideoRef={reviewVideoRef}
-            mutedParts={mutedParts}
-            onToggleMute={handleToggleMute}
-          />
-
           {/* Note display */}
           {phase !== "review" && ctx != null && (
             <NoteDisplay
@@ -668,6 +655,19 @@ export function RecordingWizard() {
               transportActive={transportActive}
             />
           )}
+
+          {/* Recording list / video */}
+          <RecordingList
+            stream={stream}
+            totalParts={totalParts}
+            partIndex={partIndex}
+            keptUrls={keptUrls}
+            phase={phase}
+            reviewUrl={reviewUrl}
+            reviewVideoRef={reviewVideoRef}
+            mutedParts={mutedParts}
+            onToggleMute={handleToggleMute}
+          />
 
           {phase !== "review" && hasPriorHarmonyMonitorControl && (
             <Box bg={dsColors.surfaceRaised} borderRadius="xl" px={4} py={3}>

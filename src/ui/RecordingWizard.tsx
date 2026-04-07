@@ -230,7 +230,8 @@ export function RecordingWizard() {
   const partIndex = useObservable(model.currentPartIndex);
   const tracksDocument = useObservable(model.tracksDocument.document);
   const arrangement = useObservable(model.arrangementDocument);
-  const chords = useObservable(model.parsedChords);
+  const arrangementInfo = useObservable(model.derivedArrangementInfo);
+  const chords = arrangementInfo.parsedChords;
   const voicing = useObservable(model.harmonyVoicing);
   const latencyCorrectionSec = useObservable(model.latencyCorrectionSec);
 
@@ -649,6 +650,7 @@ export function RecordingWizard() {
             <NoteDisplay
               ctx={ctx}
               chords={chords}
+              lyricsByChord={arrangementInfo.lyricsByChord}
               harmonyLine={harmonyLine}
               activeChordIndex={activeChordIndex}
               currentAbsoluteBeat={currentAbsoluteBeat}

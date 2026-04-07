@@ -1,5 +1,12 @@
 import type { ClipVolumeEnvelope } from "../../../state/clipAutomation";
-import type { EditorSelection, WaveformPeaks } from "../../timeline";
+import type { EditorSelection } from "../../timeline";
+
+export type TracksEditorSegmentRenderAsset = {
+  leftPx: number;
+  widthPx: number;
+  waveformBarHeights: number[];
+  volumeLinePoints: string;
+};
 
 export type TracksEditorSegmentView = {
   id: string;
@@ -8,6 +15,7 @@ export type TracksEditorSegmentView = {
   sourceStartSec: number;
   durationSec: number;
   volumeEnvelope: ClipVolumeEnvelope;
+  renderAsset: TracksEditorSegmentRenderAsset;
 };
 
 export type TracksEditorLaneView = {
@@ -15,17 +23,13 @@ export type TracksEditorLaneView = {
   displayIndex: number;
   label: string;
   segments: TracksEditorSegmentView[];
-  peaks: WaveformPeaks;
-  sourceStartSec: number;
-  sourceDurationSec: number;
   volume: number;
   muted: boolean;
 };
 
-export type TracksEditorView = {
+export type TracksEditorStaticView = {
   lanes: TracksEditorLaneView[];
   selection: EditorSelection;
-  playheadSec: number;
   timelineEndSec: number;
   beatLineTimes: number[];
   beatSec: number;

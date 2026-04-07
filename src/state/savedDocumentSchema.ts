@@ -49,7 +49,7 @@
  * - On parse failure or schema version mismatch, callers should clear the draft
  *   instead of trying to partially recover it.
  */
-export const SAVED_HUM_DOCUMENT_SCHEMA_VERSION = "2";
+export const SAVED_HUM_DOCUMENT_SCHEMA_VERSION = "3";
 
 export const SAVED_HUM_DOCUMENT_ID = "current";
 
@@ -61,12 +61,23 @@ export type SavedExportPreferences = {
 };
 
 export type SavedArrangementDocument = {
-  chordsInput: string;
+  measures: SavedArrangementMeasure[];
   tempo: number;
   meter: [number, number];
   vocalRangeLow: string;
   vocalRangeHigh: string;
   totalParts: 2 | 4;
+};
+
+export type SavedArrangementMeasure = {
+  id: string;
+  chords: SavedArrangementChord[];
+};
+
+export type SavedArrangementChord = {
+  id: string;
+  chordText: string;
+  lyrics: string;
 };
 
 export type SavedVolumePoint = {
@@ -170,7 +181,7 @@ function parseSavedArrangementDocument(
   if (!isRecord(raw)) return null;
   const meter = raw.meter;
   if (
-    typeof raw.chordsInput !== "string" ||
+    Array.isArray(raw.measures) === false ||
     isFiniteNumber(raw.tempo) === false ||
     Array.isArray(meter) === false ||
     meter.length !== 2 ||
@@ -183,13 +194,51 @@ function parseSavedArrangementDocument(
     return null;
   }
 
+  const measures = raw.measures
+    .map((measure) => parseSavedArrangementMeasure(measure))
+    .filter((measure): measure is SavedArrangementMeasure => measure != null);
+  if (measures.length !== raw.measures.length) {
+    return null;
+  }
+
   return {
-    chordsInput: raw.chordsInput,
+    measures,
     tempo: raw.tempo,
     meter: [meter[0], meter[1]],
     vocalRangeLow: raw.vocalRangeLow,
     vocalRangeHigh: raw.vocalRangeHigh,
     totalParts: raw.totalParts,
+  };
+}
+
+function parseSavedArrangementMeasure(
+  raw: unknown,
+): SavedArrangementMeasure | null {
+  if (!isRecord(raw) || Array.isArray(raw.chords) === false) return null;
+  if (typeof raw.id !== "string") return null;
+  const chords = raw.chords
+    .map((chord) => parseSavedArrangementChord(chord))
+    .filter((chord): chord is SavedArrangementChord => chord != null);
+  if (chords.length !== raw.chords.length) return null;
+  return {
+    id: raw.id,
+    chords,
+  };
+}
+
+function parseSavedArrangementChord(raw: unknown): SavedArrangementChord | null {
+  if (!isRecord(raw)) return null;
+  if (
+    typeof raw.id !== "string" ||
+    typeof raw.chordText !== "string" ||
+    typeof raw.lyrics !== "string"
+  ) {
+    return null;
+  }
+  return {
+    id: raw.id,
+    chordText: raw.chordText,
+    lyrics: raw.lyrics,
   };
 }
 

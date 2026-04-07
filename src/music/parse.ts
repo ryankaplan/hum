@@ -20,7 +20,7 @@ export function parseChordProgression(
       }
       continue;
     }
-    const parsed = parseChordToken(token, beatsPerBar);
+    const parsed = parseChordText(token, beatsPerBar);
     if (parsed != null) {
       chords.push(parsed);
     }
@@ -39,7 +39,7 @@ function parseGroupedBarToken(token: string, beatsPerBar: number): Chord[] {
 
   const grouped: Chord[] = [];
   for (const part of parts) {
-    const parsed = parseChordToken(part, beatsPerChord);
+    const parsed = parseChordText(part, beatsPerChord);
     // If any chord in the grouped bar is invalid, discard the whole group.
     if (parsed == null) return [];
     grouped.push(parsed);
@@ -47,7 +47,7 @@ function parseGroupedBarToken(token: string, beatsPerBar: number): Chord[] {
   return grouped;
 }
 
-function parseChordToken(token: string, beats: number): Chord | null {
+export function parseChordText(token: string, beats: number): Chord | null {
   // Match chord name only: "A", "F#m", "Bb", "C#m"
   const match = token.match(/^([A-G][#b]?)(m?)$/i);
   if (match == null) return null;

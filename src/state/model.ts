@@ -47,8 +47,10 @@ export type {
 } from "./tracksModel";
 
 export type {
+  ArrangementChord,
   ArrangementDocState,
   ArrangementInfo,
+  ArrangementMeasure,
   TotalPartCount,
 } from "./arrangementModel";
 

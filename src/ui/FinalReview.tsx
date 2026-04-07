@@ -10,7 +10,11 @@ import {
 } from "@chakra-ui/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useObservable } from "../observable";
-import { model, type TrackClip } from "../state/model";
+import {
+  model,
+  type TrackClip,
+  type TrackRuntimeWaveform,
+} from "../state/model";
 import { getPartLabel } from "../music/types";
 import { progressionDurationSec } from "../music/playback";
 import { startCompositor } from "../video/compositor";
@@ -28,7 +32,11 @@ import {
   type ClipVolumeEnvelope,
   evaluateClipVolumeAtTime,
 } from "../state/clipAutomation";
-import { getActiveSegmentAtTime, getTimelineEndSec } from "./timeline";
+import {
+  getActiveSegmentAtTime,
+  getTimelineEndSec,
+  samplePeaksForSegment,
+} from "./timeline";
 import type { EditorSelection } from "./timeline";
 import {
   dsOutlineButton,
@@ -38,10 +46,16 @@ import {
 import {
   TracksEditorPanel,
   type TracksEditorCommand,
-  type TracksEditorView,
+  type TracksEditorSegmentRenderAsset,
+  type TracksEditorStaticView,
 } from "./finalReview/tracksEditor";
 
 const WAVEFORM_BUCKETS_PER_SEC = 72;
+const TIMELINE_PX_PER_SEC = 110;
+const WAVEFORM_BAR_STEP_PX = 4;
+const WAVEFORM_BARS_MIN = 16;
+const WAVEFORM_BARS_MAX = 960;
+const SEGMENT_WAVEFORM_HORIZONTAL_PADDING_PX = 8;
 
 type ActiveAudioSource = {
   source: AudioBufferSourceNode;
@@ -64,6 +78,9 @@ export function FinalReview() {
   const reviewTransportRef = useRef<ReviewTransport | null>(null);
   const startRequestTokenRef = useRef(0);
   const activeSourcesRef = useRef<ActiveAudioSource[]>([]);
+  const segmentRenderCacheRef = useRef<
+    Map<string, { cacheKey: string; asset: TracksEditorSegmentRenderAsset }>
+  >(new Map());
 
   const orderedTracks = useMemo(
     () =>
@@ -91,7 +108,7 @@ export function FinalReview() {
   const timelinesRef = useRef<TrackClip[][]>(timelines);
 
   const selection = editorState.selection;
-  const playheadSec = editorState.playheadSec;
+  const committedPlayheadSec = editorState.playheadSec;
   const reverbWet = documentState.reverbWet;
 
   const [isPlaying, setIsPlaying] = useState(false);
@@ -144,11 +161,11 @@ export function FinalReview() {
       stopAudio();
       setIsPlaying(false);
       setIsSyncingFrames(false);
-
-      if (!preservePlayhead) {
-        model.tracksEditor.setPlayhead(0);
-        reviewTransportRef.current?.syncPaused(0);
-      }
+      const nextPlayheadSec = preservePlayhead
+        ? model.tracksEditor.playbackPlayheadSec.get()
+        : 0;
+      model.tracksEditor.setPlayhead(nextPlayheadSec);
+      reviewTransportRef.current?.syncPaused(nextPlayheadSec);
     },
     [stopAudio],
   );
@@ -358,8 +375,15 @@ export function FinalReview() {
 
   useEffect(() => {
     if (isPlaying || exporting || isSyncingFrames) return;
-    reviewTransportRef.current?.syncPaused(playheadSec);
-  }, [exporting, isPlaying, isSyncingFrames, playheadSec, timelines, waveformVersion]);
+    reviewTransportRef.current?.syncPaused(committedPlayheadSec);
+  }, [
+    committedPlayheadSec,
+    exporting,
+    isPlaying,
+    isSyncingFrames,
+    timelines,
+    waveformVersion,
+  ]);
 
   useEffect(() => {
     const selected = findSegmentBySelection(selection);
@@ -383,7 +407,8 @@ export function FinalReview() {
       return;
     }
 
-    const startTimelineSec = playheadSec >= timelineEndSec ? 0 : playheadSec;
+    const startTimelineSec =
+      committedPlayheadSec >= timelineEndSec ? 0 : committedPlayheadSec;
     const requestToken = startRequestTokenRef.current + 1;
     startRequestTokenRef.current = requestToken;
 
@@ -410,7 +435,7 @@ export function FinalReview() {
         startTimelineSec,
         endTimelineSec: timelineEndSec,
         onTick: (timelineSec) => {
-          model.tracksEditor.setPlayhead(timelineSec);
+          model.tracksEditor.setPlaybackPlayhead(timelineSec);
         },
         onEnded: () => {
           stopAudio();
@@ -418,6 +443,7 @@ export function FinalReview() {
           model.tracksEditor.setPlayhead(timelineEndSec);
         },
       });
+      model.tracksEditor.setPlaybackPlayhead(startTimelineSec);
       setIsPlaying(true);
     } finally {
       if (startRequestTokenRef.current === requestToken) {
@@ -544,7 +570,7 @@ export function FinalReview() {
         startTimelineSec: 0,
         endTimelineSec: timelineEndSec,
         onTick: (timelineSec) => {
-          model.tracksEditor.setPlayhead(timelineSec);
+          model.tracksEditor.setPlaybackPlayhead(timelineSec);
         },
         onEnded: () => {
           model.tracksEditor.setPlayhead(timelineEndSec);
@@ -597,28 +623,45 @@ export function FinalReview() {
     selection.trackId != null &&
     getActiveSegmentAtTime(
       timelines[documentState.trackOrder.indexOf(selection.trackId)] ?? [],
-      playheadSec,
+      committedPlayheadSec,
     ) != null;
 
-  const tracksEditorView = useMemo<TracksEditorView>(() => {
-    return {
-      lanes: orderedTracks.map((track, displayIndex) => {
-        const segments = timelines[displayIndex] ?? [];
-        const laneRuntime = model.getTrackRuntimeWaveform(track.id);
+  const tracksEditorView = useMemo<TracksEditorStaticView>(() => {
+    const activeClipIds = new Set<string>();
+    const lanes = orderedTracks.map((track, displayIndex) => {
+      const laneRuntime = model.getTrackRuntimeWaveform(track.id);
+      const segments = (timelines[displayIndex] ?? []).map((segment) => {
+        activeClipIds.add(segment.id);
         return {
-          trackId: track.id,
-          displayIndex,
-          label: getPartLabel(displayIndex, trackCount),
-          segments,
-          peaks: laneRuntime?.peaks ?? [],
-          sourceStartSec: laneRuntime?.sourceWindow.sourceStartSec ?? 0,
-          sourceDurationSec: laneRuntime?.sourceWindow.durationSec ?? 0,
-          volume: track.volume,
-          muted: track.muted,
+          ...segment,
+          renderAsset: getCachedSegmentRenderAsset({
+            cache: segmentRenderCacheRef.current,
+            clip: segment,
+            laneRuntime,
+            waveformVersion,
+          }),
         };
-      }),
+      });
+
+      return {
+        trackId: track.id,
+        displayIndex,
+        label: getPartLabel(displayIndex, trackCount),
+        segments,
+        volume: track.volume,
+        muted: track.muted,
+      };
+    });
+
+    for (const clipId of segmentRenderCacheRef.current.keys()) {
+      if (!activeClipIds.has(clipId)) {
+        segmentRenderCacheRef.current.delete(clipId);
+      }
+    }
+
+    return {
+      lanes,
       selection,
-      playheadSec,
       timelineEndSec,
       beatLineTimes,
       beatSec,
@@ -628,8 +671,8 @@ export function FinalReview() {
       isSyncingFrames,
       syncWarning,
       canSplit,
-    canDelete,
-  };
+      canDelete,
+    };
   }, [
     beatLineTimes,
     beatSec,
@@ -639,13 +682,13 @@ export function FinalReview() {
     isPlaying,
     isSyncingFrames,
     orderedTracks,
-    playheadSec,
     reverbWet,
     selection,
     syncWarning,
     timelineEndSec,
     timelines,
     trackCount,
+    waveformVersion,
   ]);
 
   return (
@@ -680,6 +723,7 @@ export function FinalReview() {
             <Box flex="1" minW={0}>
               <TracksEditorPanel
                 view={tracksEditorView}
+                playhead={model.tracksEditor.playbackPlayheadSec}
                 onPlayPause={handlePlayPause}
                 onCommand={handleTracksCommand}
                 onReverbChange={handleReverbChange}
@@ -767,6 +811,78 @@ export function FinalReview() {
       </Box>
     </Flex>
   );
+}
+
+function getCachedSegmentRenderAsset(input: {
+  cache: Map<string, { cacheKey: string; asset: TracksEditorSegmentRenderAsset }>;
+  clip: TrackClip;
+  laneRuntime: TrackRuntimeWaveform;
+  waveformVersion: number;
+}): TracksEditorSegmentRenderAsset {
+  const { cache, clip, laneRuntime, waveformVersion } = input;
+  const widthPx = Math.max(8, clip.durationSec * TIMELINE_PX_PER_SEC);
+  const waveformWidthPx = Math.max(
+    0,
+    widthPx - SEGMENT_WAVEFORM_HORIZONTAL_PADDING_PX,
+  );
+  const waveformBarCount = Math.max(
+    WAVEFORM_BARS_MIN,
+    Math.min(WAVEFORM_BARS_MAX, Math.round(waveformWidthPx / WAVEFORM_BAR_STEP_PX)),
+  );
+  const waveformKey =
+    laneRuntime == null
+      ? "none"
+      : `${laneRuntime.recordingId}:${laneRuntime.sourceWindow.sourceStartSec}:${laneRuntime.sourceWindow.durationSec}:${waveformVersion}`;
+  const cacheKey = [
+    clip.timelineStartSec,
+    clip.sourceStartSec,
+    clip.durationSec,
+    clip.volumeEnvelopeRevision,
+    waveformBarCount,
+    waveformKey,
+  ].join("|");
+  const cached = cache.get(clip.id);
+  if (cached?.cacheKey === cacheKey) {
+    return cached.asset;
+  }
+
+  const waveformBarHeights =
+    laneRuntime == null
+      ? []
+      : samplePeaksForSegment(
+          laneRuntime.peaks,
+          laneRuntime.sourceWindow.durationSec,
+          Math.max(0, clip.sourceStartSec - laneRuntime.sourceWindow.sourceStartSec),
+          clip.durationSec,
+          waveformBarCount,
+        ).map((sample) => Math.max(12, Math.round(sample * 100)));
+
+  const asset: TracksEditorSegmentRenderAsset = {
+    leftPx: clip.timelineStartSec * TIMELINE_PX_PER_SEC,
+    widthPx,
+    waveformBarHeights,
+    volumeLinePoints: buildVolumePolylinePoints(
+      clip.volumeEnvelope,
+      clip.durationSec,
+    ),
+  };
+  cache.set(clip.id, { cacheKey, asset });
+  return asset;
+}
+
+function buildVolumePolylinePoints(
+  volumeEnvelope: ClipVolumeEnvelope,
+  durationSec: number,
+): string {
+  if (durationSec <= 0) return "0,50";
+  const sorted = [...volumeEnvelope.points].sort((a, b) => a.timeSec - b.timeSec);
+  return sorted
+    .map((point) => {
+      const x = clamp((point.timeSec / durationSec) * 100, 0, 100);
+      const y = clamp((1 - point.gainMultiplier / 2) * 100, 2, 98);
+      return `${x},${y}`;
+    })
+    .join(" ");
 }
 
 function scheduleClipVolumeGain(input: {

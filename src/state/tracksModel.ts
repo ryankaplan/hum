@@ -34,6 +34,7 @@ export type TrackClip = {
 
   durationSec: number;
   volumeEnvelope: ClipVolumeEnvelope;
+  volumeEnvelopeRevision: number;
 };
 
 export type TrackRecord = {
@@ -242,6 +243,7 @@ export class TracksDocumentModel {
         sourceStartSec: Math.max(0, sourceStartSec),
         durationSec: Math.max(0, durationSec),
         volumeEnvelope: createDefaultClipVolumeEnvelope(Math.max(0, durationSec)),
+        volumeEnvelopeRevision: 0,
       };
 
       nextClipsById[clipId] = nextClip;
@@ -290,6 +292,7 @@ export class TracksDocumentModel {
               sourceStartSec,
               durationSec,
               volumeEnvelope: createDefaultClipVolumeEnvelope(durationSec),
+              volumeEnvelopeRevision: firstClip.volumeEnvelopeRevision + 1,
             },
           },
         };
@@ -310,6 +313,7 @@ export class TracksDocumentModel {
             sourceStartSec,
             durationSec,
             volumeEnvelope: createDefaultClipVolumeEnvelope(durationSec),
+            volumeEnvelopeRevision: 0,
           },
         },
         tracksById: {
@@ -368,6 +372,7 @@ export class TracksDocumentModel {
         id: leftClipId,
         durationSec: leftDuration,
         volumeEnvelope: splitVolumeEnvelope.left,
+        volumeEnvelopeRevision: clip.volumeEnvelopeRevision + 1,
       };
 
       const right: TrackClip = {
@@ -377,6 +382,7 @@ export class TracksDocumentModel {
         sourceStartSec: clip.sourceStartSec + leftDuration,
         durationSec: rightDuration,
         volumeEnvelope: splitVolumeEnvelope.right,
+        volumeEnvelopeRevision: clip.volumeEnvelopeRevision + 1,
       };
 
       const nextClipIds = [
@@ -523,6 +529,7 @@ export class TracksDocumentModel {
           [input.clipId]: {
             ...clip,
             volumeEnvelope: nextEnvelope,
+            volumeEnvelopeRevision: clip.volumeEnvelopeRevision + 1,
           },
         },
       };
@@ -754,12 +761,19 @@ export class TracksEditorModel {
   readonly editor = new Observable<TracksEditorState>(
     createEmptyTracksEditorState(),
   );
+  readonly playbackPlayheadSec = new Observable<number>(0);
 
   setPlayhead(sec: number): void {
+    const nextSec = Math.max(0, sec);
     this.setEditor((current) => ({
       ...current,
-      playheadSec: Math.max(0, sec),
+      playheadSec: nextSec,
     }));
+    this.playbackPlayheadSec.set(nextSec);
+  }
+
+  setPlaybackPlayhead(sec: number): void {
+    this.playbackPlayheadSec.set(Math.max(0, sec));
   }
 
   setSelection(selection: TracksEditorSelection): void {
@@ -775,6 +789,7 @@ export class TracksEditorModel {
 
   reset(): void {
     this.editor.set(createEmptyTracksEditorState());
+    this.playbackPlayheadSec.set(0);
   }
 
   private setEditor(updater: (current: TracksEditorState) => TracksEditorState) {

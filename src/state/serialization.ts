@@ -85,7 +85,14 @@ function serializeArrangementDocument(
   arrangement: ArrangementDocState,
 ): SavedArrangementDocument {
   return {
-    chordsInput: arrangement.chordsInput,
+    measures: arrangement.measures.map((measure) => ({
+      id: measure.id,
+      chords: measure.chords.map((chord) => ({
+        id: chord.id,
+        chordText: chord.chordText,
+        lyrics: chord.lyrics,
+      })),
+    })),
     tempo: arrangement.tempo,
     meter: [arrangement.meter[0], arrangement.meter[1]],
     vocalRangeLow: arrangement.vocalRangeLow,
@@ -98,7 +105,14 @@ function deserializeArrangementDocument(
   saved: SavedArrangementDocument,
 ): ArrangementDocState {
   return {
-    chordsInput: saved.chordsInput,
+    measures: saved.measures.map((measure) => ({
+      id: measure.id,
+      chords: measure.chords.map((chord) => ({
+        id: chord.id,
+        chordText: chord.chordText,
+        lyrics: chord.lyrics,
+      })),
+    })),
     tempo: saved.tempo,
     meter: [saved.meter[0], saved.meter[1]],
     vocalRangeLow: saved.vocalRangeLow,
@@ -198,6 +212,7 @@ function deserializeTracksDocument(
         sourceStartSec: clip.sourceStartSec,
         durationSec: clip.durationSec,
         volumeEnvelope: deserializeVolumeEnvelope(clip.volumeEnvelope),
+        volumeEnvelopeRevision: 0,
       },
     ]),
   );

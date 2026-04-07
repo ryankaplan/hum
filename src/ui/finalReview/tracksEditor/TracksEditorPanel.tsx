@@ -20,9 +20,10 @@ const TIMELINE_PX_PER_SEC = 110;
 const TIMELINE_RIGHT_PAD_PX = 48;
 const LANE_HEIGHT_PX = 72;
 const TRACK_RAIL_WIDTH_PX = 200;
-const WAVEFORM_BARS_PER_SEC = 12;
-const WAVEFORM_BARS_MIN = 12;
-const WAVEFORM_BARS_MAX = 280;
+const WAVEFORM_BAR_STEP_PX = 4;
+const WAVEFORM_BARS_MIN = 16;
+const WAVEFORM_BARS_MAX = 960;
+const SEGMENT_WAVEFORM_HORIZONTAL_PADDING_PX = 8;
 const VOLUME_BRUSH_RADIUS_SEC = 2;
 const VOLUME_BRUSH_GAIN_PER_PX = 1 / 180;
 const VOLUME_LINE_HIT_RADIUS_PX = 11;
@@ -475,11 +476,15 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
                     const widthPx = Math.max(8, segment.durationSec * TIMELINE_PX_PER_SEC);
                     const isSelected = view.selection.clipId === segment.id;
 
+                    const waveformWidthPx = Math.max(
+                      0,
+                      widthPx - SEGMENT_WAVEFORM_HORIZONTAL_PADDING_PX,
+                    );
                     const bars = Math.max(
                       WAVEFORM_BARS_MIN,
                       Math.min(
                         WAVEFORM_BARS_MAX,
-                        Math.round(segment.durationSec * WAVEFORM_BARS_PER_SEC),
+                        Math.round(waveformWidthPx / WAVEFORM_BAR_STEP_PX),
                       ),
                     );
                     const relativeSourceStart = Math.max(

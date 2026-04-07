@@ -208,6 +208,18 @@ class AppModel {
     { checkForEqualityOnNotify: false },
   );
 
+  readonly harmonyVoicingGreedy = new Derived<HarmonyVoicing | null>(
+    () => this.derivedArrangementInfo.get().harmonyVoicingGreedy,
+    [this.derivedArrangementInfo],
+    { checkForEqualityOnNotify: false },
+  );
+
+  readonly harmonyVoicingDynamic = new Derived<HarmonyVoicing | null>(
+    () => this.derivedArrangementInfo.get().harmonyVoicingDynamic,
+    [this.derivedArrangementInfo],
+    { checkForEqualityOnNotify: false },
+  );
+
   constructor() {
     this.arrangementDocument.onAfterChange((prev, next) => {
       if (prev.totalParts !== next.totalParts) {

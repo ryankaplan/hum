@@ -41,7 +41,12 @@ export type VocalRange = {
   high: MidiNote;
 };
 
-export type HarmonyVoicingStrategy = "drop2" | "closed";
+export type HarmonyVoicingStrategy =
+  | "drop2"
+  | "closed"
+  | "open"
+  | "spread";
+export type HarmonyVoicingGenerator = "legacy" | "greedy" | "dynamic";
 
 export type ChordToneFormula =
   | "R 3 5"
@@ -54,6 +59,7 @@ export type ChordToneFormula =
   | "R 3 7";
 
 export type HarmonyChordAnnotation = {
+  generator: HarmonyVoicingGenerator;
   strategy: HarmonyVoicingStrategy;
   chordTones: ChordToneFormula;
 };

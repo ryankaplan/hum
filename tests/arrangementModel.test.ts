@@ -4,7 +4,14 @@ import {
   parseArrangementText,
   type ArrangementDocState,
 } from "../src/state/arrangementModel";
-import { generateHarmony } from "../src/music/harmony";
+import {
+  generateHarmony,
+  generateHarmonyCandidates,
+  generateHarmonyDynamic,
+  generateHarmonyGreedy,
+  scoreHarmonyCandidate,
+  type HarmonyVoicingCandidate,
+} from "../src/music/harmony";
 import { chordPitchClassNames, parseChordText, rootSemitone } from "../src/music/parse";
 
 type ExpectedMeasure = Array<{
@@ -379,3 +386,195 @@ describe("simple seventh-chord support", () => {
     expect(new Set(voicedPitchClasses)).not.toContain((rootSemitone(chord.root) + 7) % 12);
   });
 });
+
+describe("greedy harmony generation", () => {
+  it("prefers smaller total movement over a farther candidate", () => {
+    const previous: HarmonyVoicingCandidate = {
+      notes: [52, 57, 60],
+      strategy: "closed",
+    };
+    const near: HarmonyVoicingCandidate = {
+      notes: [52, 55, 60],
+      strategy: "closed",
+    };
+    const far: HarmonyVoicingCandidate = {
+      notes: [45, 52, 57],
+      strategy: "drop2",
+    };
+
+    expect(
+      scoreHarmonyCandidate(near, previous, { low: 48, high: 72 }),
+    ).toBeLessThan(
+      scoreHarmonyCandidate(far, previous, { low: 48, high: 72 }),
+    );
+  });
+
+  it("favors common-tone retention when available", () => {
+    const previous: HarmonyVoicingCandidate = {
+      notes: [52, 57, 60],
+      strategy: "closed",
+    };
+    const retained: HarmonyVoicingCandidate = {
+      notes: [52, 57, 59],
+      strategy: "closed",
+    };
+    const shifted: HarmonyVoicingCandidate = {
+      notes: [50, 55, 59],
+      strategy: "closed",
+    };
+
+    expect(
+      scoreHarmonyCandidate(retained, previous, { low: 48, high: 72 }),
+    ).toBeLessThan(
+      scoreHarmonyCandidate(shifted, previous, { low: 48, high: 72 }),
+    );
+  });
+
+  it("returns in-range candidates for supported chord types", () => {
+    const candidates = generateHarmonyCandidates(
+      parseChordText("Am6", 4)!,
+      { low: 48, high: 72 },
+    );
+
+    expect(candidates.length).toBeGreaterThan(0);
+    for (const candidate of candidates) {
+      expect(candidate.notes[0]).toBeGreaterThanOrEqual(48);
+      expect(candidate.notes[2]).toBeLessThanOrEqual(72);
+      expect(candidate.notes[0]).toBeLessThan(candidate.notes[1]);
+      expect(candidate.notes[1]).toBeLessThan(candidate.notes[2]);
+    }
+  });
+
+  it("produces valid annotations for the greedy generator", () => {
+    const voicing = generateHarmonyGreedy(
+      [
+        parseChordText("A7", 4)!,
+        parseChordText("Am7", 4)!,
+        parseChordText("Adim", 4)!,
+      ],
+      { low: 48, high: 72 },
+      3,
+    );
+
+    expect(voicing.annotations.map((annotation) => annotation.generator)).toEqual([
+      "greedy",
+      "greedy",
+      "greedy",
+    ]);
+    expect(voicing.annotations.map((annotation) => annotation.chordTones)).toEqual([
+      "R 3 b7",
+      "R b3 b7",
+      "R b3 b5",
+    ]);
+  });
+
+  it("yields lower total movement than the legacy generator on the quiet nights progression", () => {
+    const progression = [
+      "Am6",
+      "E",
+      "Gm7",
+      "C",
+      "Fdim",
+      "F6",
+      "Fm7",
+      "B",
+      "E7",
+      "A7",
+      "Am7",
+      "Am6",
+      "Fm6",
+      "G",
+      "Fm6",
+    ]
+      .map((token) => parseChordText(token, 4))
+      .filter((chord): chord is NonNullable<ReturnType<typeof parseChordText>> => chord != null);
+
+    const legacy = generateHarmony(progression, { low: 48, high: 72 }, 3);
+    const greedy = generateHarmonyGreedy(progression, { low: 48, high: 72 }, 3);
+
+    expect(totalMovement(greedy.lines)).toBeLessThan(totalMovement(legacy.lines));
+  });
+
+  it("exposes both legacy and greedy voicings from arrangement info", () => {
+    const info = computeArrangementInfo(
+      makeArrangementDocState(
+        "Am6\nQuiet nights of quiet stars\nE\nQuiet chords from my guitar",
+      ),
+    );
+
+    expect(info.harmonyVoicing).not.toBeNull();
+    expect(info.harmonyVoicingGreedy).not.toBeNull();
+  });
+
+  it("produces valid annotations for the dynamic generator", () => {
+    const voicing = generateHarmonyDynamic(
+      [
+        parseChordText("A7", 4)!,
+        parseChordText("Am7", 4)!,
+        parseChordText("Adim", 4)!,
+      ],
+      { low: 48, high: 72 },
+      3,
+    );
+
+    expect(voicing.annotations.map((annotation) => annotation.generator)).toEqual([
+      "dynamic",
+      "dynamic",
+      "dynamic",
+    ]);
+    expect(voicing.annotations.map((annotation) => annotation.chordTones)).toEqual([
+      "R 3 b7",
+      "R b3 b7",
+      "R b3 b5",
+    ]);
+  });
+
+  it("yields no more total movement than the greedy generator on the quiet nights progression", () => {
+    const progression = [
+      "Am6",
+      "E",
+      "Gm7",
+      "C",
+      "Fdim",
+      "F6",
+      "Fm7",
+      "B",
+      "E7",
+      "A7",
+      "Am7",
+      "Am6",
+      "Fm6",
+      "G",
+      "Fm6",
+    ]
+      .map((token) => parseChordText(token, 4))
+      .filter((chord): chord is NonNullable<ReturnType<typeof parseChordText>> => chord != null);
+
+    const greedy = generateHarmonyGreedy(progression, { low: 48, high: 72 }, 3);
+    const dynamic = generateHarmonyDynamic(progression, { low: 48, high: 72 }, 3);
+
+    expect(totalMovement(dynamic.lines)).toBeLessThanOrEqual(totalMovement(greedy.lines));
+  });
+
+  it("exposes all three voicings from arrangement info", () => {
+    const info = computeArrangementInfo(
+      makeArrangementDocState(
+        "Am6\nQuiet nights of quiet stars\nE\nQuiet chords from my guitar",
+      ),
+    );
+
+    expect(info.harmonyVoicing).not.toBeNull();
+    expect(info.harmonyVoicingGreedy).not.toBeNull();
+    expect(info.harmonyVoicingDynamic).not.toBeNull();
+  });
+});
+
+function totalMovement(lines: number[][]): number {
+  let movement = 0;
+  for (const line of lines) {
+    for (let i = 1; i < line.length; i++) {
+      movement += Math.abs((line[i] ?? 0) - (line[i - 1] ?? 0));
+    }
+  }
+  return movement;
+}

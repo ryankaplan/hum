@@ -9,11 +9,13 @@ import {
   NativeSelect,
   Stack,
   Text,
+  Textarea,
   Tooltip,
 } from "@chakra-ui/react";
 import { useEffect, useRef, useState } from "react";
 import { useObservable } from "../observable";
 import { acquirePermissionsAndStart } from "../recording/permissions";
+import { flattenArrangementLyrics } from "../state/arrangementModel";
 import { triadPitchClassNames } from "../music/parse";
 import type { Meter } from "../music/types";
 import {
@@ -34,7 +36,6 @@ import {
   dsScreenShell,
 } from "./designSystem";
 import { InfoIcon, PlayIcon, StopIcon } from "./icons";
-import { ArrangementComposer } from "./ArrangementComposer";
 
 const METER_OPTIONS: { label: string; value: Meter }[] = [
   { label: "4/4", value: [4, 4] },
@@ -57,7 +58,7 @@ type SetupCardProps = {
   previewing: boolean;
   starting: boolean;
   error: string | null;
-  onMeasuresChange: (value: ArrangementInfo["measures"]) => void;
+  onChordsChange: (value: string) => void;
   onTempoInputChange: (value: string) => void;
   onTempoInputBlur: () => void;
   onMeterLabelChange: (label: string) => void;
@@ -75,7 +76,7 @@ function SetupCard({
   previewing,
   starting,
   error,
-  onMeasuresChange,
+  onChordsChange,
   onTempoInputChange,
   onTempoInputBlur,
   onMeterLabelChange,
@@ -90,15 +91,17 @@ function SetupCard({
     measures,
     parsedChords: parsed,
     invalidChordIds,
-    lyricsByChord,
+    parseIssues,
     harmonyVoicing: voicing,
     isValid,
   } = arrangement;
   const {
+    chordsInput,
     vocalRangeLow: rangeLow,
     vocalRangeHigh: rangeHigh,
     totalParts,
   } = input;
+  const lyricsByChord = flattenArrangementLyrics(measures);
   const selectedRangeValue =
     RANGE_OPTIONS.find(
       (option) => option.low === rangeLow && option.high === rangeHigh,
@@ -168,17 +171,23 @@ function SetupCard({
                     boxShadow="md"
                     fontSize="xs"
                   >
-                    Type chords inline. Press space to start a new measure, or
-                    comma to add another chord inside the current measure. Lyrics
-                    stay hidden until you choose to add them.
+                    Spaces separate full-measure chords. Add `.` for half a
+                    measure, `..` for a quarter measure, and place lyric lines
+                    directly under chord lines in monospaced text.
                   </Tooltip.Content>
                 </Tooltip.Positioner>
               </Tooltip.Root>
             </Flex>
-            <ArrangementComposer
-              measures={measures}
-              invalidChordIds={invalidChordIds}
-              onChange={onMeasuresChange}
+            <Textarea
+              rows={6}
+              value={chordsInput}
+              onChange={(e) => onChordsChange(e.target.value)}
+              placeholder={"A Bm C\n\nA. Bm. C\n\nA          E    F#m     D      A    E\nWhere are we?   What the hell is going on?"}
+              fontFamily="'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', monospace"
+              lineHeight="1.45"
+              spellCheck={false}
+              resize="vertical"
+              {...controlStyles}
             />
           </Box>
 
@@ -388,7 +397,7 @@ function SetupCard({
           </Box>
         )}
 
-        {invalidChordIds.length > 0 && (
+        {(invalidChordIds.length > 0 || parseIssues.length > 0) && (
           <Box
             bg={dsColors.errorBg}
             border="1px solid"
@@ -397,9 +406,9 @@ function SetupCard({
             p={4}
           >
             <Text color={dsColors.errorText} fontSize="sm">
-              Some chord tokens are unsupported right now. They stay editable in
-              place, but the arrangement needs valid chord spellings before you can
-              continue.
+              {invalidChordIds.length > 0
+                ? "Some chord tokens are unsupported right now. Use supported chord spellings before continuing."
+                : parseIssues[0]}
             </Text>
           </Box>
         )}
@@ -549,8 +558,8 @@ export function SetupScreen() {
     previewing,
     starting,
     error,
-    onMeasuresChange: (value: ArrangementInfo["measures"]) =>
-      model.setArrangementInput({ measures: value }),
+    onChordsChange: (value: string) =>
+      model.setArrangementInput({ chordsInput: value }),
     onTempoInputChange: handleTempoInputChange,
     onTempoInputBlur: handleTempoInputBlur,
     onMeterLabelChange: handleMeterLabelChange,

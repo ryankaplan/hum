@@ -3,7 +3,6 @@ import { parseChordText } from "../music/parse";
 import { progressionDurationSec } from "../music/playback";
 import { noteNameToMidi } from "../music/types";
 import type { Chord, HarmonyVoicing, Meter } from "../music/types";
-import { createShortUuid } from "./id";
 
 export type TotalPartCount = 2 | 4;
 
@@ -19,7 +18,7 @@ export type ArrangementMeasure = {
 };
 
 export type ArrangementDocState = {
-  measures: ArrangementMeasure[];
+  chordsInput: string;
   tempo: number;
   meter: Meter;
   vocalRangeLow: string;
@@ -31,8 +30,8 @@ export type ArrangementInfo = {
   input: ArrangementDocState;
   measures: ArrangementMeasure[];
   parsedChords: Chord[];
-  lyricsByChord: string[];
   invalidChordIds: string[];
+  parseIssues: string[];
   harmonyVoicing: HarmonyVoicing | null;
   beatSec: number;
   progressionDurationSec: number;
@@ -41,38 +40,36 @@ export type ArrangementInfo = {
   isValid: boolean;
 };
 
-function createChord(chordText: string, lyrics = ""): ArrangementChord {
-  return {
-    id: createShortUuid(),
-    chordText,
-    lyrics,
-  };
-}
+type ParsedArrangementResult = {
+  measures: ArrangementMeasure[];
+  parsedChords: Chord[];
+  invalidChordIds: string[];
+  parseIssues: string[];
+};
 
-function createMeasure(
-  chordTexts: string[],
-  lyricsByChord?: string[],
-): ArrangementMeasure {
-  return {
-    id: createShortUuid(),
-    chords: chordTexts.map((chordText, index) =>
-      createChord(chordText, lyricsByChord?.[index] ?? ""),
-    ),
-  };
-}
+type ParsedChordToken = {
+  id: string;
+  chordText: string;
+  lyrics: string;
+  beats: number;
+  column: number;
+};
+
+type ParsedChordLine = {
+  tokens: ParsedChordToken[];
+  invalidChordIds: string[];
+  parseIssues: string[];
+};
+
+const DURATION_DIVISOR_BY_SUFFIX: Record<string, number> = {
+  "": 1,
+  ".": 2,
+  "..": 4,
+};
 
 export function createDefaultArrangementDocState(): ArrangementDocState {
   return {
-    measures: [
-      createMeasure(["A"]),
-      createMeasure(["A"]),
-      createMeasure(["F#m"]),
-      createMeasure(["F#m"]),
-      createMeasure(["D"]),
-      createMeasure(["D"]),
-      createMeasure(["E"]),
-      createMeasure(["E"]),
-    ],
+    chordsInput: "A A F#m F#m D D E E",
     tempo: 80,
     meter: [4, 4],
     vocalRangeLow: "C3",
@@ -90,7 +87,10 @@ export function parseArrangementDocState(raw: unknown): ArrangementDocState {
   const defaults = createDefaultArrangementDocState();
 
   return {
-    measures: parseArrangementMeasures(value?.measures) ?? defaults.measures,
+    chordsInput:
+      typeof value?.chordsInput === "string"
+        ? value.chordsInput
+        : defaults.chordsInput,
     tempo:
       typeof value?.tempo === "number" && Number.isFinite(value.tempo)
         ? value.tempo
@@ -110,106 +110,251 @@ export function parseArrangementDocState(raw: unknown): ArrangementDocState {
   };
 }
 
-function parseArrangementMeasures(raw: unknown): ArrangementMeasure[] | null {
-  if (!Array.isArray(raw)) return null;
-  const measures = raw
-    .map((measure) => parseArrangementMeasure(measure))
-    .filter((measure): measure is ArrangementMeasure => measure != null);
-  return measures.length === raw.length ? measures : null;
+export function flattenArrangementLyrics(measures: ArrangementMeasure[]): string[] {
+  const lyrics: string[] = [];
+  for (const measure of measures) {
+    for (const chord of measure.chords) {
+      lyrics.push(chord.lyrics);
+    }
+  }
+  return lyrics;
 }
 
-function parseArrangementMeasure(raw: unknown): ArrangementMeasure | null {
-  if (
-    typeof raw !== "object" ||
-    raw == null ||
-    Array.isArray(raw) ||
-    !Array.isArray((raw as { chords?: unknown }).chords)
-  ) {
-    return null;
+export function parseArrangementText(
+  input: string,
+  beatsPerBar: number,
+): ParsedArrangementResult {
+  const lines = input
+    .split(/\r?\n/)
+    .map((line, index) => ({
+      raw: line.replace(/\s+$/, ""),
+      index,
+    }))
+    .filter((line) => line.raw.trim().length > 0);
+
+  if (lines.length === 0) {
+    return {
+      measures: [],
+      parsedChords: [],
+      invalidChordIds: [],
+      parseIssues: [],
+    };
   }
-  const value = raw as Partial<ArrangementMeasure>;
-  const chords = value.chords
-    ?.map((chord) => parseArrangementChord(chord))
-    .filter((chord): chord is ArrangementChord => chord != null);
-  if (chords == null || chords.length !== value.chords?.length) {
-    return null;
+
+  const firstChordLine = parseChordLine(lines[0]!.raw, lines[0]!.index);
+  const secondChordLine =
+    lines.length > 1 ? parseChordLine(lines[1]!.raw, lines[1]!.index) : null;
+  const chordOnlyMode =
+    secondChordLine == null ||
+    (isChordLine(firstChordLine) && isChordLine(secondChordLine));
+
+  const allTokens: ParsedChordToken[] = [];
+  const invalidChordIds: string[] = [];
+  const parseIssues: string[] = [];
+
+  if (chordOnlyMode) {
+    for (const line of lines) {
+      const parsed = parseChordLine(line.raw, line.index);
+      invalidChordIds.push(...parsed.invalidChordIds);
+      parseIssues.push(...parsed.parseIssues);
+      allTokens.push(...parsed.tokens);
+    }
+  } else {
+    for (let index = 0; index < lines.length; index += 2) {
+      const chordLine = lines[index];
+      if (chordLine == null) break;
+      const lyricLine = lines[index + 1]?.raw ?? "";
+      const parsed = parseChordLine(chordLine.raw, chordLine.index);
+      invalidChordIds.push(...parsed.invalidChordIds);
+      parseIssues.push(...parsed.parseIssues);
+      allTokens.push(...attachLyricsToTokens(parsed.tokens, lyricLine));
+    }
   }
+
+  const grouped = groupTokensIntoMeasures(allTokens, beatsPerBar);
+  parseIssues.push(...grouped.parseIssues);
+
   return {
-    id: typeof value.id === "string" ? value.id : createShortUuid(),
-    chords,
+    measures: grouped.measures,
+    parsedChords: grouped.parsedChords,
+    invalidChordIds,
+    parseIssues,
   };
 }
 
-function parseArrangementChord(raw: unknown): ArrangementChord | null {
-  if (typeof raw !== "object" || raw == null || Array.isArray(raw)) {
-    return null;
+function isChordLine(parsed: ParsedChordLine): boolean {
+  return parsed.tokens.length > 0 && parsed.parseIssues.length === 0;
+}
+
+function parseChordLine(line: string, lineIndex: number): ParsedChordLine {
+  const tokenPattern = /[A-G][#b]?m?\.{0,2}/g;
+  const tokens: ParsedChordToken[] = [];
+  const invalidChordIds: string[] = [];
+  let match: RegExpExecArray | null;
+
+  while ((match = tokenPattern.exec(line)) != null) {
+    const raw = match[0] ?? "";
+    const chordText = raw.replace(/\.+$/, "");
+    const suffix = raw.slice(chordText.length);
+    const divisor = DURATION_DIVISOR_BY_SUFFIX[suffix];
+    const id = createChordId(lineIndex, tokens.length, chordText);
+
+    if (divisor == null) continue;
+    if (parseChordText(chordText, 1) == null) {
+      invalidChordIds.push(id);
+    }
+
+    tokens.push({
+      id,
+      chordText,
+      lyrics: "",
+      beats: 1 / divisor,
+      column: match.index,
+    });
   }
-  const value = raw as Partial<ArrangementChord>;
-  if (
-    typeof value.chordText !== "string" ||
-    typeof value.lyrics !== "string"
-  ) {
-    return null;
+
+  const stripped = line.replace(tokenPattern, " ").trim();
+  const parseIssues: string[] = [];
+  if (tokens.length === 0) {
+    parseIssues.push(`Line ${lineIndex + 1} is not a chord line.`);
+  } else if (stripped.length > 0) {
+    parseIssues.push(`Line ${lineIndex + 1} contains unsupported chord text.`);
   }
+
   return {
-    id: typeof value.id === "string" ? value.id : createShortUuid(),
-    chordText: value.chordText,
-    lyrics: value.lyrics,
+    tokens,
+    invalidChordIds,
+    parseIssues,
   };
+}
+
+function attachLyricsToTokens(
+  tokens: ParsedChordToken[],
+  lyricsLine: string,
+): ParsedChordToken[] {
+  const lyricWords = Array.from(lyricsLine.matchAll(/\S+/g)).map((match) => ({
+    start: match.index ?? 0,
+    word: match[0],
+  }));
+
+  return tokens.map((token, index) => {
+    const nextColumn = tokens[index + 1]?.column ?? Number.POSITIVE_INFINITY;
+    const words = lyricWords
+      .filter((word) => word.start >= token.column && word.start < nextColumn)
+      .map((word) => word.word);
+    return {
+      ...token,
+      lyrics: words.join(" "),
+    };
+  });
+}
+
+function groupTokensIntoMeasures(
+  tokens: ParsedChordToken[],
+  beatsPerBar: number,
+): {
+  measures: ArrangementMeasure[];
+  parsedChords: Chord[];
+  parseIssues: string[];
+} {
+  const measures: ArrangementMeasure[] = [];
+  const parsedChords: Chord[] = [];
+  const parseIssues: string[] = [];
+  let currentTokens: ParsedChordToken[] = [];
+  let currentBeats = 0;
+
+  for (const token of tokens) {
+    const tokenBeats = token.beats * beatsPerBar;
+    currentTokens.push(token);
+    currentBeats += tokenBeats;
+
+    if (currentBeats > beatsPerBar + 0.0001) {
+      parseIssues.push(
+        `A measure exceeds ${beatsPerBar} beats while grouping dotted durations.`,
+      );
+      currentTokens = [];
+      currentBeats = 0;
+      continue;
+    }
+
+    if (Math.abs(currentBeats - beatsPerBar) < 0.0001) {
+      measures.push({
+        id: `measure-${measures.length}`,
+        chords: currentTokens.map((current) => ({
+          id: current.id,
+          chordText: current.chordText,
+          lyrics: current.lyrics,
+        })),
+      });
+
+      for (const current of currentTokens) {
+        const parsed = parseChordText(current.chordText, current.beats * beatsPerBar);
+        if (parsed != null) {
+          parsedChords.push(parsed);
+        }
+      }
+
+      currentTokens = [];
+      currentBeats = 0;
+    }
+  }
+
+  if (currentTokens.length > 0) {
+    parseIssues.push(
+      `A measure is incomplete; dotted durations must add up to ${beatsPerBar} beats.`,
+    );
+  }
+
+  return {
+    measures,
+    parsedChords,
+    parseIssues,
+  };
+}
+
+function createChordId(
+  lineIndex: number,
+  tokenIndex: number,
+  chordText: string,
+): string {
+  return `line-${lineIndex}-token-${tokenIndex}-${chordText}`;
 }
 
 export function computeArrangementInfo(
   input: ArrangementDocState,
 ): ArrangementInfo {
-  const parsed: Chord[] = [];
-  const lyricsByChord: string[] = [];
-  const invalidChordIds: string[] = [];
-
-  for (const measure of input.measures) {
-    const nonEmptyChords = measure.chords.filter(
-      (chord) => chord.chordText.trim().length > 0,
-    );
-    if (nonEmptyChords.length === 0) continue;
-
-    const beatsPerChord = input.meter[0] / nonEmptyChords.length;
-    for (const chord of nonEmptyChords) {
-      const parsedChord = parseChordText(chord.chordText.trim(), beatsPerChord);
-      if (parsedChord == null) {
-        invalidChordIds.push(chord.id);
-        continue;
-      }
-      parsed.push(parsedChord);
-      lyricsByChord.push(chord.lyrics);
-    }
-  }
+  const parsedArrangement = parseArrangementText(input.chordsInput, input.meter[0]);
 
   let voicing: HarmonyVoicing | null = null;
   try {
     const low = noteNameToMidi(input.vocalRangeLow);
     const high = noteNameToMidi(input.vocalRangeHigh);
-    if (high > low && parsed.length > 0) {
+    if (high > low && parsedArrangement.parsedChords.length > 0) {
       const harmonyPartCount = Math.max(1, input.totalParts - 1);
-      voicing = generateHarmony(parsed, { low, high }, harmonyPartCount);
+      voicing = generateHarmony(parsedArrangement.parsedChords, { low, high }, harmonyPartCount);
     }
   } catch {
     voicing = null;
   }
 
   const beatSec = input.tempo > 0 ? 60 / input.tempo : 0;
-  const progressionIsValid = parsed.length > 0 && invalidChordIds.length === 0;
+  const progressionIsValid =
+    parsedArrangement.parsedChords.length > 0 &&
+    parsedArrangement.invalidChordIds.length === 0 &&
+    parsedArrangement.parseIssues.length === 0;
   const voicingIsValid = progressionIsValid && voicing != null;
 
   return {
     input,
-    measures: input.measures,
-    parsedChords: parsed,
-    lyricsByChord,
-    invalidChordIds,
+    measures: parsedArrangement.measures,
+    parsedChords: parsedArrangement.parsedChords,
+    invalidChordIds: parsedArrangement.invalidChordIds,
+    parseIssues: parsedArrangement.parseIssues,
     harmonyVoicing: voicing,
     beatSec,
     progressionDurationSec:
-      parsed.length > 0 && input.tempo > 0
-        ? progressionDurationSec(parsed, input.tempo)
+      parsedArrangement.parsedChords.length > 0 && input.tempo > 0
+        ? progressionDurationSec(parsedArrangement.parsedChords, input.tempo)
         : 0,
     progressionIsValid,
     voicingIsValid,

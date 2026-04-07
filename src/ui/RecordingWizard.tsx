@@ -9,6 +9,7 @@ import {
 } from "@chakra-ui/react";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { useObservable } from "../observable";
+import { flattenArrangementLyrics } from "../state/arrangementModel";
 import { model } from "../state/model";
 import { getPartLabel } from "../music/types";
 import {
@@ -232,6 +233,7 @@ export function RecordingWizard() {
   const arrangement = useObservable(model.arrangementDocument);
   const arrangementInfo = useObservable(model.derivedArrangementInfo);
   const chords = arrangementInfo.parsedChords;
+  const lyricsByChord = flattenArrangementLyrics(arrangementInfo.measures);
   const voicing = useObservable(model.harmonyVoicing);
   const latencyCorrectionSec = useObservable(model.latencyCorrectionSec);
 
@@ -650,7 +652,7 @@ export function RecordingWizard() {
             <NoteDisplay
               ctx={ctx}
               chords={chords}
-              lyricsByChord={arrangementInfo.lyricsByChord}
+              lyricsByChord={lyricsByChord}
               harmonyLine={harmonyLine}
               activeChordIndex={activeChordIndex}
               currentAbsoluteBeat={currentAbsoluteBeat}

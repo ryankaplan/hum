@@ -35,25 +35,20 @@ export async function acquirePermissionsAndStart(): Promise<void> {
 
   model.mediaStream.set(stream);
 
-  // Create (or resume) the AudioContext. A user gesture is in scope here
-  // (the button click that triggered this function), so browsers allow it.
-  let ctx = model.audioContext.get();
-  if (ctx == null) {
-    ctx = new AudioContext();
-  }
-  if (ctx.state === "suspended") {
-    await ctx.resume();
-  }
-  model.audioContext.set(ctx);
+  await model.ensureAudioContext();
 
-  model.resetSession();
+  const hasDraftWork =
+    Object.keys(model.tracksDocument.document.get().recordingsById).length > 0;
+  if (!hasDraftWork) {
+    model.resetSession();
+  }
   if (shouldSkipCalibrationFromUrl()) {
     // Debug path: bypass calibration and use zero correction.
     model.setCalibrationOffset(0);
     model.appScreen.set("recording");
     return;
   }
-  model.appScreen.set("calibration");
+  model.appScreen.set(model.isCalibrated.get() ? "recording" : "calibration");
 }
 
 function shouldSkipCalibrationFromUrl(): boolean {

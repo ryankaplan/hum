@@ -1,4 +1,4 @@
-import { Derived, Observable, PersistedObservable } from "../observable";
+import { Derived, Observable } from "../observable";
 import type { Chord, HarmonyVoicing, PartIndex } from "../music/types";
 import type { Mixer } from "../audio/mixer";
 import type { CompositorHandle } from "../video/compositor";
@@ -6,7 +6,6 @@ import { buildWaveformPeaks } from "../ui/timeline";
 import {
   computeArrangementInfo,
   createDefaultArrangementDocState,
-  parseArrangementDocState,
 } from "./arrangementModel";
 import { createShortUuid } from "./id";
 import type {
@@ -29,6 +28,7 @@ import {
   type TracksEditorSelection,
   type TracksEditorState,
 } from "./tracksModel";
+import { DraftSessionController } from "./draftSessionController";
 
 type WaveformPeaks = number[];
 
@@ -129,16 +129,44 @@ class AppModel {
     RecordingId,
     RecordingSourceWindow
   >();
+  private readonly draftSession = new DraftSessionController({
+    getSnapshot: () => ({
+      document: this.getHumDocument(),
+      currentPartIndex: this.currentPartIndex.get(),
+      appScreen: this.appScreen.get(),
+      latencyCorrectionSec: this.latencyCorrectionSec.get(),
+      isCalibrated: this.isCalibrated.get(),
+    }),
+    applyRestoredDraft: (input) => {
+      this.arrangementDocument.set(input.document.arrangement);
+      this.tracksDocument.replaceDocument(input.document.tracks);
+      this.exportPreferences.set(input.document.exportPreferences);
+      this.currentPartIndex.set(input.currentPartIndex);
+      this.latencyCorrectionSec.set(input.latencyCorrectionSec);
+      this.isCalibrated.set(input.isCalibrated);
+      this.hasRestoredDraft.set(true);
+      for (const mediaAsset of input.mediaAssets) {
+        this.registerMediaAsset(mediaAsset.mediaAssetId, mediaAsset.blob);
+      }
+      this.appScreen.set(input.appScreen);
+    },
+    onBootstrapped: () => {
+      this.bootstrapped.set(true);
+    },
+    onHasDraftChange: (hasDraft) => {
+      this.hasRestoredDraft.set(hasDraft);
+    },
+  });
 
-  readonly arrangementDocument = new PersistedObservable<ArrangementDocState>(
-    "hum.arrangementDoc",
+  readonly arrangementDocument = new Observable<ArrangementDocState>(
     createDefaultArrangementDocState(),
-    { schema: parseArrangementDocState },
   );
 
   readonly exportPreferences = new Observable<ExportPreferences>(
     createDefaultExportPreferences(),
   );
+  readonly bootstrapped = new Observable<boolean>(false);
+  readonly hasRestoredDraft = new Observable<boolean>(false);
 
   readonly appScreen = new Observable<AppScreen>("setup");
   readonly mediaStream = new Observable<MediaStream | null>(null);
@@ -184,6 +212,34 @@ class AppModel {
         this.resizePartCount(next.totalParts);
       }
     });
+
+    this.arrangementDocument.onAfterChange(() => {
+      this.draftSession.handleStateChanged();
+    });
+    this.exportPreferences.onAfterChange(() => {
+      this.draftSession.handleStateChanged();
+    });
+    this.tracksDocument.document.onAfterChange(() => {
+      this.draftSession.handleStateChanged();
+    });
+    this.currentPartIndex.onAfterChange(() => {
+      this.draftSession.handleStateChanged();
+    });
+    this.appScreen.onAfterChange(() => {
+      this.draftSession.handleStateChanged();
+    });
+    this.latencyCorrectionSec.onAfterChange(() => {
+      this.draftSession.handleStateChanged();
+    });
+    this.isCalibrated.onAfterChange(() => {
+      this.draftSession.handleStateChanged();
+    });
+
+    if (typeof window !== "undefined" && "AudioContext" in window) {
+      this.audioContext.set(new AudioContext());
+    }
+
+    void this.restoreDraftOnBoot();
   }
 
   setArrangementInput(patch: Partial<ArrangementDocState>): void {
@@ -218,6 +274,7 @@ class AppModel {
     const mediaAssetId = this.makeMediaAssetId();
 
     this.registerMediaAsset(mediaAssetId, blob);
+    void this.draftSession.persistMediaAsset(mediaAssetId, blob);
 
     const recording: RecordingRecord = {
       id: recordingId,
@@ -525,26 +582,45 @@ class AppModel {
   }
 
   resetSession(): void {
-    const totalParts = this.arrangementDocument.get().totalParts;
+    this.draftSession.clearDraftAfter(() => {
+      const totalParts = this.arrangementDocument.get().totalParts;
 
-    this.currentPartIndex.set(0);
-    this.permissionError.set(null);
-    this.clearCalibration();
+      this.currentPartIndex.set(0);
+      this.permissionError.set(null);
+      this.clearCalibration();
+      this.appScreen.set("setup");
 
-    const removedRecordings = this.tracksDocument.reset(totalParts);
-    for (const removed of removedRecordings) {
-      this.releaseRecording(removed);
+      const removedRecordings = this.tracksDocument.reset(totalParts);
+      for (const removed of removedRecordings) {
+        this.releaseRecording(removed);
+      }
+
+      this.clearDecodedRuntimeMedia();
+      this.tracksEditor.reset();
+      this.resetExportState();
+
+      this.mixer?.dispose();
+      this.mixer = null;
+
+      this.compositor?.stop();
+      this.compositor = null;
+    });
+  }
+
+  async ensureAudioContext(): Promise<AudioContext | null> {
+    if (typeof window === "undefined" || !("AudioContext" in window)) {
+      return null;
     }
 
-    this.clearDecodedRuntimeMedia();
-    this.tracksEditor.reset();
-    this.resetExportState();
-
-    this.mixer?.dispose();
-    this.mixer = null;
-
-    this.compositor?.stop();
-    this.compositor = null;
+    let ctx = this.audioContext.get();
+    if (ctx == null) {
+      ctx = new AudioContext();
+      this.audioContext.set(ctx);
+    }
+    if (ctx.state === "suspended") {
+      await ctx.resume();
+    }
+    return ctx;
   }
 
   private registerMediaAsset(mediaAssetId: MediaAssetId, blob: Blob): void {
@@ -571,6 +647,7 @@ class AppModel {
       }
       this.objectUrlsByAssetId.delete(recording.mediaAssetId);
       this.mediaBlobsByAssetId.delete(recording.mediaAssetId);
+      void this.draftSession.deleteMediaAsset(recording.mediaAssetId);
     }
   }
 
@@ -640,6 +717,48 @@ class AppModel {
 
   private makeMediaAssetId(): MediaAssetId {
     return `media-asset-${createShortUuid()}`;
+  }
+
+  private async restoreDraftOnBoot(): Promise<void> {
+    const restored = await this.draftSession.restoreOnBoot();
+    if (restored == null) return;
+
+    if (restored.appScreen === "recording" || restored.appScreen === "calibration") {
+      try {
+        const stream = await this.acquireMediaStream();
+        if (stream != null) {
+          this.mediaStream.set(stream);
+        } else {
+          this.appScreen.set("setup");
+        }
+      } catch (error) {
+        console.error("Failed to restore media permissions", error);
+        this.appScreen.set("setup");
+      }
+    }
+  }
+
+  private async acquireMediaStream(): Promise<MediaStream | null> {
+    if (typeof navigator === "undefined" || navigator.mediaDevices == null) {
+      return null;
+    }
+
+    const existing = this.mediaStream.get();
+    if (existing != null) {
+      for (const track of existing.getTracks()) {
+        track.stop();
+      }
+    }
+
+    return await navigator.mediaDevices.getUserMedia({
+      video: {
+        aspectRatio: { ideal: 9 / 16 },
+        width: { ideal: 720 },
+        height: { ideal: 1280 },
+        facingMode: { ideal: "user" },
+      },
+      audio: true,
+    });
   }
 }
 

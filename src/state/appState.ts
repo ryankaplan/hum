@@ -25,6 +25,8 @@ export type {
 } from "./model";
 
 export const appScreen = model.appScreen;
+export const bootstrapped = model.bootstrapped;
+export const hasRestoredDraft = model.hasRestoredDraft;
 export const mediaStream = model.mediaStream;
 export const audioContext = model.audioContext;
 export const currentPartIndex = model.currentPartIndex;

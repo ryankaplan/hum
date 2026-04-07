@@ -202,6 +202,10 @@ export class TracksDocumentModel {
     return clip?.recordingId ?? null;
   }
 
+  replaceDocument(document: TracksDocumentState): void {
+    this.document.set(document);
+  }
+
   stageCommittedRecording(input: {
     trackId: TrackId;
     recording: RecordingRecord;

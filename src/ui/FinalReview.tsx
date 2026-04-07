@@ -374,6 +374,7 @@ export function FinalReview() {
   }, [stopPlaybackEngine]);
 
   async function handlePlayPause() {
+    const ctx = await model.ensureAudioContext();
     if (exporting || isSyncingFrames || ctx == null) return;
     if (timelineEndSec <= 0) return;
 
@@ -510,6 +511,7 @@ export function FinalReview() {
   }
 
   async function handleExport() {
+    const ctx = await model.ensureAudioContext();
     const mixer = model.mixer;
     if (ctx == null || canvasRef.current == null || mixer == null) return;
     if (isSyncingFrames) return;

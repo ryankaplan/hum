@@ -9,7 +9,10 @@ import { RecordingWizard } from "./ui/RecordingWizard";
 import { FinalReview } from "./ui/FinalReview";
 
 function App() {
+  const bootstrapped = useObservable(model.bootstrapped);
   const screen = useObservable(model.appScreen);
+
+  if (!bootstrapped) return null;
 
   if (screen === "setup") return <SetupScreen />;
   if (screen === "calibration") return <LatencyCalibrationScreen />;

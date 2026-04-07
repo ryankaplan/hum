@@ -426,14 +426,8 @@ export function SetupScreen() {
 
     if (voicing == null || parsed.length === 0) return;
 
-    let ctx = model.audioContext.get();
-    if (ctx == null) {
-      ctx = new AudioContext();
-      model.audioContext.set(ctx);
-    }
-    if (ctx.state === "suspended") {
-      await ctx.resume();
-    }
+    const ctx = await model.ensureAudioContext();
+    if (ctx == null) return;
 
     setPreviewing(true);
     const session = playHarmonyPreview(

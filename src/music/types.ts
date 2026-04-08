@@ -51,9 +51,9 @@ export type VocalRange = {
 };
 
 export type HarmonyRangeCoverage =
-  | "lower-half"
-  | "lower-two-thirds"
-  | "lower-three-quarters";
+  | "lower two thirds"
+  | "lower three quarters"
+  | "whole-range";
 
 export type HarmonyVoicingStrategy =
   | "drop2"

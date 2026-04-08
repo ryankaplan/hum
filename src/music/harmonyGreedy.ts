@@ -35,7 +35,7 @@ export function generateHarmonyGreedy(
   chords: Chord[],
   range: VocalRange,
   harmonyPartCount: number,
-  harmonyRangeCoverage: HarmonyRangeCoverage = "lower-two-thirds",
+  harmonyRangeCoverage: HarmonyRangeCoverage = "lower two thirds",
 ): HarmonyVoicing {
   const resolvedHarmonyPartCount = resolveHarmonyPartCount(harmonyPartCount);
 

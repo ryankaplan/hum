@@ -16,7 +16,7 @@ function renderGreedyProgressionVoicings(tokens: readonly string[]): string[] {
     chords,
     { low: 48, high: 72 },
     3,
-    "lower-two-thirds",
+    "lower two thirds",
   );
 
   return tokens.map((token, chordIndex) => {

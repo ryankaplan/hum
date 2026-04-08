@@ -49,7 +49,7 @@
  * - On parse failure or schema version mismatch, callers should clear the draft
  *   instead of trying to partially recover it.
  */
-export const SAVED_HUM_DOCUMENT_SCHEMA_VERSION = "4";
+export const SAVED_HUM_DOCUMENT_SCHEMA_VERSION = "5";
 
 export const SAVED_HUM_DOCUMENT_ID = "current";
 
@@ -67,9 +67,9 @@ export type SavedArrangementDocument = {
   vocalRangeLow: string;
   vocalRangeHigh: string;
   harmonyRangeCoverage:
-    | "lower-half"
-    | "lower-two-thirds"
-    | "lower-three-quarters";
+    | "lower two thirds"
+    | "lower three quarters"
+    | "whole-range";
   totalParts: 2 | 4;
 };
 
@@ -183,9 +183,9 @@ function parseSavedArrangementDocument(
     typeof raw.vocalRangeLow !== "string" ||
     typeof raw.vocalRangeHigh !== "string" ||
     (raw.harmonyRangeCoverage !== undefined &&
-      raw.harmonyRangeCoverage !== "lower-half" &&
-      raw.harmonyRangeCoverage !== "lower-two-thirds" &&
-      raw.harmonyRangeCoverage !== "lower-three-quarters") ||
+      raw.harmonyRangeCoverage !== "lower two thirds" &&
+      raw.harmonyRangeCoverage !== "lower three quarters" &&
+      raw.harmonyRangeCoverage !== "whole-range") ||
     (raw.totalParts !== 2 && raw.totalParts !== 4)
   ) {
     return null;
@@ -197,7 +197,7 @@ function parseSavedArrangementDocument(
     meter: [meter[0], meter[1]],
     vocalRangeLow: raw.vocalRangeLow,
     vocalRangeHigh: raw.vocalRangeHigh,
-    harmonyRangeCoverage: raw.harmonyRangeCoverage ?? "lower-two-thirds",
+    harmonyRangeCoverage: raw.harmonyRangeCoverage ?? "lower two thirds",
     totalParts: raw.totalParts,
   };
 }

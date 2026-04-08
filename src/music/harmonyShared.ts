@@ -778,11 +778,11 @@ function spacingPenalty(notes: [MidiNote, MidiNote, MidiNote]): number {
 
 function harmonyCoverageRatio(coverage: HarmonyRangeCoverage): number {
   switch (coverage) {
-    case "lower-half":
-      return 0.5;
-    case "lower-two-thirds":
+    case "lower two thirds":
       return 2 / 3;
-    case "lower-three-quarters":
+    case "lower three quarters":
       return 0.75;
+    case "whole-range":
+      return 1;
   }
 }

@@ -86,7 +86,7 @@ export function createDefaultArrangementDocState(): ArrangementDocState {
     meter: [4, 4],
     vocalRangeLow: "C3",
     vocalRangeHigh: "A4",
-    harmonyRangeCoverage: "lower-two-thirds",
+    harmonyRangeCoverage: "lower two thirds",
     totalParts: 4,
   };
 }
@@ -127,11 +127,11 @@ export function parseArrangementDocState(raw: unknown): ArrangementDocState {
 }
 
 function parseHarmonyRangeCoverage(raw: unknown): HarmonyRangeCoverage {
-  return raw === "lower-half" ||
-    raw === "lower-two-thirds" ||
-    raw === "lower-three-quarters"
+  return raw === "lower two thirds" ||
+    raw === "lower three quarters" ||
+    raw === "whole-range"
     ? raw
-    : "lower-two-thirds";
+    : "lower two thirds";
 }
 
 export function flattenArrangementLyrics(measures: ArrangementMeasure[]): string[] {

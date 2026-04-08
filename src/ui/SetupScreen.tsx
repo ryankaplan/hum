@@ -17,7 +17,11 @@ import { useObservable } from "../observable";
 import { acquirePermissionsAndStart } from "../recording/permissions";
 import { flattenArrangementLyrics } from "../state/arrangementModel";
 import { chordPitchClassNames, formatChordSymbol } from "../music/parse";
-import { midiToNoteName, type Meter } from "../music/types";
+import {
+  midiToNoteName,
+  type HarmonyRangeCoverage,
+  type Meter,
+} from "../music/types";
 import {
   playHarmonyPreview,
   progressionDurationSec,
@@ -54,9 +58,9 @@ const RANGE_OPTIONS = [
 ] as const;
 
 const HARMONY_COVERAGE_OPTIONS = [
-  { label: "Lower Half", value: "lower-half" },
-  { label: "Lower Two Thirds", value: "lower-two-thirds" },
-  { label: "Lower Three Quarters", value: "lower-three-quarters" },
+  { label: "Lower Two Thirds", value: "lower two thirds" },
+  { label: "Lower Three Quarters", value: "lower three quarters" },
+  { label: "Whole Range", value: "whole-range" },
 ] as const;
 
 type SetupCardProps = {
@@ -71,9 +75,7 @@ type SetupCardProps = {
   onTempoInputBlur: () => void;
   onMeterLabelChange: (label: string) => void;
   onRangePresetChange: (value: string) => void;
-  onHarmonyCoverageChange: (
-    value: "lower-half" | "lower-two-thirds" | "lower-three-quarters",
-  ) => void;
+  onHarmonyCoverageChange: (value: HarmonyRangeCoverage) => void;
   onPartCountChange: (value: "2" | "4") => void;
   onPreviewLegacy: () => void;
   onPreviewGreedy: () => void;
@@ -269,12 +271,7 @@ function SetupCard({
               <NativeSelect.Field
                 value={harmonyRangeCoverage}
                 onChange={(e) =>
-                  onHarmonyCoverageChange(
-                    e.target.value as
-                      | "lower-half"
-                      | "lower-two-thirds"
-                      | "lower-three-quarters",
-                  )
+                  onHarmonyCoverageChange(e.target.value as HarmonyRangeCoverage)
                 }
                 {...controlStyles}
               >
@@ -753,12 +750,9 @@ export function SetupScreen() {
         vocalRangeHigh: range.high,
       });
     },
-    onHarmonyCoverageChange: (value: string) => {
+    onHarmonyCoverageChange: (value: HarmonyRangeCoverage) => {
       model.setArrangementInput({
-        harmonyRangeCoverage: value as
-          | "lower-half"
-          | "lower-two-thirds"
-          | "lower-three-quarters",
+        harmonyRangeCoverage: value,
       });
     },
     onPartCountChange: handlePartCountChange,

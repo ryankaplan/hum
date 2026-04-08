@@ -10,7 +10,7 @@
  * search approach while centralizing the low-level voicing rules in one place.
  */
 
-import { chordSemitones } from "./parse";
+import { chordSemitones, fullChordSemitones } from "./parse";
 import type {
   Chord,
   HarmonyRangeCoverage,
@@ -157,6 +157,16 @@ function chordClasses(chord: Chord): [number, number, number] {
   return [normalizePitchClass(r), normalizePitchClass(t), normalizePitchClass(f)];
 }
 
+function fullChordPitchClasses(chord: Chord): number[] {
+  return [
+    ...new Set(
+      fullChordSemitones(chord.root, chord.quality).map((tone) =>
+        normalizePitchClass(tone),
+      ),
+    ),
+  ];
+}
+
 export function generateHarmonyCandidates(
   chord: Chord,
   range: VocalRange,
@@ -251,6 +261,13 @@ export function scoreHarmonyCandidate(
     const center = (range.low + range.high) / 2;
     const average = (low + middle + top) / 3;
     const targetTop = range.high - 2;
+    if (chord != null && chord.bass == null) {
+      const preferredBass = normalizePitchClassFromNoteName(chord.root);
+      const actualBass = normalizePitchClass(low);
+      if (actualBass !== preferredBass) {
+        score += 8;
+      }
+    }
     score += Math.abs(average - center) * 1.5;
     score += Math.abs(top - targetTop) * 0.75;
     if (candidate.strategy === "drop2") {
@@ -637,11 +654,13 @@ function generateBassAnchoredCandidates(
 ): HarmonyVoicingCandidate[] {
   if (chord.bass == null) return [];
 
-  const classes = chordClasses(chord);
   const bassClass = normalizePitchClassFromNoteName(chord.bass);
   const lowNotes = pitchClassNotesInRange(bassClass, range);
   const candidates = new Map<string, HarmonyVoicingCandidate>();
-  const upperClassPairs = selectSlashUpperClassPairs(classes, bassClass);
+  const upperClassPairs = selectSlashUpperClassPairs(
+    fullChordPitchClasses(chord),
+    bassClass,
+  );
 
   for (const low of lowNotes) {
     for (const [firstUpper, secondUpper] of upperClassPairs) {
@@ -650,21 +669,21 @@ function generateBassAnchoredCandidates(
         [secondUpper, firstUpper],
       ];
       for (const [midClass, topClass] of upperPermutations) {
-      const middleNotes = pitchClassNotesInRange(midClass, range);
-      const topNotes = pitchClassNotesInRange(topClass, range);
+        const middleNotes = pitchClassNotesInRange(midClass, range);
+        const topNotes = pitchClassNotesInRange(topClass, range);
 
-      for (const middle of middleNotes) {
-        if (middle <= low) continue;
-        for (const top of topNotes) {
-          if (top <= middle) continue;
-          const notes = [low, middle, top] as [MidiNote, MidiNote, MidiNote];
-          if (!isCandidateSpacingAllowed(notes)) continue;
-          addCandidate(candidates, {
-            notes,
-            strategy: classifyCandidateStrategy(notes),
-          });
+        for (const middle of middleNotes) {
+          if (middle <= low) continue;
+          for (const top of topNotes) {
+            if (top <= middle) continue;
+            const notes = [low, middle, top] as [MidiNote, MidiNote, MidiNote];
+            if (!isBassAnchoredCandidateSpacingAllowed(notes)) continue;
+            addCandidate(candidates, {
+              notes,
+              strategy: classifyCandidateStrategy(notes),
+            });
+          }
         }
-      }
       }
     }
   }
@@ -673,7 +692,7 @@ function generateBassAnchoredCandidates(
 }
 
 function selectSlashUpperClassPairs(
-  classes: [number, number, number],
+  classes: number[],
   bassClass: number,
 ): Array<[number, number]> {
   const uniqueClasses = [...new Set(classes)];
@@ -706,6 +725,24 @@ function isCandidateSpacingAllowed(
     lowerGap <= 14 &&
     upperGap <= 12 &&
     totalSpan >= 6 &&
+    totalSpan <= 21
+  );
+}
+
+function isBassAnchoredCandidateSpacingAllowed(
+  notes: [MidiNote, MidiNote, MidiNote],
+): boolean {
+  const [low, middle, top] = notes;
+  const lowerGap = middle - low;
+  const upperGap = top - middle;
+  const totalSpan = top - low;
+
+  return (
+    lowerGap >= 2 &&
+    upperGap >= 2 &&
+    lowerGap <= 14 &&
+    upperGap <= 12 &&
+    totalSpan >= 5 &&
     totalSpan <= 21
   );
 }

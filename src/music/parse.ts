@@ -288,7 +288,10 @@ function chordContainsPitchClass(
   );
 }
 
-function fullChordSemitones(root: NoteName, quality: ChordQuality): number[] {
+export function fullChordSemitones(
+  root: NoteName,
+  quality: ChordQuality,
+): number[] {
   const r = rootSemitone(root);
   switch (quality) {
     case "major":

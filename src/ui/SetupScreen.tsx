@@ -16,8 +16,12 @@ import { useEffect, useRef, useState } from "react";
 import { useObservable } from "../observable";
 import { acquirePermissionsAndStart } from "../recording/permissions";
 import { flattenArrangementLyrics } from "../state/arrangementModel";
-import { chordPitchClassNames } from "../music/parse";
-import type { Meter } from "../music/types";
+import { chordPitchClassNames, formatChordSymbol } from "../music/parse";
+import {
+  midiToNoteName,
+  type HarmonyRangeCoverage,
+  type Meter,
+} from "../music/types";
 import {
   playHarmonyPreview,
   progressionDurationSec,
@@ -37,6 +41,8 @@ import {
 } from "./designSystem";
 import { InfoIcon, PlayIcon, StopIcon } from "./icons";
 
+type PreviewMode = "legacy" | "dynamic" | null;
+
 const METER_OPTIONS: { label: string; value: Meter }[] = [
   { label: "4/4", value: [4, 4] },
   { label: "3/4", value: [3, 4] },
@@ -51,11 +57,16 @@ const RANGE_OPTIONS = [
   { label: "Soprano", low: "D4", high: "G5" },
 ] as const;
 
+const HARMONY_COVERAGE_OPTIONS = [
+  { label: "Lower Two Thirds", value: "lower two thirds" },
+  { label: "Whole Range", value: "whole-range" },
+] as const;
+
 type SetupCardProps = {
   arrangement: ArrangementInfo;
   meterLabel: string;
   tempoInputValue: string;
-  previewing: boolean;
+  previewingMode: PreviewMode;
   starting: boolean;
   error: string | null;
   onChordsChange: (value: string) => void;
@@ -63,8 +74,10 @@ type SetupCardProps = {
   onTempoInputBlur: () => void;
   onMeterLabelChange: (label: string) => void;
   onRangePresetChange: (value: string) => void;
+  onHarmonyCoverageChange: (value: HarmonyRangeCoverage) => void;
   onPartCountChange: (value: "2" | "4") => void;
-  onPreview: () => void;
+  onPreviewLegacy: () => void;
+  onPreviewDynamic: () => void;
   onStopPreview: () => void;
   onStart: () => void;
 };
@@ -73,7 +86,7 @@ function SetupCard({
   arrangement,
   meterLabel,
   tempoInputValue,
-  previewing,
+  previewingMode,
   starting,
   error,
   onChordsChange,
@@ -81,8 +94,10 @@ function SetupCard({
   onTempoInputBlur,
   onMeterLabelChange,
   onRangePresetChange,
+  onHarmonyCoverageChange,
   onPartCountChange,
-  onPreview,
+  onPreviewLegacy,
+  onPreviewDynamic,
   onStopPreview,
   onStart,
 }: SetupCardProps) {
@@ -93,12 +108,14 @@ function SetupCard({
     invalidChordIds,
     parseIssues,
     harmonyVoicing: voicing,
+    harmonyVoicingDynamic: dynamicVoicing,
     isValid,
   } = arrangement;
   const {
     chordsInput,
     vocalRangeLow: rangeLow,
     vocalRangeHigh: rangeHigh,
+    harmonyRangeCoverage,
     totalParts,
   } = input;
   const lyricsByChord = flattenArrangementLyrics(measures);
@@ -183,7 +200,9 @@ function SetupCard({
               rows={6}
               value={chordsInput}
               onChange={(e) => onChordsChange(e.target.value)}
-              placeholder={"A Bm C\n\nA. Bm. C\n\nA          E    F#m     D      A    E\nWhere are we?   What the hell is going on?"}
+              placeholder={
+                "A Bm C\n\nA. Bm. C\n\nA          E    F#m     D      A    E\nWhere are we?   What the hell is going on?"
+              }
               fontFamily="'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', monospace"
               lineHeight="1.45"
               spellCheck={false}
@@ -245,6 +264,27 @@ function SetupCard({
           </Grid>
 
           <Field.Root>
+            <Field.Label color={dsColors.text}>Harmony Placement</Field.Label>
+            <NativeSelect.Root>
+              <NativeSelect.Field
+                value={harmonyRangeCoverage}
+                onChange={(e) =>
+                  onHarmonyCoverageChange(
+                    e.target.value as HarmonyRangeCoverage,
+                  )
+                }
+                {...controlStyles}
+              >
+                {HARMONY_COVERAGE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </NativeSelect.Field>
+            </NativeSelect.Root>
+          </Field.Root>
+
+          <Field.Root>
             <Field.Label color={dsColors.text}>Arrangement</Field.Label>
             <NativeSelect.Root>
               <NativeSelect.Field
@@ -261,131 +301,111 @@ function SetupCard({
           </Field.Root>
         </Stack>
 
-        {parsed.length > 0 && voicing != null && (
-          <Box bg={dsColors.surfaceRaised} borderRadius="xl" p={4}>
-            <Flex justify="space-between" align="center" mb={2} gap={2}>
-              <Text
-                color={dsColors.textMuted}
-                fontSize="xs"
-                fontWeight="semibold"
-              >
-                ARRANGEMENT - {measures.length} measure
-                {measures.length !== 1 ? "s" : ""}, {parsed.length} chord
-                {parsed.length !== 1 ? "s" : ""}
-              </Text>
-              <Button
-                {...dsOutlineButton}
-                size="xs"
-                h={7}
-                px={2.5}
-                borderRadius="full"
-                borderColor="transparent"
-                color={previewing ? dsColors.accent : dsColors.textMuted}
-                _hover={{
-                  bg: dsColors.surfaceSubtle,
-                  color: previewing ? dsColors.accent : dsColors.text,
-                }}
-                onClick={previewing ? onStopPreview : onPreview}
-                aria-label={
-                  previewing ? "Stop harmony preview" : "Play harmony preview"
-                }
-                lineHeight={0}
-              >
-                {previewing ? (
-                  <StopIcon size={16} strokeWidth={2.1} />
-                ) : (
-                  <PlayIcon size={16} strokeWidth={2.1} />
-                )}
-              </Button>
-            </Flex>
-            <Stack gap={3}>
-              <Flex gap={2} flexWrap="wrap">
-                {parsed.map((c, i) => {
-                  const annotation = voicing.annotations[i];
-                  const degrees =
-                    annotation?.chordTones ??
-                    c.quality === "minor"
-                      ? "R b3 5"
-                      : c.quality === "diminished"
-                        ? "R b3 b5"
-                        : c.quality === "major6"
-                          ? "R 3 6"
-                          : c.quality === "minor6"
-                            ? "R b3 6"
-                        : "R 3 5";
-                  const notes = chordPitchClassNames(c);
-                  const tooltipText = `${degrees} - ${notes}`;
-                  const previewItem = chordPreviewItems[i];
-                  return (
-                    <Tooltip.Root
-                      key={i}
-                      openDelay={0}
-                      closeDelay={250}
-                      interactive
-                      positioning={{ gutter: 8 }}
-                    >
-                      <Tooltip.Trigger asChild>
-                        <Box
-                          as="span"
-                          bg={dsColors.surfaceSubtle}
-                          borderRadius="2xl"
-                          px={3}
-                          py={2}
-                          fontSize="sm"
-                          color={dsColors.text}
-                          display="inline-flex"
-                          flexDirection="column"
-                          alignItems="flex-start"
-                          gap={0.5}
-                          cursor="help"
-                          userSelect="none"
-                          border="1px solid"
-                          borderColor="transparent"
-                          _hover={{
-                            borderColor: dsColors.borderMuted,
-                            bg: dsColors.surfaceRaised,
-                          }}
-                          aria-label={tooltipText}
-                        >
-                          <Text as="span" fontWeight="semibold">
-                            {previewItem?.chordText ?? `${c.root}${c.quality === "minor" ? "m" : ""}`}
-                          </Text>
-                          {previewItem?.lyrics.trim() ? (
-                            <Text
-                              as="span"
-                              fontSize="xs"
-                              color={dsColors.textMuted}
-                              fontWeight="medium"
-                              whiteSpace="nowrap"
-                            >
-                              {previewItem.lyrics}
-                            </Text>
-                          ) : null}
-                        </Box>
-                      </Tooltip.Trigger>
-                      <Tooltip.Positioner>
-                        <Tooltip.Content
-                          px={3}
-                          py={2}
-                          borderRadius="md"
-                          maxW="sm"
-                          bg={dsColors.surfaceRaised}
-                          color={dsColors.text}
-                          borderWidth="1px"
-                          borderColor={dsColors.border}
-                          boxShadow="md"
-                          fontSize="xs"
-                        >
-                          {tooltipText}
-                        </Tooltip.Content>
-                      </Tooltip.Positioner>
-                    </Tooltip.Root>
-                  );
-                })}
+        {parsed.length > 0 &&
+          voicing != null &&
+          dynamicVoicing != null && (
+            <Box bg={dsColors.surfaceRaised} borderRadius="xl" p={4}>
+              <Flex justify="space-between" align="center" mb={2} gap={2}>
+                <Text
+                  color={dsColors.textMuted}
+                  fontSize="xs"
+                  fontWeight="semibold"
+                >
+                  ARRANGEMENT - {measures.length} measure
+                  {measures.length !== 1 ? "s" : ""}, {parsed.length} chord
+                  {parsed.length !== 1 ? "s" : ""}
+                </Text>
+                <Flex gap={2}>
+                  <Button
+                    {...dsOutlineButton}
+                    size="xs"
+                    h={7}
+                    px={2.5}
+                    borderRadius="full"
+                    borderColor="transparent"
+                    color={
+                      previewingMode === "legacy"
+                        ? dsColors.accent
+                        : dsColors.textMuted
+                    }
+                    _hover={{
+                      bg: dsColors.surfaceSubtle,
+                      color:
+                        previewingMode === "legacy"
+                          ? dsColors.accent
+                          : dsColors.text,
+                    }}
+                    onClick={
+                      previewingMode === "legacy"
+                        ? onStopPreview
+                        : onPreviewLegacy
+                    }
+                  >
+                    <Flex align="center" gap={1.5}>
+                      {previewingMode === "legacy" ? (
+                        <StopIcon size={14} strokeWidth={2.1} />
+                      ) : (
+                        <PlayIcon size={14} strokeWidth={2.1} />
+                      )}
+                      <Text fontSize="xs" fontWeight="semibold">
+                        Legacy
+                      </Text>
+                    </Flex>
+                  </Button>
+                  <Button
+                    {...dsOutlineButton}
+                    size="xs"
+                    h={7}
+                    px={2.5}
+                    borderRadius="full"
+                    borderColor="transparent"
+                    color={
+                      previewingMode === "dynamic"
+                        ? dsColors.accent
+                        : dsColors.textMuted
+                    }
+                    _hover={{
+                      bg: dsColors.surfaceSubtle,
+                      color:
+                        previewingMode === "dynamic"
+                          ? dsColors.accent
+                          : dsColors.text,
+                    }}
+                    onClick={
+                      previewingMode === "dynamic"
+                        ? onStopPreview
+                        : onPreviewDynamic
+                    }
+                  >
+                    <Flex align="center" gap={1.5}>
+                      {previewingMode === "dynamic" ? (
+                        <StopIcon size={14} strokeWidth={2.1} />
+                      ) : (
+                        <PlayIcon size={14} strokeWidth={2.1} />
+                      )}
+                      <Text fontSize="xs" fontWeight="semibold">
+                        Dynamic
+                      </Text>
+                    </Flex>
+                  </Button>
+                </Flex>
               </Flex>
-            </Stack>
-          </Box>
-        )}
+              <Stack gap={3}>
+                <VoicingComparisonSection
+                  title="Legacy"
+                  parsed={parsed}
+                  voicing={voicing}
+                  chordPreviewItems={chordPreviewItems}
+                />
+                <VoicingComparisonSection
+                  title="Dynamic"
+                  parsed={parsed}
+                  voicing={dynamicVoicing}
+                  chordPreviewItems={chordPreviewItems}
+                />
+              </Stack>
+            </Box>
+          )}
 
         {(invalidChordIds.length > 0 || parseIssues.length > 0) && (
           <Box
@@ -396,9 +416,8 @@ function SetupCard({
             p={4}
           >
             <Text color={dsColors.errorText} fontSize="sm">
-              {invalidChordIds.length > 0
-                ? "Some chord tokens are unsupported right now. Use supported chord spellings before continuing."
-                : parseIssues[0]}
+              {parseIssues[0] ??
+                "Some chord tokens are unsupported right now. Use supported chord spellings before continuing."}
             </Text>
           </Box>
         )}
@@ -437,11 +456,131 @@ function SetupCard({
   );
 }
 
+type VoicingComparisonSectionProps = {
+  title: string;
+  parsed: ArrangementInfo["parsedChords"];
+  voicing: NonNullable<ArrangementInfo["harmonyVoicing"]>;
+  chordPreviewItems: ArrangementInfo["measures"][number]["chords"];
+};
+
+function VoicingComparisonSection({
+  title,
+  parsed,
+  voicing,
+  chordPreviewItems,
+}: VoicingComparisonSectionProps) {
+  return (
+    <Stack gap={2}>
+      <Text color={dsColors.textMuted} fontSize="xs" fontWeight="semibold">
+        {title}
+      </Text>
+      <Flex gap={2} flexWrap="wrap">
+        {parsed.map((c, i) => {
+          const annotation = voicing.annotations[i];
+          const degrees =
+            annotation?.chordTones ??
+            (c.quality === "minor"
+              ? "R b3 5"
+              : c.quality === "diminished"
+                ? "R b3 b5"
+                : c.quality === "major6"
+                  ? "R 3 6"
+                  : c.quality === "minor6"
+                    ? "R b3 6"
+                    : "R 3 5");
+          const pitchClasses = chordPitchClassNames(c);
+          const voicedNotes = voicing.lines
+            .map((line) => line[i])
+            .filter((note): note is number => note != null)
+            .map((note) => midiToNoteName(note))
+            .join(" ");
+          const tooltipText = `${degrees} - ${pitchClasses} - ${voicedNotes}`;
+          const previewItem = chordPreviewItems[i];
+
+          return (
+            <Tooltip.Root
+              key={`${title}-${i}`}
+              openDelay={0}
+              closeDelay={250}
+              interactive
+              positioning={{ gutter: 8 }}
+            >
+              <Tooltip.Trigger asChild>
+                <Box
+                  as="span"
+                  bg={dsColors.surfaceSubtle}
+                  borderRadius="2xl"
+                  px={3}
+                  py={2}
+                  fontSize="sm"
+                  color={dsColors.text}
+                  display="inline-flex"
+                  flexDirection="column"
+                  alignItems="flex-start"
+                  gap={0.5}
+                  cursor="help"
+                  userSelect="none"
+                  border="1px solid"
+                  borderColor="transparent"
+                  _hover={{
+                    borderColor: dsColors.borderMuted,
+                    bg: dsColors.surfaceRaised,
+                  }}
+                  aria-label={tooltipText}
+                >
+                  <Text as="span" fontWeight="semibold">
+                    {previewItem?.chordText ?? formatChordSymbol(c)}
+                  </Text>
+                  {previewItem?.lyrics.trim() ? (
+                    <Text
+                      as="span"
+                      fontSize="xs"
+                      color={dsColors.textMuted}
+                      fontWeight="medium"
+                      whiteSpace="nowrap"
+                    >
+                      {previewItem.lyrics}
+                    </Text>
+                  ) : null}
+                  <Text
+                    as="span"
+                    fontSize="10px"
+                    color={dsColors.textSubtle}
+                    whiteSpace="nowrap"
+                  >
+                    {voicedNotes}
+                  </Text>
+                </Box>
+              </Tooltip.Trigger>
+              <Tooltip.Positioner>
+                <Tooltip.Content
+                  px={3}
+                  py={2}
+                  borderRadius="md"
+                  maxW="sm"
+                  bg={dsColors.surfaceRaised}
+                  color={dsColors.text}
+                  borderWidth="1px"
+                  borderColor={dsColors.border}
+                  boxShadow="md"
+                  fontSize="xs"
+                >
+                  {tooltipText}
+                </Tooltip.Content>
+              </Tooltip.Positioner>
+            </Tooltip.Root>
+          );
+        })}
+      </Flex>
+    </Stack>
+  );
+}
+
 export function SetupScreen() {
   const arrangement = useObservable(model.derivedArrangementInfo);
   const error = useObservable(model.permissionError);
 
-  const [previewing, setPreviewing] = useState(false);
+  const [previewingMode, setPreviewingMode] = useState<PreviewMode>(null);
   const [starting, setStarting] = useState(false);
   const [tempoInputValue, setTempoInputValue] = useState(
     String(arrangement.input.tempo),
@@ -458,9 +597,12 @@ export function SetupScreen() {
     setTempoInputValue(String(arrangement.input.tempo));
   }, [arrangement.input.tempo]);
 
-  async function handlePreview() {
+  async function handlePreview(mode: Exclude<PreviewMode, null>) {
     const parsed = arrangement.parsedChords;
-    const voicing = arrangement.harmonyVoicing;
+    const voicing =
+      mode === "legacy"
+        ? arrangement.harmonyVoicing
+        : arrangement.harmonyVoicingDynamic;
     const tempo = arrangement.input.tempo;
 
     if (voicing == null || parsed.length === 0) return;
@@ -468,7 +610,9 @@ export function SetupScreen() {
     const ctx = await model.ensureAudioContext();
     if (ctx == null) return;
 
-    setPreviewing(true);
+    stopAllPlayback();
+    previewSessionRef.current?.stop();
+    setPreviewingMode(mode);
     const session = playHarmonyPreview(
       ctx,
       parsed,
@@ -483,7 +627,7 @@ export function SetupScreen() {
       if (previewSessionRef.current === session) {
         session.stop();
         previewSessionRef.current = null;
-        setPreviewing(false);
+        setPreviewingMode(null);
       }
     }, durationMs);
   }
@@ -491,7 +635,7 @@ export function SetupScreen() {
   function handleStopPreview() {
     stopAllPlayback();
     previewSessionRef.current = null;
-    setPreviewing(false);
+    setPreviewingMode(null);
   }
 
   function handleMeterLabelChange(label: string) {
@@ -545,7 +689,7 @@ export function SetupScreen() {
     arrangement,
     meterLabel,
     tempoInputValue,
-    previewing,
+    previewingMode,
     starting,
     error,
     onChordsChange: (value: string) =>
@@ -561,8 +705,14 @@ export function SetupScreen() {
         vocalRangeHigh: range.high,
       });
     },
+    onHarmonyCoverageChange: (value: HarmonyRangeCoverage) => {
+      model.setArrangementInput({
+        harmonyRangeCoverage: value,
+      });
+    },
     onPartCountChange: handlePartCountChange,
-    onPreview: handlePreview,
+    onPreviewLegacy: () => handlePreview("legacy"),
+    onPreviewDynamic: () => handlePreview("dynamic"),
     onStopPreview: handleStopPreview,
     onStart: handleStart,
   };

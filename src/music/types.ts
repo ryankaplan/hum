@@ -20,11 +20,20 @@ export type ChordQuality =
   | "minor6"
   | "dominant7"
   | "minor7"
-  | "major7";
+  | "major7"
+  | "dominant9"
+  | "minor9"
+  | "dominant7Flat9"
+  | "minor7Flat9"
+  | "sus2"
+  | "sus4"
+  | "dominant9Sus2"
+  | "dominant9Sus4";
 
 export type Chord = {
   root: NoteName;
   quality: ChordQuality;
+  bass: NoteName | null;
   // How many beats this chord lasts (e.g. "A x2" in 4/4 = 8 beats)
   beats: number;
 };
@@ -41,7 +50,10 @@ export type VocalRange = {
   high: MidiNote;
 };
 
-export type HarmonyVoicingStrategy = "drop2" | "closed";
+export type HarmonyRangeCoverage = "lower two thirds" | "whole-range";
+
+export type HarmonyVoicingStrategy = "drop2" | "closed" | "open" | "spread";
+export type HarmonyVoicingGenerator = "legacy" | "dynamic";
 
 export type ChordToneFormula =
   | "R 3 5"
@@ -51,9 +63,18 @@ export type ChordToneFormula =
   | "R b3 6"
   | "R 3 b7"
   | "R b3 b7"
-  | "R 3 7";
+  | "R 3 7"
+  | "R 3 9"
+  | "R b3 9"
+  | "R 3 b9"
+  | "R b3 b9"
+  | "R 2 5"
+  | "R 4 5"
+  | "R 2 9"
+  | "R 4 9";
 
 export type HarmonyChordAnnotation = {
+  generator: HarmonyVoicingGenerator;
   strategy: HarmonyVoicingStrategy;
   chordTones: ChordToneFormula;
 };

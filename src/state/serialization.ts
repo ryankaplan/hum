@@ -90,6 +90,7 @@ function serializeArrangementDocument(
     meter: [arrangement.meter[0], arrangement.meter[1]],
     vocalRangeLow: arrangement.vocalRangeLow,
     vocalRangeHigh: arrangement.vocalRangeHigh,
+    harmonyRangeCoverage: arrangement.harmonyRangeCoverage,
     totalParts: arrangement.totalParts,
   };
 }
@@ -103,6 +104,7 @@ function deserializeArrangementDocument(
     meter: [saved.meter[0], saved.meter[1]],
     vocalRangeLow: saved.vocalRangeLow,
     vocalRangeHigh: saved.vocalRangeHigh,
+    harmonyRangeCoverage: saved.harmonyRangeCoverage,
     totalParts: saved.totalParts,
   };
 }

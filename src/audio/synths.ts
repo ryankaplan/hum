@@ -111,3 +111,61 @@ export function playGuideTone(
 
   return () => node.stop();
 }
+
+// Play a dedicated count-in cue note that holds pitch through the count-in and
+// releases fully by `endTime` so beat 1 starts cleanly.
+export function playCountInCueTone(
+  ctx: AudioContext,
+  frequency: number,
+  startTime: number,
+  endTime: number,
+): () => void {
+  if (endTime <= startTime) {
+    return () => {};
+  }
+
+  const gain = ctx.createGain();
+  gain.gain.value = 0;
+  gain.connect(ctx.destination);
+
+  const osc = ctx.createOscillator();
+  osc.type = "triangle";
+  osc.frequency.value = frequency;
+  osc.connect(gain);
+
+  const peak = 0.42;
+  const attack = 0.02;
+  const release = 0.08;
+  const sustainLevel = peak * 0.82;
+  const sustainEnd = Math.max(startTime + attack + 0.02, endTime - release);
+
+  gain.gain.setValueAtTime(0.001, startTime);
+  gain.gain.exponentialRampToValueAtTime(peak, startTime + attack);
+  gain.gain.exponentialRampToValueAtTime(
+    sustainLevel,
+    startTime + attack + 0.04,
+  );
+  gain.gain.setValueAtTime(sustainLevel, sustainEnd);
+  gain.gain.exponentialRampToValueAtTime(0.001, endTime);
+
+  osc.start(startTime);
+  osc.stop(endTime + 0.02);
+
+  const node: ActiveNode = {
+    stop() {
+      try {
+        osc.stop();
+      } catch {
+        // already stopped
+      }
+      gain.disconnect();
+    },
+  };
+  activeNodes.add(node);
+  osc.onended = () => {
+    gain.disconnect();
+    activeNodes.delete(node);
+  };
+
+  return () => node.stop();
+}

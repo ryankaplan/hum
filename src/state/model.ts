@@ -208,6 +208,12 @@ class AppModel {
     { checkForEqualityOnNotify: false },
   );
 
+  readonly harmonyVoicingDynamic = new Derived<HarmonyVoicing | null>(
+    () => this.derivedArrangementInfo.get().harmonyVoicingDynamic,
+    [this.derivedArrangementInfo],
+    { checkForEqualityOnNotify: false },
+  );
+
   constructor() {
     this.arrangementDocument.onAfterChange((prev, next) => {
       if (prev.totalParts !== next.totalParts) {

@@ -1,4 +1,4 @@
-import type { Chord } from "../music/types";
+import type { Chord, MidiNote } from "../music/types";
 import type { HarmonyLine } from "../music/types";
 import {
   playCountIn,
@@ -31,6 +31,7 @@ export type RecordingOpts = {
   chords: Chord[];
   // null for melody (no guide tones during recording)
   harmonyLine: HarmonyLine | null;
+  countInCueMidi?: MidiNote | null;
   beatsPerBar: number;
   tempo: number;
   latencyCorrectionSec?: number;
@@ -68,6 +69,7 @@ export function startRecordTake(opts: RecordingOpts): RecordingSession {
     stream,
     chords,
     harmonyLine,
+    countInCueMidi,
     beatsPerBar,
     tempo,
     latencyCorrectionSec = 0,
@@ -96,11 +98,14 @@ export function startRecordTake(opts: RecordingOpts): RecordingSession {
   };
 
   const promise = (async () => {
+    monitorPlayer?.stop();
+
     // 1. Count-in
     const { promise: countInPromise, recordingStartTime } = playCountIn(
       ctx,
       beatsPerBar,
       tempo,
+      countInCueMidi,
       callbacks?.onCountInBeat,
     );
 

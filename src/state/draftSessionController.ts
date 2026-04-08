@@ -141,10 +141,13 @@ export class DraftSessionController {
     this.cancelScheduledSave();
     this.queuedDocumentSave = false;
     this.suppressed = true;
-    runReset();
-    void this.clearDraft().finally(() => {
-      this.suppressed = false;
-    });
+    try {
+      runReset();
+    } finally {
+      void this.clearDraft().finally(() => {
+        this.suppressed = false;
+      });
+    }
   }
 
   private scheduleDocumentSave(): void {

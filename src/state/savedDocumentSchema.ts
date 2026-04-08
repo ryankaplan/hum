@@ -171,6 +171,7 @@ function parseSavedArrangementDocument(
   raw: unknown,
 ): SavedArrangementDocument | null {
   if (!isRecord(raw)) return null;
+  const customHarmony = parseSavedCustomHarmony(raw.customHarmony);
   const meter = raw.meter;
   if (
     typeof raw.chordsInput !== "string" ||
@@ -187,7 +188,8 @@ function parseSavedArrangementDocument(
     (raw.selectedHarmonyGenerator !== undefined &&
       raw.selectedHarmonyGenerator !== "legacy" &&
       raw.selectedHarmonyGenerator !== "dynamic") ||
-    (raw.totalParts !== 2 && raw.totalParts !== 4)
+    (raw.totalParts !== 2 && raw.totalParts !== 4) ||
+    (raw.customHarmony != null && customHarmony == null)
   ) {
     return null;
   }
@@ -205,7 +207,7 @@ function parseSavedArrangementDocument(
         | SavedArrangementDocument["selectedHarmonyGenerator"]
         | undefined,
     totalParts: raw.totalParts,
-    customHarmony: parseSavedCustomHarmony(raw.customHarmony),
+    customHarmony,
   };
 }
 

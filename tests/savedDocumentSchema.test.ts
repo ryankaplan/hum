@@ -73,4 +73,18 @@ describe("parseSavedHumDocument", () => {
 
     expect(parsed).toBeNull();
   });
+
+  it("rejects invalid custom harmony payloads", () => {
+    const parsed = parseSavedHumDocument({
+      ...makeSavedHumDocument("lower two thirds"),
+      arrangement: {
+        ...makeSavedHumDocument("lower two thirds").arrangement,
+        customHarmony: {
+          lines: [["not-a-midi-note"]],
+        },
+      },
+    });
+
+    expect(parsed).toBeNull();
+  });
 });

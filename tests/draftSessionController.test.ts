@@ -176,8 +176,9 @@ describe("DraftSessionController", () => {
 
     resolveAssetSave?.();
     await persistPromise;
-    await flushMicrotasks();
-    await flushMicrotasks();
+    for (let i = 0; i < 4; i++) {
+      await flushMicrotasks();
+    }
 
     expect(order).toEqual(["asset", "document"]);
     currentDocument = makeDocument(["asset-1"]);
@@ -204,8 +205,9 @@ describe("DraftSessionController", () => {
     await controller.deleteMediaAsset("asset-old");
     controller.handleStateChanged();
     await vi.advanceTimersByTimeAsync(150);
-    await flushMicrotasks();
-    await flushMicrotasks();
+    for (let i = 0; i < 4; i++) {
+      await flushMicrotasks();
+    }
 
     expect(order).toEqual(["document", "delete:asset-old"]);
   });
@@ -284,8 +286,9 @@ describe("DraftSessionController", () => {
     expect(persistenceMocks.saveDraftDocumentToIndexedDb).not.toHaveBeenCalled();
 
     listeners.windowListeners.pagehide?.();
-    await flushMicrotasks();
-    await flushMicrotasks();
+    for (let i = 0; i < 4; i++) {
+      await flushMicrotasks();
+    }
 
     expect(persistenceMocks.saveDraftDocumentToIndexedDb).toHaveBeenCalledTimes(1);
   });
@@ -324,6 +327,36 @@ describe("DraftSessionController", () => {
     }
 
     expect(order).toEqual(["document", "clear"]);
+    expect(persistenceMocks.saveDraftDocumentToIndexedDb).toHaveBeenCalledTimes(1);
+  });
+
+  it("continues clearing and later autosaving even if reset work throws", async () => {
+    const listeners = { windowListeners: {}, documentListeners: {} } as {
+      windowListeners: Record<string, Listener>;
+      documentListeners: Record<string, Listener>;
+    };
+    const controller = makeController(() => makeDocument(), listeners);
+
+    await controller.restoreOnBoot();
+
+    expect(() =>
+      controller.clearDraftAfter(() => {
+        throw new Error("reset failed");
+      }),
+    ).toThrow("reset failed");
+
+    for (let i = 0; i < 4; i++) {
+      await flushMicrotasks();
+    }
+
+    expect(persistenceMocks.clearDraftFromIndexedDb).toHaveBeenCalledTimes(1);
+
+    controller.handleStateChanged();
+    await vi.advanceTimersByTimeAsync(150);
+    for (let i = 0; i < 4; i++) {
+      await flushMicrotasks();
+    }
+
     expect(persistenceMocks.saveDraftDocumentToIndexedDb).toHaveBeenCalledTimes(1);
   });
 });

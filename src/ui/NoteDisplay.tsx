@@ -21,7 +21,7 @@ const NOTE_ROW_HEIGHT_PX = 22;
 const NOTE_TRACK_PAD_TOP_PX = 8;
 const NOTE_TRACK_PAD_BOTTOM_PX = 10;
 const NOTE_TRACK_PAD_X_PX = 6;
-const MEASURE_WIDTH_PX = 160;
+const MEASURE_WIDTH_PX = 80;
 const NOTE_PITCH_PADDING = 2;
 const LYRIC_LANE_HEIGHT_PX = 34;
 
@@ -324,7 +324,6 @@ export function NoteDisplay({
               lyricSegments,
               activeChordIndex,
               notePxPerBeat,
-              trackHeightPx,
             })}
         </Box>
       </Box>
@@ -409,7 +408,6 @@ function LyricLane({
           lyricSegments,
           activeChordIndex,
           notePxPerBeat,
-          trackHeightPx: LYRIC_LANE_HEIGHT_PX,
         })}
       </Box>
     </Box>
@@ -421,47 +419,79 @@ function renderLyricSegments(input: {
   lyricSegments: LyricSegment[];
   activeChordIndex: number;
   notePxPerBeat: number;
-  trackHeightPx: number;
 }) {
-  const { chords, lyricSegments, activeChordIndex, notePxPerBeat, trackHeightPx } =
-    input;
+  const { chords, lyricSegments, activeChordIndex, notePxPerBeat } = input;
   let startBeat = 0;
-  return lyricSegments.map((segment, index) => {
+  let activeStartBeat = 0;
+  let activeBeats = 0;
+
+  for (let index = 0; index < lyricSegments.length; index++) {
     const chord = chords[index];
-    const x = NOTE_TRACK_PAD_X_PX + startBeat * notePxPerBeat + 2;
-    const w = Math.max(32, segment.beats * notePxPerBeat - 4);
+    if (index === activeChordIndex) {
+      activeStartBeat = startBeat;
+      activeBeats = chord?.beats ?? lyricSegments[index]?.beats ?? 0;
+      break;
+    }
     startBeat += chord?.beats ?? 0;
-    return (
-      <Box
-        key={`lyric-${segment.chordIndex}`}
-        position="absolute"
-        left={`${x}px`}
-        bottom="6px"
-        minW={`${w}px`}
-        px={2}
-        py={1}
-        borderRadius="md"
-        bg={
-          segment.chordIndex === activeChordIndex
-            ? "color-mix(in srgb, var(--app-accent) 18%, transparent)"
-            : "transparent"
-        }
-        overflow="visible"
-      >
-        <Text
-          color={
-            segment.chordIndex === activeChordIndex
-              ? dsColors.text
-              : dsColors.textMuted
-          }
-          fontSize="xs"
-          whiteSpace="nowrap"
-        >
-          {segment.lyric}
-        </Text>
+  }
+
+  const currentSegment = lyricSegments[activeChordIndex];
+  const nextSegment = lyricSegments[activeChordIndex + 1];
+  const currentLyric = currentSegment?.lyric.trim() ?? "";
+  const nextLyric = nextSegment?.lyric.trim() ?? "";
+
+  if (currentLyric.length === 0 && nextLyric.length === 0) {
+    return null;
+  }
+
+  const x = NOTE_TRACK_PAD_X_PX + activeStartBeat * notePxPerBeat + 2;
+  const minW = Math.max(48, activeBeats * notePxPerBeat - 4);
+
+  return (
+    <Box
+      key={`lyric-cue-${activeChordIndex}`}
+      position="absolute"
+      left={`${x}px`}
+      bottom="6px"
+      minW={`${minW}px`}
+      maxW={`calc(100% - ${x + 12}px)`}
+      px={3}
+      py={2}
+      borderRadius="lg"
+      bg="rgba(255, 255, 255, 0.92)"
+      border="1px solid"
+      borderColor="rgba(148, 163, 184, 0.45)"
+      boxShadow="sm"
+      zIndex={2}
+      overflow="hidden"
+    >
+      <Box display="flex" alignItems="baseline" gap={3} whiteSpace="nowrap">
+        {currentLyric.length > 0 && (
+          <Text
+            color={dsColors.text}
+            fontSize="sm"
+            fontWeight="bold"
+            lineHeight="1.2"
+            flexShrink={0}
+          >
+            {currentLyric}
+          </Text>
+        )}
+        {nextLyric.length > 0 && (
+          <Text
+            color={dsColors.textMuted}
+            fontSize="sm"
+            lineHeight="1.2"
+            opacity={0.72}
+            overflow="hidden"
+            textOverflow="ellipsis"
+          >
+            {nextLyric}
+          </Text>
+        )}
       </Box>
-    );
-  });
+    </Box>
+  );
 }
 
 function clamp(value: number, min: number, max: number): number {

@@ -93,6 +93,12 @@ function serializeArrangementDocument(
     harmonyRangeCoverage: arrangement.harmonyRangeCoverage,
     selectedHarmonyGenerator: arrangement.selectedHarmonyGenerator,
     totalParts: arrangement.totalParts,
+    customHarmony:
+      arrangement.customHarmony == null
+        ? null
+        : {
+            lines: arrangement.customHarmony.lines.map((line) => [...line]),
+          },
   };
 }
 
@@ -108,6 +114,12 @@ function deserializeArrangementDocument(
     harmonyRangeCoverage: saved.harmonyRangeCoverage,
     selectedHarmonyGenerator: saved.selectedHarmonyGenerator ?? "dynamic",
     totalParts: saved.totalParts,
+    customHarmony:
+      saved.customHarmony == null
+        ? null
+        : {
+            lines: saved.customHarmony.lines.map((line) => [...line]),
+          },
   };
 }
 

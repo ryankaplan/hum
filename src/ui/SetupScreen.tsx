@@ -43,9 +43,10 @@ import {
   dsPrimaryButton,
   dsScreenShell,
 } from "./designSystem";
+import { CustomHarmonyEditor } from "./CustomHarmonyEditor";
 import { InfoIcon, PlayIcon, StopIcon } from "./icons";
 
-type PreviewMode = "legacy" | "dynamic" | null;
+type PreviewMode = "legacy" | "dynamic" | "custom" | null;
 
 const METER_OPTIONS: { label: string; value: Meter }[] = [
   { label: "4/4", value: [4, 4] },
@@ -82,7 +83,10 @@ type SetupCardProps = {
   onSelectedHarmonyGeneratorChange: (value: SelectedHarmonyGenerator) => void;
   onPartCountChange: (value: "2" | "4") => void;
   onPreviewSelected: () => void;
+  onPreviewCustom: () => void;
   onStopPreview: () => void;
+  onCustomizeHarmony: () => void;
+  onResetCustomHarmony: () => void;
   onStart: () => void;
 };
 
@@ -102,7 +106,10 @@ function SetupCard({
   onSelectedHarmonyGeneratorChange,
   onPartCountChange,
   onPreviewSelected,
+  onPreviewCustom,
   onStopPreview,
+  onCustomizeHarmony,
+  onResetCustomHarmony,
   onStart,
 }: SetupCardProps) {
   const {
@@ -114,6 +121,8 @@ function SetupCard({
     harmonyVoicingLegacy: legacyVoicing,
     harmonyVoicingDynamic: dynamicVoicing,
     selectedHarmonyVoicing,
+    effectiveHarmonyVoicing,
+    hasCustomHarmony,
     isValid,
   } = arrangement;
   const {
@@ -373,6 +382,43 @@ function SetupCard({
                         </Text>
                       </Flex>
                     </Button>
+                    <Button
+                      {...dsOutlineButton}
+                      size="xs"
+                      h={7}
+                      px={2.5}
+                      borderRadius="full"
+                      borderColor="transparent"
+                      color={
+                        previewingMode === "custom"
+                          ? dsColors.accent
+                          : dsColors.textMuted
+                      }
+                      _hover={{
+                        bg: dsColors.surfaceSubtle,
+                        color:
+                          previewingMode === "custom"
+                            ? dsColors.accent
+                            : dsColors.text,
+                      }}
+                      disabled={!hasCustomHarmony || effectiveHarmonyVoicing == null}
+                      onClick={
+                        previewingMode === "custom"
+                          ? onStopPreview
+                          : onPreviewCustom
+                      }
+                    >
+                      <Flex align="center" gap={1.5}>
+                        {previewingMode === "custom" ? (
+                          <StopIcon size={14} strokeWidth={2.1} />
+                        ) : (
+                          <PlayIcon size={14} strokeWidth={2.1} />
+                        )}
+                        <Text fontSize="xs" fontWeight="semibold">
+                          Custom
+                        </Text>
+                      </Flex>
+                    </Button>
                   </Flex>
                 </Flex>
                 <VoicingComparisonSection
@@ -383,7 +429,53 @@ function SetupCard({
                   voicing={selectedHarmonyVoicing ?? legacyVoicing}
                   chordPreviewItems={chordPreviewItems}
                 />
+                {hasCustomHarmony && effectiveHarmonyVoicing != null && (
+                  <VoicingComparisonSection
+                    title="Custom"
+                    parsed={parsed}
+                    voicing={effectiveHarmonyVoicing}
+                    chordPreviewItems={chordPreviewItems}
+                  />
+                )}
               </Stack>
+              <Flex
+                mt={4}
+                pt={4}
+                borderTop="1px solid"
+                borderColor={dsColors.border}
+                justify="space-between"
+                align={{ base: "flex-start", md: "center" }}
+                gap={3}
+                flexWrap="wrap"
+              >
+                <Box>
+                  <Text
+                    color={dsColors.textMuted}
+                    fontSize="xs"
+                    fontWeight="semibold"
+                  >
+                    HARMONY EDITING
+                  </Text>
+                  <Text color={dsColors.text} fontSize="sm" fontWeight="medium">
+                    {hasCustomHarmony
+                      ? "Custom harmony active"
+                      : "Using auto harmony"}
+                  </Text>
+                  <Text color={dsColors.textSubtle} fontSize="xs">
+                    Lyrics stay read-only and chord timing stays fixed.
+                  </Text>
+                </Box>
+                <Flex gap={2} flexWrap="wrap">
+                  <Button {...dsOutlineButton} onClick={onCustomizeHarmony}>
+                    {hasCustomHarmony ? "Edit custom harmony" : "Customize harmony"}
+                  </Button>
+                  {hasCustomHarmony && (
+                    <Button {...dsOutlineButton} onClick={onResetCustomHarmony}>
+                      Reset to auto
+                    </Button>
+                  )}
+                </Flex>
+              </Flex>
             </Box>
           )}
 
@@ -558,10 +650,13 @@ function VoicingComparisonSection({
 
 export function SetupScreen() {
   const arrangement = useObservable(model.derivedArrangementInfo);
+  const audioContext = useObservable(model.audioContext);
   const error = useObservable(model.permissionError);
 
   const [previewingMode, setPreviewingMode] = useState<PreviewMode>(null);
   const [starting, setStarting] = useState(false);
+  const [isCustomizingHarmony, setIsCustomizingHarmony] = useState(false);
+  const [customHarmonyDraft, setCustomHarmonyDraft] = useState<number[][]>([]);
   const [tempoInputValue, setTempoInputValue] = useState(
     String(arrangement.input.tempo),
   );
@@ -577,9 +672,21 @@ export function SetupScreen() {
     setTempoInputValue(String(arrangement.input.tempo));
   }, [arrangement.input.tempo]);
 
+  useEffect(() => {
+    if (previewingMode === "custom" && !arrangement.hasCustomHarmony) {
+      stopAllPlayback();
+      previewSessionRef.current?.stop();
+      previewSessionRef.current = null;
+      setPreviewingMode(null);
+    }
+  }, [arrangement.hasCustomHarmony, previewingMode]);
+
   async function handlePreview(mode: Exclude<PreviewMode, null>) {
     const parsed = arrangement.parsedChords;
-    const voicing = resolveHarmonyVoicingForGenerator(mode, arrangement);
+    const voicing =
+      mode === "custom"
+        ? arrangement.effectiveHarmonyVoicing
+        : resolveHarmonyVoicingForGenerator(mode, arrangement);
     const tempo = arrangement.input.tempo;
 
     if (voicing == null || parsed.length === 0) return;
@@ -624,6 +731,33 @@ export function SetupScreen() {
 
   function handlePartCountChange(value: "2" | "4") {
     model.setArrangementInput({ totalParts: value === "2" ? 2 : 4 });
+  }
+
+  function handleCustomizeHarmony() {
+    const baseLines =
+      arrangement.input.customHarmony?.lines ??
+      arrangement.selectedHarmonyVoicing?.lines;
+    if (baseLines == null) return;
+    handleStopPreview();
+    setCustomHarmonyDraft(baseLines.map((line: number[]) => [...line]));
+    setIsCustomizingHarmony(true);
+  }
+
+  function handleSaveCustomHarmony(lines: number[][]) {
+    handleStopPreview();
+    model.setArrangementInput({
+      customHarmony: {
+        lines: lines.map((line) => [...line]),
+      },
+    });
+    setIsCustomizingHarmony(false);
+  }
+
+  function handleResetCustomHarmony() {
+    if (previewingMode === "custom") {
+      handleStopPreview();
+    }
+    model.setArrangementInput({ customHarmony: null });
   }
 
   function handleTempoInputChange(value: string) {
@@ -695,9 +829,25 @@ export function SetupScreen() {
     onPartCountChange: handlePartCountChange,
     onPreviewSelected: () =>
       handlePreview(arrangement.input.selectedHarmonyGenerator),
+    onPreviewCustom: () => handlePreview("custom"),
     onStopPreview: handleStopPreview,
+    onCustomizeHarmony: handleCustomizeHarmony,
+    onResetCustomHarmony: handleResetCustomHarmony,
     onStart: handleStart,
   };
+
+  if (isCustomizingHarmony) {
+    return (
+      <CustomHarmonyEditor
+        arrangement={arrangement}
+        draftLines={customHarmonyDraft}
+        ctx={audioContext}
+        onRequestAudioContext={() => model.ensureAudioContext()}
+        onCancel={() => setIsCustomizingHarmony(false)}
+        onSave={handleSaveCustomHarmony}
+      />
+    );
+  }
 
   return (
     <Flex {...dsScreenShell} py={8}>

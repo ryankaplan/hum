@@ -62,7 +62,7 @@ export function createMonitorPlayer(
   ctx: AudioContext,
   tracks: (MonitorTrack | null)[],
 ): MonitorPlayer {
-  const BASE_TRACK_GAIN = 0.5;
+  const BASE_TRACK_GAIN = 0.6;
   // Per-track gain nodes (persistent; control mute state)
   const gainNodes: (GainNode | null)[] = tracks.map((track) => {
     if (track == null) return null;

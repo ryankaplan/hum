@@ -75,9 +75,9 @@ export function playGuideTone(
   osc.frequency.value = frequency;
   osc.connect(gain);
 
-  // Envelope matching Tone.js PolySynth(Synth, { attack: 0.02, decay: 0.1,
-  // sustain: 0.8, release: 0.3, volume: -6 }). Peak gain ≈ 0.5 (−6 dB).
-  const peak = 0.5;
+  // Keep guide tones present but below the prior-take monitor so overdubbing
+  // timing cues come from the recorded part first.
+  const peak = 0.38;
   const attack = 0.02;
   const decay = 0.1;
   const sustainLevel = peak * 0.8;

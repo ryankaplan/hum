@@ -37,7 +37,7 @@ export type SetupFormFieldsProps = {
 };
 
 export type VoicingComparisonSectionProps = {
-  title: string;
+  title?: string;
   parsed: ArrangementInfo["parsedChords"];
   voicing: NonNullable<ArrangementInfo["harmonyVoicingLegacy"]>;
   chordPreviewItems: ArrangementInfo["measures"][number]["chords"];

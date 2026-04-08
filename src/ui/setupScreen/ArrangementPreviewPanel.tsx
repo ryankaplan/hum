@@ -6,7 +6,7 @@ import {
   dsInputControl,
   dsOutlineButton,
 } from "../designSystem";
-import { PlayIcon, StopIcon } from "../icons";
+import { EditIcon, PlayIcon, StopIcon } from "../icons";
 import { VoicingComparisonSection } from "./VoicingComparisonSection";
 import type { ArrangementPreviewPanelProps } from "./types";
 
@@ -19,7 +19,6 @@ const controlStyles = {
 };
 
 export function ArrangementPreviewPanel({
-  measures,
   parsed,
   legacyVoicing,
   selectedHarmonyGenerator,
@@ -35,17 +34,23 @@ export function ArrangementPreviewPanel({
   onCustomizeHarmony,
   onResetCustomHarmony,
 }: ArrangementPreviewPanelProps) {
+  const previewingSelected = previewingMode === selectedHarmonyGenerator;
+  const previewingCustom = previewingMode === "custom";
+
   return (
     <Box bg={dsColors.surfaceRaised} borderRadius="xl" p={4}>
-      <Stack gap={3}>
+      <Stack gap={4}>
         <Flex justify="space-between" align="center" gap={3} wrap="wrap">
           <Text color={dsColors.textMuted} fontSize="xs" fontWeight="semibold">
-            ARRANGEMENT - {measures.length} measure
-            {measures.length !== 1 ? "s" : ""}, {parsed.length} chord
-            {parsed.length !== 1 ? "s" : ""}
+            ARRANGEMENT
           </Text>
-          <Flex gap={2} align="center">
-            <NativeSelect.Root size="sm">
+          <Flex gap={2} align="center" wrap="wrap" justify="flex-end">
+            <NativeSelect.Root
+              size="sm"
+              width="auto"
+              minW="unset"
+              flex="0 0 auto"
+            >
               <NativeSelect.Field
                 value={selectedHarmonyGenerator}
                 onChange={(e) =>
@@ -53,6 +58,9 @@ export function ArrangementPreviewPanel({
                     e.target.value as SelectedHarmonyGenerator,
                   )
                 }
+                width="auto"
+                minW="7rem"
+                pr={8}
                 {...controlStyles}
               >
                 <option value="legacy">Basic</option>
@@ -66,26 +74,15 @@ export function ArrangementPreviewPanel({
               px={2.5}
               borderRadius="full"
               borderColor="transparent"
-              color={
-                previewingMode === selectedHarmonyGenerator
-                  ? dsColors.accent
-                  : dsColors.textMuted
-              }
+              color={previewingSelected ? dsColors.accent : dsColors.textMuted}
               _hover={{
                 bg: dsColors.surfaceSubtle,
-                color:
-                  previewingMode === selectedHarmonyGenerator
-                    ? dsColors.accent
-                    : dsColors.text,
+                color: previewingSelected ? dsColors.accent : dsColors.text,
               }}
-              onClick={
-                previewingMode === selectedHarmonyGenerator
-                  ? onStopPreview
-                  : onPreviewSelected
-              }
+              onClick={previewingSelected ? onStopPreview : onPreviewSelected}
             >
               <Flex align="center" gap={1.5}>
-                {previewingMode === selectedHarmonyGenerator ? (
+                {previewingSelected ? (
                   <StopIcon size={14} strokeWidth={2.1} />
                 ) : (
                   <PlayIcon size={14} strokeWidth={2.1} />
@@ -102,81 +99,64 @@ export function ArrangementPreviewPanel({
               px={2.5}
               borderRadius="full"
               borderColor="transparent"
-              color={
-                previewingMode === "custom"
-                  ? dsColors.accent
-                  : dsColors.textMuted
-              }
-              _hover={{
-                bg: dsColors.surfaceSubtle,
-                color:
-                  previewingMode === "custom" ? dsColors.accent : dsColors.text,
-              }}
-              disabled={!hasCustomHarmony || effectiveHarmonyVoicing == null}
-              onClick={
-                previewingMode === "custom" ? onStopPreview : onPreviewCustom
-              }
+              onClick={onCustomizeHarmony}
             >
               <Flex align="center" gap={1.5}>
-                {previewingMode === "custom" ? (
-                  <StopIcon size={14} strokeWidth={2.1} />
-                ) : (
-                  <PlayIcon size={14} strokeWidth={2.1} />
-                )}
+                <EditIcon size={14} />
                 <Text fontSize="xs" fontWeight="semibold">
-                  Custom
+                  Edit
                 </Text>
               </Flex>
             </Button>
+            {hasCustomHarmony && effectiveHarmonyVoicing != null ? (
+              <Button
+                {...dsOutlineButton}
+                size="xs"
+                h={7}
+                px={2.5}
+                borderRadius="full"
+                borderColor="transparent"
+                color={previewingCustom ? dsColors.accent : dsColors.textMuted}
+                _hover={{
+                  bg: dsColors.surfaceSubtle,
+                  color: previewingCustom ? dsColors.accent : dsColors.text,
+                }}
+                onClick={previewingCustom ? onStopPreview : onPreviewCustom}
+              >
+                <Flex align="center" gap={1.5}>
+                  {previewingCustom ? (
+                    <StopIcon size={14} strokeWidth={2.1} />
+                  ) : (
+                    <PlayIcon size={14} strokeWidth={2.1} />
+                  )}
+                  <Text fontSize="xs" fontWeight="semibold">
+                    Preview Edit
+                  </Text>
+                </Flex>
+              </Button>
+            ) : null}
+            {hasCustomHarmony ? (
+              <Button {...dsOutlineButton} onClick={onResetCustomHarmony}>
+                Reset
+              </Button>
+            ) : null}
           </Flex>
         </Flex>
         <VoicingComparisonSection
-          title={selectedHarmonyGenerator === "legacy" ? "Legacy" : "Dynamic"}
+          title={undefined}
           parsed={parsed}
           voicing={selectedHarmonyVoicing ?? legacyVoicing}
           chordPreviewItems={chordPreviewItems}
         />
         {hasCustomHarmony && effectiveHarmonyVoicing != null && (
           <VoicingComparisonSection
-            title="Custom"
+            title="Edited"
             parsed={parsed}
             voicing={effectiveHarmonyVoicing}
             chordPreviewItems={chordPreviewItems}
           />
         )}
       </Stack>
-      <Flex
-        mt={4}
-        pt={4}
-        borderTop="1px solid"
-        borderColor={dsColors.border}
-        justify="space-between"
-        align={{ base: "flex-start", md: "center" }}
-        gap={3}
-        flexWrap="wrap"
-      >
-        <Box>
-          <Text color={dsColors.textMuted} fontSize="xs" fontWeight="semibold">
-            HARMONY EDITING
-          </Text>
-          <Text color={dsColors.text} fontSize="sm" fontWeight="medium">
-            {hasCustomHarmony ? "Custom harmony active" : "Using auto harmony"}
-          </Text>
-          <Text color={dsColors.textSubtle} fontSize="xs">
-            Lyrics stay read-only and chord timing stays fixed.
-          </Text>
-        </Box>
-        <Flex gap={2} flexWrap="wrap">
-          <Button {...dsOutlineButton} onClick={onCustomizeHarmony}>
-            {hasCustomHarmony ? "Edit custom harmony" : "Customize harmony"}
-          </Button>
-          {hasCustomHarmony && (
-            <Button {...dsOutlineButton} onClick={onResetCustomHarmony}>
-              Reset to auto
-            </Button>
-          )}
-        </Flex>
-      </Flex>
     </Box>
   );
 }

@@ -12,9 +12,11 @@ export function VoicingComparisonSection({
 }: VoicingComparisonSectionProps) {
   return (
     <Stack gap={2}>
-      <Text color={dsColors.textMuted} fontSize="xs" fontWeight="semibold">
-        {title}
-      </Text>
+      {title ? (
+        <Text color={dsColors.textMuted} fontSize="xs" fontWeight="semibold">
+          {title}
+        </Text>
+      ) : null}
       <Flex gap={2} flexWrap="wrap">
         {parsed.map((chord, index) => {
           const annotation = voicing.annotations[index];

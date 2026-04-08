@@ -89,38 +89,42 @@ export function SetupFormFields({
         </Field.Root>
       </Grid>
 
-      <Field.Root>
-        <Field.Label color={dsColors.text}>Harmony Placement</Field.Label>
-        <NativeSelect.Root>
-          <NativeSelect.Field
-            value={harmonyRangeCoverage}
-            onChange={(e) =>
-              onHarmonyCoverageChange(e.target.value as HarmonyRangeCoverage)
-            }
-            {...controlStyles}
-          >
-            {HARMONY_COVERAGE_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </NativeSelect.Field>
-        </NativeSelect.Root>
-      </Field.Root>
+      <Grid templateColumns={{ base: "1fr", md: "1fr 1fr" }} gap={4}>
+        <Field.Root>
+          <Field.Label color={dsColors.text}>Harmony Placement</Field.Label>
+          <NativeSelect.Root>
+            <NativeSelect.Field
+              value={harmonyRangeCoverage}
+              onChange={(e) =>
+                onHarmonyCoverageChange(e.target.value as HarmonyRangeCoverage)
+              }
+              {...controlStyles}
+            >
+              {HARMONY_COVERAGE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </NativeSelect.Field>
+          </NativeSelect.Root>
+        </Field.Root>
 
-      <Field.Root>
-        <Field.Label color={dsColors.text}>Voices</Field.Label>
-        <NativeSelect.Root>
-          <NativeSelect.Field
-            value={String(totalParts)}
-            onChange={(e) => onPartCountChange(e.target.value === "2" ? "2" : "4")}
-            {...controlStyles}
-          >
-            <option value="4">4-part (3 harmony + melody)</option>
-            <option value="2">2-part (harmony + melody)</option>
-          </NativeSelect.Field>
-        </NativeSelect.Root>
-      </Field.Root>
+        <Field.Root>
+          <Field.Label color={dsColors.text}>Voices</Field.Label>
+          <NativeSelect.Root>
+            <NativeSelect.Field
+              value={String(totalParts)}
+              onChange={(e) =>
+                onPartCountChange(e.target.value === "2" ? "2" : "4")
+              }
+              {...controlStyles}
+            >
+              <option value="4">4-part (3 harmony + melody)</option>
+              <option value="2">2-part (harmony + melody)</option>
+            </NativeSelect.Field>
+          </NativeSelect.Root>
+        </Field.Root>
+      </Grid>
     </Stack>
   );
 }

@@ -64,6 +64,25 @@ export function StopIcon(props: AppIconProps) {
   );
 }
 
+export function EditIcon(props: AppIconProps) {
+  return (
+    <AppIcon {...props}>
+      <path
+        d="M5.1 14.9L6.05 11.4L12.95 4.5C13.53 3.92 14.47 3.92 15.05 4.5L15.5 4.95C16.08 5.53 16.08 6.47 15.5 7.05L8.6 13.95L5.1 14.9Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M11.95 5.5L14.5 8.05"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+    </AppIcon>
+  );
+}
+
 export function VolumeOnIcon(props: AppIconProps) {
   return (
     <AppIcon {...props}>

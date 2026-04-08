@@ -60,4 +60,22 @@ describe("computeArrangementInfo", () => {
     expect(info.selectedHarmonyVoicing).toBe(info.harmonyVoicingLegacy);
     expect(info.selectedHarmonyVoicing).not.toBe(info.harmonyVoicingDynamic);
   });
+
+  it("recomputes chord annotations when custom harmony adds non-chord tones", () => {
+    const info = computeArrangementInfo(
+      makeArrangementDocState("Em", {
+        customHarmony: {
+          lines: [[52], [59], [62]],
+        },
+      }),
+    );
+
+    expect(info.selectedHarmonyVoicing?.annotations[0]?.chordTones).toBe(
+      "R b3 5",
+    );
+    expect(info.hasCustomHarmony).toBe(true);
+    expect(info.effectiveHarmonyVoicing?.annotations[0]?.chordTones).toBe(
+      "R 5 b7",
+    );
+  });
 });

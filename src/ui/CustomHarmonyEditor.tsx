@@ -1,17 +1,17 @@
 import { Box, Button, Flex, Heading, Stack, Text } from "@chakra-ui/react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
+  describeHarmonyNotesForChord,
+  labelHarmonyNoteForChord,
+} from "../music/harmonyShared";
+import {
   playHarmonyPreview,
   playNotePreview,
   progressionDurationSec,
   stopAllPlayback,
 } from "../music/playback";
 import type { PlaybackSession } from "../music/playback";
-import {
-  chordSemitones,
-  formatChordSymbol,
-  rootSemitone,
-} from "../music/parse";
+import { formatChordSymbol } from "../music/parse";
 import {
   getPartLabel,
   midiToNoteName,
@@ -43,9 +43,9 @@ type Selection = {
   voiceIndex: number;
 };
 
-type DegreeMarker = {
-  label: string;
-  pitchClass: number;
+type ChordSummary = {
+  formula: string;
+  noteNames: string[];
 };
 
 type NoteCluster = {
@@ -77,7 +77,6 @@ export function CustomHarmonyEditor({
   onCancel,
   onSave,
 }: Props) {
-  const effectiveVoicing = arrangement.effectiveHarmonyVoicing;
   const harmonyPartCount = Math.max(1, arrangement.input.totalParts - 1);
   const [localLines, setLocalLines] = useState<HarmonyLine[]>(() =>
     draftLines.map((line) => [...line]),
@@ -123,44 +122,41 @@ export function CustomHarmonyEditor({
     }
   }, [arrangement.input.vocalRangeHigh, arrangement.input.vocalRangeLow]);
 
-  const degreeMarkersByChord = useMemo(
+  const chordSummaries = useMemo(
     () =>
       arrangement.parsedChords.map((chord, chordIndex) =>
-        getDegreeMarkers(
-          chord,
-          effectiveVoicing?.annotations[chordIndex]?.chordTones ?? null,
-        ),
+        buildChordSummary(chord, localLines, chordIndex),
       ),
-    [arrangement.parsedChords, effectiveVoicing],
+    [arrangement.parsedChords, localLines],
   );
   const chordPreviewItems = useMemo(
     () => arrangement.measures.flatMap((measure) => measure.chords),
     [arrangement.measures],
   );
 
-  const allVisibleMidis = useMemo(() => {
-    const values = new Set<number>();
+  const visiblePitchBounds = useMemo(() => {
+    let lowMidi = range.low;
+    let highMidi = range.high;
+
     for (let voiceIndex = 0; voiceIndex < localLines.length; voiceIndex++) {
       const line = localLines[voiceIndex];
       if (line == null) continue;
       for (let chordIndex = 0; chordIndex < line.length; chordIndex++) {
         const midi = line[chordIndex];
-        const chord = arrangement.parsedChords[chordIndex];
-        if (midi == null || chord == null) continue;
-        values.add(midi);
-        for (const candidate of getCandidateMidis(chord, midi, range.low, range.high)) {
-          values.add(candidate);
-        }
+        if (midi == null) continue;
+        lowMidi = Math.min(lowMidi, midi);
+        highMidi = Math.max(highMidi, midi);
       }
     }
-    return [...values].sort((a, b) => a - b);
-  }, [arrangement.parsedChords, localLines, range.high, range.low]);
 
-  const lowMidi = Math.max(
-    0,
-    (allVisibleMidis[0] ?? range.low ?? 48) - PITCH_PADDING,
-  );
-  const highMidi = Math.min(127, allVisibleMidis[allVisibleMidis.length - 1] ?? range.high ?? 72);
+    return {
+      low: Math.max(0, lowMidi - PITCH_PADDING),
+      high: Math.min(127, highMidi + PITCH_PADDING),
+    };
+  }, [localLines, range.high, range.low]);
+
+  const lowMidi = visiblePitchBounds.low;
+  const highMidi = visiblePitchBounds.high;
   const pitchRows = buildPitchRows(lowMidi, highMidi);
 
   const selectedMidi =
@@ -171,16 +167,12 @@ export function CustomHarmonyEditor({
     selection == null
       ? null
       : (arrangement.parsedChords[selection.chordIndex] ?? null);
-  const selectedDegreeMarkers =
-    selection == null
-      ? []
-      : (degreeMarkersByChord[selection.chordIndex] ?? []);
+  const selectedChordSummary =
+    selection == null ? null : (chordSummaries[selection.chordIndex] ?? null);
   const selectedCandidates =
-    selection == null || selectedMidi == null || selectedChord == null
+    selection == null || selectedMidi == null
       ? new Set<number>()
-      : new Set(
-          getCandidateMidis(selectedChord, selectedMidi, range.low, range.high),
-        );
+      : new Set(getEditableMidis(selectedMidi, range.low, range.high));
 
   const noteClusters = useMemo(
     () => groupNoteClusters(localLines, arrangement.parsedChords.length),
@@ -282,7 +274,7 @@ export function CustomHarmonyEditor({
                 Customize harmony
               </Heading>
               <Text color={dsColors.textMuted} fontSize="sm" mt={1}>
-                Select a colored note, then click a chord-tone row to move it. Timing and lyrics stay fixed.
+                Select a colored note, then click any pitch row to move it. Degree labels update against the chord as you edit.
               </Text>
             </Box>
             <Flex gap={2} flexWrap="wrap">
@@ -323,12 +315,8 @@ export function CustomHarmonyEditor({
                 </Text>
                 <Text color={dsColors.textMuted} fontSize="sm">
                   {selection == null
-                    ? "Chord tones will appear inline on the grid."
-                    : getChordSummaryText(
-                        arrangement,
-                        selection.chordIndex,
-                        selectedDegreeMarkers,
-                      )}
+                    ? "Degree labels appear on the selected chord column."
+                    : getChordSummaryText(selectedChordSummary)}
                 </Text>
               </Box>
               {selection != null && (
@@ -339,6 +327,9 @@ export function CustomHarmonyEditor({
                   <Text color={dsColors.text} fontSize="sm" fontWeight="semibold">
                     {getPartLabel(selection.voiceIndex, harmonyPartCount + 1)}:{" "}
                     {selectedMidi != null ? midiToNoteName(selectedMidi) : "—"}
+                    {selectedMidi != null && selectedChord != null
+                      ? ` • ${labelHarmonyNoteForChord(selectedChord, selectedMidi)}`
+                      : ""}
                   </Text>
                   <Text color={dsColors.textMuted} fontSize="sm">
                     {chordPreviewItems[selection.chordIndex]?.lyrics ||
@@ -464,9 +455,7 @@ export function CustomHarmonyEditor({
                             lineHeight="1.15"
                             overflow="hidden"
                           >
-                            {degreeMarkersByChord[chordIndex]
-                              ?.map((marker: DegreeMarker) => marker.label)
-                              .join(" ")}
+                            {chordSummaries[chordIndex]?.formula}
                           </Text>
                         </Box>
                       </Box>
@@ -504,16 +493,15 @@ export function CustomHarmonyEditor({
                   {arrangement.parsedChords.map((chord, chordIndex) => {
                     const x = NOTE_GRID_PAD_X_PX + chordStarts[chordIndex]! * CHORD_WIDTH_PER_BEAT_PX;
                     const width = Math.max(44, chord.beats * CHORD_WIDTH_PER_BEAT_PX);
-                    const chordMarkers = degreeMarkersByChord[chordIndex] ?? [];
                     return pitchRows.map((midi, rowIndex) => {
                       const y = CHORD_HEADER_HEIGHT_PX + rowIndex * NOTE_ROW_HEIGHT_PX;
-                      const marker = chordMarkers.find(
-                        (entry: DegreeMarker) =>
-                          entry.pitchClass === positiveMod(midi, 12),
-                      );
                       const isCandidate =
                         selection?.chordIndex === chordIndex &&
                         selectedCandidates.has(midi);
+                      const degreeLabel =
+                        selection?.chordIndex === chordIndex
+                          ? labelHarmonyNoteForChord(chord, midi)
+                          : null;
 
                       return (
                         <Box
@@ -535,10 +523,10 @@ export function CustomHarmonyEditor({
                           pointerEvents={isCandidate ? "auto" : "none"}
                           style={{ border: "none" }}
                         >
-                          {marker != null && (
+                          {degreeLabel != null && (
                             <Text
                               color={
-                                selection?.chordIndex === chordIndex
+                                isCandidate
                                   ? dsColors.accent
                                   : dsColors.textSubtle
                               }
@@ -549,7 +537,7 @@ export function CustomHarmonyEditor({
                               top="50%"
                               transform="translateY(-50%)"
                             >
-                              {marker.label}
+                              {degreeLabel}
                             </Text>
                           )}
                         </Box>
@@ -680,7 +668,7 @@ export function CustomHarmonyEditor({
           </Box>
 
           <Text color={dsColors.textSubtle} fontSize="xs">
-            Chord columns keep their current duration. Duplicate notes across voices are supported.
+            Every pitch inside the vocal range is editable. Chord columns keep their current duration, and duplicate notes across voices are supported.
           </Text>
         </Stack>
       </Box>
@@ -719,99 +707,19 @@ function getChordStartBeats(chords: Chord[]): number[] {
   return starts;
 }
 
-function getDegreeMarkers(
-  chord: Chord,
-  formula: string | null,
-): DegreeMarker[] {
-  const labels = (formula ?? getFallbackFormula(chord))
-    .split(/\s+/)
-    .filter((entry) => entry.length > 0 && DEGREE_INTERVALS[entry] != null);
-  const root = rootSemitone(chord.root);
-  return labels.map((label) => {
-    const interval = DEGREE_INTERVALS[label] ?? 0;
-    return {
-      label,
-      pitchClass: positiveMod(root + interval, 12),
-    };
-  });
-}
-
-function getFallbackFormula(chord: Chord): string {
-  switch (chord.quality) {
-    case "minor":
-      return "R b3 5";
-    case "diminished":
-      return "R b3 b5";
-    case "major6":
-      return "R 3 6";
-    case "minor6":
-      return "R b3 6";
-    case "dominant7":
-    case "dominant9":
-    case "dominant7Flat9":
-      return "R 3 b7";
-    case "minor7":
-    case "minor9":
-    case "minor7Flat9":
-      return "R b3 b7";
-    case "major7":
-      return "R 3 7";
-    case "sus2":
-    case "dominant9Sus2":
-      return "R 2 5";
-    case "sus4":
-    case "dominant9Sus4":
-      return "R 4 5";
-    default:
-      return "R 3 5";
-  }
-}
-
-const DEGREE_INTERVALS: Record<string, number> = {
-  R: 0,
-  "2": 2,
-  b3: 3,
-  "3": 4,
-  "4": 5,
-  b5: 6,
-  "5": 7,
-  "6": 9,
-  b7: 10,
-  "7": 11,
-  b9: 13,
-  "9": 14,
-};
-
-function getCandidateMidis(
-  chord: Chord,
+function getEditableMidis(
   currentMidi: MidiNote,
   rangeLow: number,
   rangeHigh: number,
 ): MidiNote[] {
-  const tonePitchClasses = chordSemitones(chord.root, chord.quality).map((value) =>
-    positiveMod(value, 12),
-  );
-  const candidates = new Set<number>([currentMidi]);
-  const low = Math.min(rangeLow, currentMidi - 12);
-  const high = Math.max(rangeHigh, currentMidi + 12);
-
-  for (let midi = low; midi <= high; midi++) {
-    if (!tonePitchClasses.includes(positiveMod(midi, 12))) continue;
-    if (midi < rangeLow || midi > rangeHigh) {
-      if (midi !== currentMidi) continue;
-    }
-    if (Math.abs(midi - currentMidi) > 12 && midi !== currentMidi) continue;
-    candidates.add(midi);
+  const candidates: MidiNote[] = [];
+  for (let midi = rangeLow; midi <= rangeHigh; midi++) {
+    candidates.push(midi);
   }
-
-  return [...candidates].sort((a, b) => {
-    const distanceDiff = Math.abs(a - currentMidi) - Math.abs(b - currentMidi);
-    return distanceDiff === 0 ? a - b : distanceDiff;
-  });
-}
-
-function positiveMod(value: number, divisor: number): number {
-  return ((value % divisor) + divisor) % divisor;
+  if (currentMidi < rangeLow || currentMidi > rangeHigh) {
+    candidates.push(currentMidi);
+  }
+  return candidates;
 }
 
 function groupNoteClusters(
@@ -867,15 +775,46 @@ function formatSelectedChordLabel(
   return chord != null ? formatChordSymbol(chord) : "Selected chord";
 }
 
-function getChordSummaryText(
-  arrangement: ArrangementInfo,
+function buildChordSummary(
+  chord: Chord,
+  lines: HarmonyLine[],
   chordIndex: number,
-  markers: DegreeMarker[],
-): string {
-  const chord = arrangement.parsedChords[chordIndex];
-  if (chord == null) return "Chord tones unavailable";
-  const noteNames = chordSemitones(chord.root, chord.quality)
-    .map((value) => midiToNoteName(60 + positiveMod(value, 12)).replace(/\d+$/, ""))
-    .join(" ");
-  return `${markers.map((marker) => marker.label).join(" ")}  •  ${noteNames}`;
+): ChordSummary {
+  const notes = getChordNotesAtIndex(lines, chordIndex);
+  return {
+    formula: describeHarmonyNotesForChord(chord, notes),
+    noteNames: summarizePitchClasses(notes),
+  };
+}
+
+function getChordSummaryText(summary: ChordSummary | null): string {
+  if (summary == null) return "Chord tones unavailable";
+  if (summary.noteNames.length === 0) return summary.formula;
+  return `${summary.formula}  •  ${summary.noteNames.join(" ")}`;
+}
+
+function getChordNotesAtIndex(
+  lines: HarmonyLine[],
+  chordIndex: number,
+): MidiNote[] {
+  const notes: MidiNote[] = [];
+  for (let voiceIndex = 0; voiceIndex < lines.length; voiceIndex++) {
+    const midi = lines[voiceIndex]?.[chordIndex];
+    if (midi != null) {
+      notes.push(midi);
+    }
+  }
+  return notes;
+}
+
+function summarizePitchClasses(notes: readonly MidiNote[]): string[] {
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const note of notes) {
+    const name = midiToNoteName(note).replace(/\d+$/, "");
+    if (seen.has(name)) continue;
+    seen.add(name);
+    names.push(name);
+  }
+  return names;
 }

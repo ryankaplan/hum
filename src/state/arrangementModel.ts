@@ -2,6 +2,7 @@ import {
   generateHarmony,
   generateHarmonyDynamic,
 } from "../music/harmony";
+import { describeHarmonyNotesForChord } from "../music/harmonyShared";
 import { parseChordText } from "../music/parse";
 import { progressionDurationSec } from "../music/playback";
 import { noteNameToMidi } from "../music/types";
@@ -506,9 +507,23 @@ export function computeArrangementInfo(
             line.reduce((lineTop, midi) => Math.max(lineTop, midi), top),
           Number.NEGATIVE_INFINITY,
         );
+        const customAnnotations = selectedVoicing.annotations.map(
+          (annotation, chordIndex) => {
+            const chord = parsedArrangement.parsedChords[chordIndex];
+            if (chord == null) return annotation;
+            return {
+              ...annotation,
+              chordTones: describeHarmonyNotesForChord(
+                chord,
+                getChordNotesAtIndex(customHarmony.lines, chordIndex),
+              ),
+            };
+          },
+        );
         effectiveHarmonyVoicing = {
           ...selectedVoicing,
           lines: customHarmony.lines.map((line) => [...line]),
+          annotations: customAnnotations,
           harmonyTop:
             Number.isFinite(customHarmonyTop)
               ? customHarmonyTop
@@ -567,4 +582,18 @@ function normalizeCustomHarmonyOverride(
   return {
     lines: raw.lines.map((line) => [...line]),
   };
+}
+
+function getChordNotesAtIndex(
+  lines: HarmonyLine[],
+  chordIndex: number,
+): number[] {
+  const notes: number[] = [];
+  for (let voiceIndex = 0; voiceIndex < lines.length; voiceIndex++) {
+    const midi = lines[voiceIndex]?.[chordIndex];
+    if (midi != null) {
+      notes.push(midi);
+    }
+  }
+  return notes;
 }

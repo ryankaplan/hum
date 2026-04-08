@@ -15,12 +15,16 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { useObservable } from "../observable";
 import { acquirePermissionsAndStart } from "../recording/permissions";
-import { flattenArrangementLyrics } from "../state/arrangementModel";
+import {
+  flattenArrangementLyrics,
+  resolveHarmonyVoicingForGenerator,
+} from "../state/arrangementModel";
 import { chordPitchClassNames, formatChordSymbol } from "../music/parse";
 import {
   midiToNoteName,
   type HarmonyRangeCoverage,
   type Meter,
+  type SelectedHarmonyGenerator,
 } from "../music/types";
 import {
   playHarmonyPreview,
@@ -76,9 +80,9 @@ type SetupCardProps = {
   onMeterLabelChange: (label: string) => void;
   onRangePresetChange: (value: string) => void;
   onHarmonyCoverageChange: (value: HarmonyRangeCoverage) => void;
+  onSelectedHarmonyGeneratorChange: (value: SelectedHarmonyGenerator) => void;
   onPartCountChange: (value: "2" | "4") => void;
-  onPreviewLegacy: () => void;
-  onPreviewDynamic: () => void;
+  onPreviewSelected: () => void;
   onPreviewCustom: () => void;
   onStopPreview: () => void;
   onCustomizeHarmony: () => void;
@@ -99,9 +103,9 @@ function SetupCard({
   onMeterLabelChange,
   onRangePresetChange,
   onHarmonyCoverageChange,
+  onSelectedHarmonyGeneratorChange,
   onPartCountChange,
-  onPreviewLegacy,
-  onPreviewDynamic,
+  onPreviewSelected,
   onPreviewCustom,
   onStopPreview,
   onCustomizeHarmony,
@@ -114,8 +118,9 @@ function SetupCard({
     parsedChords: parsed,
     invalidChordIds,
     parseIssues,
-    harmonyVoicing: voicing,
+    harmonyVoicingLegacy: legacyVoicing,
     harmonyVoicingDynamic: dynamicVoicing,
+    selectedHarmonyVoicing,
     effectiveHarmonyVoicing,
     hasCustomHarmony,
     isValid,
@@ -125,6 +130,7 @@ function SetupCard({
     vocalRangeLow: rangeLow,
     vocalRangeHigh: rangeHigh,
     harmonyRangeCoverage,
+    selectedHarmonyGenerator,
     totalParts,
   } = input;
   const lyricsByChord = flattenArrangementLyrics(measures);
@@ -294,7 +300,7 @@ function SetupCard({
           </Field.Root>
 
           <Field.Root>
-            <Field.Label color={dsColors.text}>Arrangement</Field.Label>
+            <Field.Label color={dsColors.text}>Voices</Field.Label>
             <NativeSelect.Root>
               <NativeSelect.Field
                 value={String(totalParts)}
@@ -311,142 +317,116 @@ function SetupCard({
         </Stack>
 
         {parsed.length > 0 &&
-          voicing != null &&
+          legacyVoicing != null &&
           dynamicVoicing != null && (
             <Box bg={dsColors.surfaceRaised} borderRadius="xl" p={4}>
-              <Flex justify="space-between" align="center" mb={2} gap={2}>
-                <Text
-                  color={dsColors.textMuted}
-                  fontSize="xs"
-                  fontWeight="semibold"
-                >
-                  ARRANGEMENT - {measures.length} measure
-                  {measures.length !== 1 ? "s" : ""}, {parsed.length} chord
-                  {parsed.length !== 1 ? "s" : ""}
-                </Text>
-                <Flex gap={2}>
-                  <Button
-                    {...dsOutlineButton}
-                    size="xs"
-                    h={7}
-                    px={2.5}
-                    borderRadius="full"
-                    borderColor="transparent"
-                    color={
-                      previewingMode === "custom"
-                        ? dsColors.accent
-                        : dsColors.textMuted
-                    }
-                    _hover={{
-                      bg: dsColors.surfaceSubtle,
-                      color:
+              <Stack gap={3}>
+                <Flex justify="space-between" align="center" gap={3} wrap="wrap">
+                  <Text
+                    color={dsColors.textMuted}
+                    fontSize="xs"
+                    fontWeight="semibold"
+                  >
+                    ARRANGEMENT - {measures.length} measure
+                    {measures.length !== 1 ? "s" : ""}, {parsed.length} chord
+                    {parsed.length !== 1 ? "s" : ""}
+                  </Text>
+                  <Flex gap={2} align="center">
+                    <NativeSelect.Root size="sm">
+                      <NativeSelect.Field
+                        value={selectedHarmonyGenerator}
+                        onChange={(e) =>
+                          onSelectedHarmonyGeneratorChange(
+                            e.target.value as SelectedHarmonyGenerator,
+                          )
+                        }
+                        {...controlStyles}
+                      >
+                        <option value="legacy">Legacy</option>
+                        <option value="dynamic">Dynamic</option>
+                      </NativeSelect.Field>
+                    </NativeSelect.Root>
+                    <Button
+                      {...dsOutlineButton}
+                      size="xs"
+                      h={7}
+                      px={2.5}
+                      borderRadius="full"
+                      borderColor="transparent"
+                      color={
+                        previewingMode === selectedHarmonyGenerator
+                          ? dsColors.accent
+                          : dsColors.textMuted
+                      }
+                      _hover={{
+                        bg: dsColors.surfaceSubtle,
+                        color:
+                          previewingMode === selectedHarmonyGenerator
+                            ? dsColors.accent
+                            : dsColors.text,
+                      }}
+                      onClick={
+                        previewingMode === selectedHarmonyGenerator
+                          ? onStopPreview
+                          : onPreviewSelected
+                      }
+                    >
+                      <Flex align="center" gap={1.5}>
+                        {previewingMode === selectedHarmonyGenerator ? (
+                          <StopIcon size={14} strokeWidth={2.1} />
+                        ) : (
+                          <PlayIcon size={14} strokeWidth={2.1} />
+                        )}
+                        <Text fontSize="xs" fontWeight="semibold">
+                          Preview
+                        </Text>
+                      </Flex>
+                    </Button>
+                    <Button
+                      {...dsOutlineButton}
+                      size="xs"
+                      h={7}
+                      px={2.5}
+                      borderRadius="full"
+                      borderColor="transparent"
+                      color={
                         previewingMode === "custom"
                           ? dsColors.accent
-                          : dsColors.text,
-                    }}
-                    disabled={!hasCustomHarmony || effectiveHarmonyVoicing == null}
-                    onClick={
-                      previewingMode === "custom"
-                        ? onStopPreview
-                        : onPreviewCustom
-                    }
-                  >
-                    <Flex align="center" gap={1.5}>
-                      {previewingMode === "custom" ? (
-                        <StopIcon size={14} strokeWidth={2.1} />
-                      ) : (
-                        <PlayIcon size={14} strokeWidth={2.1} />
-                      )}
-                      <Text fontSize="xs" fontWeight="semibold">
-                        Custom
-                      </Text>
-                    </Flex>
-                  </Button>
-                  <Button
-                    {...dsOutlineButton}
-                    size="xs"
-                    h={7}
-                    px={2.5}
-                    borderRadius="full"
-                    borderColor="transparent"
-                    color={
-                      previewingMode === "legacy"
-                        ? dsColors.accent
-                        : dsColors.textMuted
-                    }
-                    _hover={{
-                      bg: dsColors.surfaceSubtle,
-                      color:
-                        previewingMode === "legacy"
-                          ? dsColors.accent
-                          : dsColors.text,
-                    }}
-                    onClick={
-                      previewingMode === "legacy"
-                        ? onStopPreview
-                        : onPreviewLegacy
-                    }
-                  >
-                    <Flex align="center" gap={1.5}>
-                      {previewingMode === "legacy" ? (
-                        <StopIcon size={14} strokeWidth={2.1} />
-                      ) : (
-                        <PlayIcon size={14} strokeWidth={2.1} />
-                      )}
-                      <Text fontSize="xs" fontWeight="semibold">
-                        Legacy
-                      </Text>
-                    </Flex>
-                  </Button>
-                  <Button
-                    {...dsOutlineButton}
-                    size="xs"
-                    h={7}
-                    px={2.5}
-                    borderRadius="full"
-                    borderColor="transparent"
-                    color={
-                      previewingMode === "dynamic"
-                        ? dsColors.accent
-                        : dsColors.textMuted
-                    }
-                    _hover={{
-                      bg: dsColors.surfaceSubtle,
-                      color:
-                        previewingMode === "dynamic"
-                          ? dsColors.accent
-                          : dsColors.text,
-                    }}
-                    onClick={
-                      previewingMode === "dynamic"
-                        ? onStopPreview
-                        : onPreviewDynamic
-                    }
-                  >
-                    <Flex align="center" gap={1.5}>
-                      {previewingMode === "dynamic" ? (
-                        <StopIcon size={14} strokeWidth={2.1} />
-                      ) : (
-                        <PlayIcon size={14} strokeWidth={2.1} />
-                      )}
-                      <Text fontSize="xs" fontWeight="semibold">
-                        Dynamic
-                      </Text>
-                    </Flex>
-                  </Button>
+                          : dsColors.textMuted
+                      }
+                      _hover={{
+                        bg: dsColors.surfaceSubtle,
+                        color:
+                          previewingMode === "custom"
+                            ? dsColors.accent
+                            : dsColors.text,
+                      }}
+                      disabled={!hasCustomHarmony || effectiveHarmonyVoicing == null}
+                      onClick={
+                        previewingMode === "custom"
+                          ? onStopPreview
+                          : onPreviewCustom
+                      }
+                    >
+                      <Flex align="center" gap={1.5}>
+                        {previewingMode === "custom" ? (
+                          <StopIcon size={14} strokeWidth={2.1} />
+                        ) : (
+                          <PlayIcon size={14} strokeWidth={2.1} />
+                        )}
+                        <Text fontSize="xs" fontWeight="semibold">
+                          Custom
+                        </Text>
+                      </Flex>
+                    </Button>
+                  </Flex>
                 </Flex>
-              </Flex>
-              <Stack gap={3}>
                 <VoicingComparisonSection
-                  title="Legacy"
+                  title={
+                    selectedHarmonyGenerator === "legacy" ? "Legacy" : "Dynamic"
+                  }
                   parsed={parsed}
-                  voicing={voicing}
-                  chordPreviewItems={chordPreviewItems}
-                />
-                <VoicingComparisonSection
-                  title="Dynamic"
-                  parsed={parsed}
-                  voicing={dynamicVoicing}
+                  voicing={selectedHarmonyVoicing ?? legacyVoicing}
                   chordPreviewItems={chordPreviewItems}
                 />
                 {hasCustomHarmony && effectiveHarmonyVoicing != null && (
@@ -551,7 +531,7 @@ function SetupCard({
 type VoicingComparisonSectionProps = {
   title: string;
   parsed: ArrangementInfo["parsedChords"];
-  voicing: NonNullable<ArrangementInfo["harmonyVoicing"]>;
+  voicing: NonNullable<ArrangementInfo["harmonyVoicingLegacy"]>;
   chordPreviewItems: ArrangementInfo["measures"][number]["chords"];
 };
 
@@ -704,11 +684,9 @@ export function SetupScreen() {
   async function handlePreview(mode: Exclude<PreviewMode, null>) {
     const parsed = arrangement.parsedChords;
     const voicing =
-      mode === "legacy"
-        ? arrangement.harmonyVoicing
-        : mode === "dynamic"
-          ? arrangement.harmonyVoicingDynamic
-          : arrangement.effectiveHarmonyVoicing;
+      mode === "custom"
+        ? arrangement.effectiveHarmonyVoicing
+        : resolveHarmonyVoicingForGenerator(mode, arrangement);
     const tempo = arrangement.input.tempo;
 
     if (voicing == null || parsed.length === 0) return;
@@ -757,7 +735,8 @@ export function SetupScreen() {
 
   function handleCustomizeHarmony() {
     const baseLines =
-      arrangement.input.customHarmony?.lines ?? arrangement.harmonyVoicing?.lines;
+      arrangement.input.customHarmony?.lines ??
+      arrangement.selectedHarmonyVoicing?.lines;
     if (baseLines == null) return;
     handleStopPreview();
     setCustomHarmonyDraft(baseLines.map((line: number[]) => [...line]));
@@ -842,9 +821,14 @@ export function SetupScreen() {
         harmonyRangeCoverage: value,
       });
     },
+    onSelectedHarmonyGeneratorChange: (value: SelectedHarmonyGenerator) => {
+      model.setArrangementInput({
+        selectedHarmonyGenerator: value,
+      });
+    },
     onPartCountChange: handlePartCountChange,
-    onPreviewLegacy: () => handlePreview("legacy"),
-    onPreviewDynamic: () => handlePreview("dynamic"),
+    onPreviewSelected: () =>
+      handlePreview(arrangement.input.selectedHarmonyGenerator),
     onPreviewCustom: () => handlePreview("custom"),
     onStopPreview: handleStopPreview,
     onCustomizeHarmony: handleCustomizeHarmony,

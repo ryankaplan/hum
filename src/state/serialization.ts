@@ -91,6 +91,7 @@ function serializeArrangementDocument(
     vocalRangeLow: arrangement.vocalRangeLow,
     vocalRangeHigh: arrangement.vocalRangeHigh,
     harmonyRangeCoverage: arrangement.harmonyRangeCoverage,
+    selectedHarmonyGenerator: arrangement.selectedHarmonyGenerator,
     totalParts: arrangement.totalParts,
     customHarmony:
       arrangement.customHarmony == null
@@ -111,6 +112,7 @@ function deserializeArrangementDocument(
     vocalRangeLow: saved.vocalRangeLow,
     vocalRangeHigh: saved.vocalRangeHigh,
     harmonyRangeCoverage: saved.harmonyRangeCoverage,
+    selectedHarmonyGenerator: saved.selectedHarmonyGenerator ?? "dynamic",
     totalParts: saved.totalParts,
     customHarmony:
       saved.customHarmony == null

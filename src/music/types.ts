@@ -54,24 +54,9 @@ export type HarmonyRangeCoverage = "lower two thirds" | "whole-range";
 
 export type HarmonyVoicingStrategy = "drop2" | "closed" | "open" | "spread";
 export type HarmonyVoicingGenerator = "legacy" | "dynamic";
+export type SelectedHarmonyGenerator = HarmonyVoicingGenerator;
 
-export type ChordToneFormula =
-  | "R 3 5"
-  | "R b3 5"
-  | "R b3 b5"
-  | "R 3 6"
-  | "R b3 6"
-  | "R 3 b7"
-  | "R b3 b7"
-  | "R 3 7"
-  | "R 3 9"
-  | "R b3 9"
-  | "R 3 b9"
-  | "R b3 b9"
-  | "R 2 5"
-  | "R 4 5"
-  | "R 2 9"
-  | "R 4 9";
+export type ChordToneFormula = string;
 
 export type HarmonyChordAnnotation = {
   generator: HarmonyVoicingGenerator;

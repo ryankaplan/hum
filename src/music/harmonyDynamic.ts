@@ -24,12 +24,15 @@ import {
   chooseBestDynamicPath,
   createEmptyHarmonyVoicing,
   createHarmonyLines,
+  describeHarmonyCandidateChordTones,
   generateHarmonyCandidates,
   HarmonyVoicingCandidate,
   makeAnnotation,
   resolveHarmonyPartCount,
   resolveHarmonyRange,
 } from "./harmonyShared";
+
+const MAX_DYNAMIC_CANDIDATES_PER_CHORD = 40;
 
 export function generateHarmonyDynamic(
   chords: Chord[],
@@ -48,7 +51,10 @@ export function generateHarmonyDynamic(
     harmonyRangeCoverage,
   );
   const candidateSets = chords.map((chord) => {
-    const candidates = generateHarmonyCandidates(chord, harmonyRange);
+    const candidates = generateHarmonyCandidates(chord, harmonyRange).slice(
+      0,
+      MAX_DYNAMIC_CANDIDATES_PER_CHORD,
+    );
     if (candidates.length > 0) return candidates;
     return [
       buildFallbackCandidate(chord, harmonyRange, null),
@@ -62,7 +68,14 @@ export function generateHarmonyDynamic(
   for (let i = 0; i < chords.length; i++) {
     const chord = chords[i]!;
     const candidate = bestPath[i]!;
-    annotations.push(makeAnnotation("dynamic", candidate.strategy, chord));
+    annotations.push(
+      makeAnnotation(
+        "dynamic",
+        candidate.strategy,
+        chord,
+        describeHarmonyCandidateChordTones(chord, candidate),
+      ),
+    );
     appendVoicesToLines(lines, candidate.notes, resolvedHarmonyPartCount);
   }
 

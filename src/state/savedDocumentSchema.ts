@@ -67,6 +67,7 @@ export type SavedArrangementDocument = {
   vocalRangeLow: string;
   vocalRangeHigh: string;
   harmonyRangeCoverage: "lower two thirds" | "whole-range";
+  selectedHarmonyGenerator?: "legacy" | "dynamic";
   totalParts: 2 | 4;
   customHarmony: { lines: number[][] } | null;
 };
@@ -162,7 +163,7 @@ function parseSavedExportPreferences(
     return null;
   }
   return {
-    preferredFormat,
+    preferredFormat: preferredFormat as SavedExportVideoFormat | null,
   };
 }
 
@@ -183,6 +184,9 @@ function parseSavedArrangementDocument(
     (raw.harmonyRangeCoverage !== undefined &&
       raw.harmonyRangeCoverage !== "lower two thirds" &&
       raw.harmonyRangeCoverage !== "whole-range") ||
+    (raw.selectedHarmonyGenerator !== undefined &&
+      raw.selectedHarmonyGenerator !== "legacy" &&
+      raw.selectedHarmonyGenerator !== "dynamic") ||
     (raw.totalParts !== 2 && raw.totalParts !== 4)
   ) {
     return null;
@@ -194,7 +198,12 @@ function parseSavedArrangementDocument(
     meter: [meter[0], meter[1]],
     vocalRangeLow: raw.vocalRangeLow,
     vocalRangeHigh: raw.vocalRangeHigh,
-    harmonyRangeCoverage: raw.harmonyRangeCoverage ?? "lower two thirds",
+    harmonyRangeCoverage: (raw.harmonyRangeCoverage ??
+      "lower two thirds") as SavedArrangementDocument["harmonyRangeCoverage"],
+    selectedHarmonyGenerator:
+      raw.selectedHarmonyGenerator as
+        | SavedArrangementDocument["selectedHarmonyGenerator"]
+        | undefined,
     totalParts: raw.totalParts,
     customHarmony: parseSavedCustomHarmony(raw.customHarmony),
   };

@@ -1,18 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { generateHarmonyDynamic } from "../src/music/harmony";
+import { generateHarmony, generateHarmonyDynamic } from "../src/music/harmony";
 import { midiToNoteName } from "../src/music/types";
 import { parseChordText } from "../src/music/parse";
 
-function renderDynamicProgressionVoicings(tokens: readonly string[]): string[] {
-  const chords = tokens.map((token) => {
-    const chord = parseChordText(token, 4);
+function renderProgressionVoicings(
+  tokens: readonly string[],
+  beats: readonly number[] = tokens.map(() => 4),
+  generator: typeof generateHarmonyDynamic | typeof generateHarmony = generateHarmonyDynamic,
+): string[] {
+  const chords = tokens.map((token, index) => {
+    const chord = parseChordText(token, beats[index] ?? 4);
     if (chord == null) {
       throw new Error(`Expected test chord to parse: ${token}`);
     }
     return chord;
   });
 
-  const voicing = generateHarmonyDynamic(
+  const voicing = generator(
     chords,
     { low: 48, high: 72 },
     3,
@@ -31,7 +35,7 @@ function renderDynamicProgressionVoicings(tokens: readonly string[]): string[] {
 }
 
 function renderDynamicChordVoicing(token: string): string {
-  return renderDynamicProgressionVoicings([token])[0]!;
+  return renderProgressionVoicings([token])[0]!;
 }
 
 describe("dynamic harmony chord examples", () => {
@@ -58,14 +62,14 @@ describe("dynamic harmony chord examples", () => {
         [
           "A -> A3 C#4 E4",
           "Am -> A3 C4 E4",
-          "A7 -> G3 A3 C#4",
-          "Am7 -> G3 A3 C4",
-          "Amaj7 -> G#3 A3 C#4",
-          "A9 -> A3 B3 C#4",
-          "Am9 -> C3 A3 B3",
-          "A7b9 -> A3 A#3 C#4",
+          "A7 -> E3 G3 C#4",
+          "Am7 -> E3 G3 C4",
+          "Amaj7 -> E3 G#3 C#4",
+          "A9 -> C#3 G3 B3",
+          "Am9 -> C3 G3 B3",
+          "A7b9 -> G3 A#3 C#4",
           "Asus2 -> A3 B3 E4",
-          "A9sus4 -> A3 B3 D4",
+          "A9sus4 -> G3 B3 D4",
           "D7/A -> A3 C4 D4",
           "C7/G -> G3 A#3 E4",
           "E/G# -> G#3 B3 E4",
@@ -75,7 +79,7 @@ describe("dynamic harmony chord examples", () => {
   });
 
   it("shows a 4-5-1 dynamic progression", () => {
-    expect(renderDynamicProgressionVoicings(["D", "E", "A"]))
+    expect(renderProgressionVoicings(["D", "E", "A"]))
       .toMatchInlineSnapshot(`
         [
           "D -> D3 F#3 A3",
@@ -83,5 +87,24 @@ describe("dynamic harmony chord examples", () => {
           "A -> E3 A3 C#4",
         ]
       `);
+  });
+
+  it("differs from legacy on an extended suspended progression", () => {
+    const tokens = ["Am6", "E(b9)/G#", "Gm7", "C9sus4", "Fdim", "F6"] as const;
+    const beats = [4, 4, 2, 2, 2, 2] as const;
+    const dynamic = renderProgressionVoicings(tokens, beats, generateHarmonyDynamic);
+    const legacy = renderProgressionVoicings(tokens, beats, generateHarmony);
+
+    expect(dynamic).toMatchInlineSnapshot(`
+      [
+        "Am6 -> F#3 A3 C4",
+        "E(b9)/G# -> G#3 B3 D4",
+        "Gm7 -> F3 A#3 D4",
+        "C9sus4 -> F3 A#3 D4",
+        "Fdim -> F3 G#3 B3",
+        "F6 -> F3 A3 D4",
+      ]
+    `);
+    expect(dynamic).not.toEqual(legacy);
   });
 });

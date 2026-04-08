@@ -16,7 +16,7 @@ import { useEffect, useRef, useState } from "react";
 import { useObservable } from "../observable";
 import { acquirePermissionsAndStart } from "../recording/permissions";
 import { flattenArrangementLyrics } from "../state/arrangementModel";
-import { chordPitchClassNames } from "../music/parse";
+import { chordPitchClassNames, formatChordSymbol } from "../music/parse";
 import { midiToNoteName, type Meter } from "../music/types";
 import {
   playHarmonyPreview,
@@ -53,6 +53,12 @@ const RANGE_OPTIONS = [
   { label: "Soprano", low: "D4", high: "G5" },
 ] as const;
 
+const HARMONY_COVERAGE_OPTIONS = [
+  { label: "Lower Half", value: "lower-half" },
+  { label: "Lower Two Thirds", value: "lower-two-thirds" },
+  { label: "Lower Three Quarters", value: "lower-three-quarters" },
+] as const;
+
 type SetupCardProps = {
   arrangement: ArrangementInfo;
   meterLabel: string;
@@ -65,6 +71,9 @@ type SetupCardProps = {
   onTempoInputBlur: () => void;
   onMeterLabelChange: (label: string) => void;
   onRangePresetChange: (value: string) => void;
+  onHarmonyCoverageChange: (
+    value: "lower-half" | "lower-two-thirds" | "lower-three-quarters",
+  ) => void;
   onPartCountChange: (value: "2" | "4") => void;
   onPreviewLegacy: () => void;
   onPreviewGreedy: () => void;
@@ -85,6 +94,7 @@ function SetupCard({
   onTempoInputBlur,
   onMeterLabelChange,
   onRangePresetChange,
+  onHarmonyCoverageChange,
   onPartCountChange,
   onPreviewLegacy,
   onPreviewGreedy,
@@ -107,6 +117,7 @@ function SetupCard({
     chordsInput,
     vocalRangeLow: rangeLow,
     vocalRangeHigh: rangeHigh,
+    harmonyRangeCoverage,
     totalParts,
   } = input;
   const lyricsByChord = flattenArrangementLyrics(measures);
@@ -251,6 +262,30 @@ function SetupCard({
               </NativeSelect.Root>
             </Field.Root>
           </Grid>
+
+          <Field.Root>
+            <Field.Label color={dsColors.text}>Harmony Placement</Field.Label>
+            <NativeSelect.Root>
+              <NativeSelect.Field
+                value={harmonyRangeCoverage}
+                onChange={(e) =>
+                  onHarmonyCoverageChange(
+                    e.target.value as
+                      | "lower-half"
+                      | "lower-two-thirds"
+                      | "lower-three-quarters",
+                  )
+                }
+                {...controlStyles}
+              >
+                {HARMONY_COVERAGE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </NativeSelect.Field>
+            </NativeSelect.Root>
+          </Field.Root>
 
           <Field.Root>
             <Field.Label color={dsColors.text}>Arrangement</Field.Label>
@@ -427,9 +462,8 @@ function SetupCard({
             p={4}
           >
             <Text color={dsColors.errorText} fontSize="sm">
-              {invalidChordIds.length > 0
-                ? "Some chord tokens are unsupported right now. Use supported chord spellings before continuing."
-                : parseIssues[0]}
+              {parseIssues[0] ??
+                "Some chord tokens are unsupported right now. Use supported chord spellings before continuing."}
             </Text>
           </Box>
         )}
@@ -541,7 +575,7 @@ function VoicingComparisonSection({
                   aria-label={tooltipText}
                 >
                   <Text as="span" fontWeight="semibold">
-                    {previewItem?.chordText ?? `${c.root}${c.quality === "minor" ? "m" : ""}`}
+                    {previewItem?.chordText ?? formatChordSymbol(c)}
                   </Text>
                   {previewItem?.lyrics.trim() ? (
                     <Text
@@ -717,6 +751,14 @@ export function SetupScreen() {
       model.setArrangementInput({
         vocalRangeLow: range.low,
         vocalRangeHigh: range.high,
+      });
+    },
+    onHarmonyCoverageChange: (value: string) => {
+      model.setArrangementInput({
+        harmonyRangeCoverage: value as
+          | "lower-half"
+          | "lower-two-thirds"
+          | "lower-three-quarters",
       });
     },
     onPartCountChange: handlePartCountChange,

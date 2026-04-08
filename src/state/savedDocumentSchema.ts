@@ -66,6 +66,10 @@ export type SavedArrangementDocument = {
   meter: [number, number];
   vocalRangeLow: string;
   vocalRangeHigh: string;
+  harmonyRangeCoverage:
+    | "lower-half"
+    | "lower-two-thirds"
+    | "lower-three-quarters";
   totalParts: 2 | 4;
 };
 
@@ -178,6 +182,10 @@ function parseSavedArrangementDocument(
     isFiniteNumber(meter[1]) === false ||
     typeof raw.vocalRangeLow !== "string" ||
     typeof raw.vocalRangeHigh !== "string" ||
+    (raw.harmonyRangeCoverage !== undefined &&
+      raw.harmonyRangeCoverage !== "lower-half" &&
+      raw.harmonyRangeCoverage !== "lower-two-thirds" &&
+      raw.harmonyRangeCoverage !== "lower-three-quarters") ||
     (raw.totalParts !== 2 && raw.totalParts !== 4)
   ) {
     return null;
@@ -189,6 +197,7 @@ function parseSavedArrangementDocument(
     meter: [meter[0], meter[1]],
     vocalRangeLow: raw.vocalRangeLow,
     vocalRangeHigh: raw.vocalRangeHigh,
+    harmonyRangeCoverage: raw.harmonyRangeCoverage ?? "lower-two-thirds",
     totalParts: raw.totalParts,
   };
 }

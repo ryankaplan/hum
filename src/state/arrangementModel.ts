@@ -6,7 +6,12 @@ import {
 import { parseChordText } from "../music/parse";
 import { progressionDurationSec } from "../music/playback";
 import { noteNameToMidi } from "../music/types";
-import type { Chord, HarmonyVoicing, Meter } from "../music/types";
+import type {
+  Chord,
+  HarmonyRangeCoverage,
+  HarmonyVoicing,
+  Meter,
+} from "../music/types";
 
 export type TotalPartCount = 2 | 4;
 
@@ -27,6 +32,7 @@ export type ArrangementDocState = {
   meter: Meter;
   vocalRangeLow: string;
   vocalRangeHigh: string;
+  harmonyRangeCoverage: HarmonyRangeCoverage;
   totalParts: TotalPartCount;
 };
 
@@ -80,6 +86,7 @@ export function createDefaultArrangementDocState(): ArrangementDocState {
     meter: [4, 4],
     vocalRangeLow: "C3",
     vocalRangeHigh: "A4",
+    harmonyRangeCoverage: "lower-two-thirds",
     totalParts: 4,
   };
 }
@@ -112,8 +119,19 @@ export function parseArrangementDocState(raw: unknown): ArrangementDocState {
       typeof value?.vocalRangeHigh === "string"
         ? value.vocalRangeHigh
         : defaults.vocalRangeHigh,
+    harmonyRangeCoverage: parseHarmonyRangeCoverage(
+      value?.harmonyRangeCoverage,
+    ),
     totalParts: parseTotalPartCount(value?.totalParts),
   };
+}
+
+function parseHarmonyRangeCoverage(raw: unknown): HarmonyRangeCoverage {
+  return raw === "lower-half" ||
+    raw === "lower-two-thirds" ||
+    raw === "lower-three-quarters"
+    ? raw
+    : "lower-two-thirds";
 }
 
 export function flattenArrangementLyrics(measures: ArrangementMeasure[]): string[] {
@@ -193,9 +211,11 @@ function isChordLine(parsed: ParsedChordLine): boolean {
 }
 
 function parseChordLine(line: string, lineIndex: number): ParsedChordLine {
-  const tokenPattern = /[A-G][#b]?(?:maj7|M7|m7|-7|m6|-6|6|dim|o|m|-|7)?\.{0,2}/gi;
+  const tokenPattern =
+    /[A-G][#b]?(?:maj7|M7|m7b9|-7b9|7b9|\(b9\)|m9|-9|9sus2|9sus4|9|sus2|sus4|m7|-7|m6|-6|6|dim|o|m|-|7)?(?:\/[A-G][#b]?)?\.{0,2}/g;
   const tokens: ParsedChordToken[] = [];
   const invalidChordIds: string[] = [];
+  const parseIssues: string[] = [];
   let match: RegExpExecArray | null;
 
   while ((match = tokenPattern.exec(line)) != null) {
@@ -208,6 +228,9 @@ function parseChordLine(line: string, lineIndex: number): ParsedChordLine {
     if (divisor == null) continue;
     if (parseChordText(chordText, 1) == null) {
       invalidChordIds.push(id);
+      parseIssues.push(
+        `Line ${lineIndex + 1}: unsupported chord token "${chordText}".`,
+      );
     }
 
     tokens.push({
@@ -219,12 +242,13 @@ function parseChordLine(line: string, lineIndex: number): ParsedChordLine {
     });
   }
 
-  const stripped = line.replace(tokenPattern, " ").trim();
-  const parseIssues: string[] = [];
-  if (tokens.length === 0) {
+  const unsupportedSegments = collectUnsupportedSegments(line, tokenPattern);
+  if (tokens.length === 0 && unsupportedSegments.length === 0) {
     parseIssues.push(`Line ${lineIndex + 1} is not a chord line.`);
-  } else if (stripped.length > 0) {
-    parseIssues.push(`Line ${lineIndex + 1} contains unsupported chord text.`);
+  } else {
+    for (const segment of unsupportedSegments) {
+      parseIssues.push(`Line ${lineIndex + 1}: unsupported text "${segment}".`);
+    }
   }
 
   return {
@@ -232,6 +256,34 @@ function parseChordLine(line: string, lineIndex: number): ParsedChordLine {
     invalidChordIds,
     parseIssues,
   };
+}
+
+function collectUnsupportedSegments(line: string, tokenPattern: RegExp): string[] {
+  const matcher = new RegExp(tokenPattern.source, tokenPattern.flags);
+  const segments: string[] = [];
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = matcher.exec(line)) != null) {
+    const start = match.index;
+    if (start > cursor) {
+      segments.push(...splitUnsupportedSegment(line.slice(cursor, start)));
+    }
+    cursor = start + (match[0]?.length ?? 0);
+  }
+
+  if (cursor < line.length) {
+    segments.push(...splitUnsupportedSegment(line.slice(cursor)));
+  }
+
+  return segments;
+}
+
+function splitUnsupportedSegment(segment: string): string[] {
+  return segment
+    .split(/\s+/)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
 }
 
 function attachLyricsToTokens(
@@ -339,16 +391,23 @@ export function computeArrangementInfo(
     const high = noteNameToMidi(input.vocalRangeHigh);
     if (high > low && parsedArrangement.parsedChords.length > 0) {
       const harmonyPartCount = Math.max(1, input.totalParts - 1);
-      voicing = generateHarmony(parsedArrangement.parsedChords, { low, high }, harmonyPartCount);
+      voicing = generateHarmony(
+        parsedArrangement.parsedChords,
+        { low, high },
+        harmonyPartCount,
+        input.harmonyRangeCoverage,
+      );
       greedyVoicing = generateHarmonyGreedy(
         parsedArrangement.parsedChords,
         { low, high },
         harmonyPartCount,
+        input.harmonyRangeCoverage,
       );
       dynamicVoicing = generateHarmonyDynamic(
         parsedArrangement.parsedChords,
         { low, high },
         harmonyPartCount,
+        input.harmonyRangeCoverage,
       );
     }
   } catch {

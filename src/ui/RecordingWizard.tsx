@@ -54,6 +54,7 @@ type RecordingListProps = {
   reviewVideoRef: RefObject<HTMLVideoElement | null>;
   mutedParts: boolean[];
   onToggleMute: (index: number) => void;
+  hideCurrentKeptPreview: boolean;
 };
 
 function RecordingList({
@@ -66,6 +67,7 @@ function RecordingList({
   reviewVideoRef,
   mutedParts,
   onToggleMute,
+  hideCurrentKeptPreview,
 }: RecordingListProps) {
   return (
     <Box
@@ -82,6 +84,8 @@ function RecordingList({
           const keptUrl = keptUrls[i] ?? null;
           const isKept = keptUrl != null;
           const isFuture = i > partIndex;
+          const showKeptPreview =
+            isKept && !(isCurrent && hideCurrentKeptPreview);
 
           return (
             <Stack
@@ -122,7 +126,7 @@ function RecordingList({
                   />
                 )}
 
-                {isKept && keptUrl != null && (
+                {showKeptPreview && keptUrl != null && (
                   <KeptCell
                     url={keptUrl}
                     muted={mutedParts[i] ?? false}
@@ -230,6 +234,9 @@ function KeptCell({ url, muted, onToggleMute }: KeptCellProps) {
 export function RecordingWizard() {
   const stream = useObservable(model.mediaStream);
   const partIndex = useObservable(model.currentPartIndex);
+  const returnToReviewAfterRecording = useObservable(
+    model.returnToReviewAfterRecording,
+  );
   const tracksDocument = useObservable(model.tracksDocument.document);
   const arrangement = useObservable(model.arrangementDocument);
   const arrangementInfo = useObservable(model.derivedArrangementInfo);
@@ -272,6 +279,8 @@ export function RecordingWizard() {
 
   const ctx = useObservable(model.audioContext);
   const orderedTrackIds = tracksDocument.trackOrder;
+  const currentTrackId = orderedTrackIds[partIndex] ?? null;
+  const isRedoingCurrentPart = returnToReviewAfterRecording;
   const keptUrls = orderedTrackIds.map((trackId) => {
     const recordingId =
       model.tracksDocument.getPrimaryRecordingIdForTrack(trackId);
@@ -563,7 +572,7 @@ export function RecordingWizard() {
 
   function handleKeep() {
     const blob = currentBlobRef.current;
-    const trackId = orderedTrackIds[partIndex] ?? null;
+    const trackId = currentTrackId;
     if (blob == null || trackId == null) return;
 
     model.keepRecordedTake({
@@ -572,11 +581,16 @@ export function RecordingWizard() {
       trimOffsetSec: currentTrimOffsetRef.current,
     });
 
-    if (!isLastPart) {
-      model.currentPartIndex.set(partIndex + 1);
-    } else {
-      model.appScreen.set("review");
+    const nextIncompletePartIndex =
+      model.getNextIncompletePartIndex(partIndex + 1) ??
+      model.getNextIncompletePartIndex(0);
+
+    if (nextIncompletePartIndex != null) {
+      model.currentPartIndex.set(nextIncompletePartIndex);
+      return;
     }
+
+    model.appScreen.set("review");
   }
 
   function handleRedo() {
@@ -588,6 +602,10 @@ export function RecordingWizard() {
 
   function handleBack() {
     stopTransportAudio();
+    if (isRedoingCurrentPart) {
+      model.cancelRedoPart();
+      return;
+    }
     if (partIndex > 0) {
       model.currentPartIndex.set(partIndex - 1);
     } else {
@@ -629,7 +647,7 @@ export function RecordingWizard() {
               onClick={handleBack}
               disabled={busy}
             >
-              ← Back
+              {isRedoingCurrentPart ? "← Review" : "← Back"}
             </Button>
             <Text color={dsColors.textMuted} fontSize="sm">
               Part {partIndex + 1} of {totalParts}
@@ -644,6 +662,8 @@ export function RecordingWizard() {
             <Text color={dsColors.textMuted} fontSize="sm" mt={1}>
               {isMelodyPart
                 ? "Sing the melody — harmonies play quietly in your headphones"
+                : isRedoingCurrentPart
+                  ? "Record a replacement take for this part"
                 : partIndex === 0
                   ? "Listen first, then record when ready"
                   : "Prior parts play quietly in your headphones"}
@@ -676,6 +696,7 @@ export function RecordingWizard() {
             reviewVideoRef={reviewVideoRef}
             mutedParts={mutedParts}
             onToggleMute={handleToggleMute}
+            hideCurrentKeptPreview={isRedoingCurrentPart}
           />
 
           {phase !== "review" && hasPriorHarmonyMonitorControl && (
@@ -868,7 +889,7 @@ export function RecordingWizard() {
                 Redo
               </Button>
               <Button {...dsPrimaryButton} size="lg" onClick={handleKeep}>
-                {isLastPart ? "Finish" : "Keep"}
+                {isRedoingCurrentPart ? "Replace" : isLastPart ? "Finish" : "Keep"}
               </Button>
             </Grid>
           )}

@@ -8,6 +8,7 @@ import {
   createDefaultArrangementDocState,
 } from "./arrangementModel";
 import { createShortUuid } from "./id";
+import { findIncompletePartIndex } from "./recordingProgress";
 import type {
   ArrangementDocState,
   ArrangementInfo as DerivedArrangementInfo,
@@ -144,6 +145,7 @@ class AppModel {
       this.tracksDocument.replaceDocument(input.document.tracks);
       this.exportPreferences.set(input.document.exportPreferences);
       this.currentPartIndex.set(input.currentPartIndex);
+      this.returnToReviewAfterRecording.set(false);
       this.latencyCorrectionSec.set(input.latencyCorrectionSec);
       this.isCalibrated.set(input.isCalibrated);
       this.hasRestoredDraft.set(true);
@@ -174,6 +176,7 @@ class AppModel {
   readonly mediaStream = new Observable<MediaStream | null>(null);
   readonly audioContext = new Observable<AudioContext | null>(null);
   readonly currentPartIndex = new Observable<PartIndex>(0);
+  readonly returnToReviewAfterRecording = new Observable<boolean>(false);
   readonly permissionError = new Observable<string | null>(null);
   readonly latencyCorrectionSec = new Observable<number>(0);
   readonly isCalibrated = new Observable<boolean>(false);
@@ -293,6 +296,10 @@ class AppModel {
     return this.tracksDocument.getTrackIdAtIndex(index);
   }
 
+  getNextIncompletePartIndex(startIndex = 0): PartIndex | null {
+    return findIncompletePartIndex(this.tracksDocument.document.get(), startIndex);
+  }
+
   keepRecordedTake(input: KeepTakeInput): void {
     const { trackId, blob, trimOffsetSec } = input;
     const recordingId = this.makeRecordingId();
@@ -321,6 +328,10 @@ class AppModel {
         trackId,
         clipId,
       });
+    }
+
+    if (this.returnToReviewAfterRecording.get()) {
+      this.returnToReviewAfterRecording.set(false);
     }
 
     for (const removed of removedRecordings) {
@@ -581,19 +592,15 @@ class AppModel {
     const trackId = this.tracksDocument.getTrackIdAtIndex(index);
     if (trackId == null) return;
 
+    this.returnToReviewAfterRecording.set(true);
     this.currentPartIndex.set(index);
     this.appScreen.set("recording");
+  }
 
-    const removedRecordings = this.tracksDocument.clearTrack(trackId);
-    const selection = this.tracksEditor.editor.get().selection;
-    if (selection.trackId === trackId) {
-      this.tracksEditor.clearSelection();
-      this.tracksEditor.setPlayhead(0);
-    }
-
-    for (const removed of removedRecordings) {
-      this.releaseRecording(removed);
-    }
+  cancelRedoPart(): void {
+    if (!this.returnToReviewAfterRecording.get()) return;
+    this.returnToReviewAfterRecording.set(false);
+    this.appScreen.set("review");
   }
 
   setCalibrationOffset(correctionSec: number): void {
@@ -611,6 +618,7 @@ class AppModel {
       const totalParts = this.arrangementDocument.get().totalParts;
 
       this.currentPartIndex.set(0);
+      this.returnToReviewAfterRecording.set(false);
       this.permissionError.set(null);
       this.clearCalibration();
       this.appScreen.set("setup");

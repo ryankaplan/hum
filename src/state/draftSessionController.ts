@@ -11,6 +11,10 @@ import {
   SAVED_HUM_DOCUMENT_ID,
   type SavedHumDocument,
 } from "./savedDocumentSchema";
+import {
+  findIncompletePartIndex,
+  getPrimaryRecordingIdForTrack,
+} from "./recordingProgress";
 import { deserializeHumDocument, serializeHumDocument } from "./serialization";
 
 type DraftSnapshot = {
@@ -270,19 +274,13 @@ function resolveRestoredCurrentPartIndex(
   const preferredTrackId = document.tracks.trackOrder[clamped] ?? null;
   if (
     preferredTrackId != null &&
-    getPrimaryRecordingId(document, preferredTrackId) == null
+    getPrimaryRecordingIdForTrack(document.tracks, preferredTrackId) == null
   ) {
     return clamped as PartIndex;
   }
 
-  const firstIncompleteIndex = document.tracks.trackOrder.findIndex(
-    (trackId) => {
-      return getPrimaryRecordingId(document, trackId) == null;
-    },
-  );
-  if (firstIncompleteIndex >= 0) {
-    return firstIncompleteIndex as PartIndex;
-  }
+  const firstIncompleteIndex = findIncompletePartIndex(document.tracks);
+  if (firstIncompleteIndex != null) return firstIncompleteIndex;
 
   return 0;
 }
@@ -299,16 +297,4 @@ function resolveRestoredScreen(
 
 function hasAnyTake(document: HumDocument): boolean {
   return Object.keys(document.tracks.recordingsById).length > 0;
-}
-
-function getPrimaryRecordingId(
-  document: HumDocument,
-  trackId: string,
-): string | null {
-  const track = document.tracks.tracksById[trackId];
-  if (track == null) return null;
-  const clipId = track.clipIds[0] ?? null;
-  if (clipId == null) return null;
-  const clip = document.tracks.clipsById[clipId];
-  return clip?.recordingId ?? null;
 }

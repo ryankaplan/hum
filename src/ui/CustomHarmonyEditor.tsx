@@ -59,12 +59,12 @@ type NoteCluster = {
   }>;
 };
 
-const CHORD_HEADER_HEIGHT_PX = 54;
+const CHORD_HEADER_HEIGHT_PX = 64;
 const NOTE_ROW_HEIGHT_PX = 26;
 const LYRIC_LANE_HEIGHT_PX = 40;
-const NOTE_NAME_COL_WIDTH_PX = 72;
+const NOTE_NAME_COL_WIDTH_PX = 84;
 const NOTE_GRID_PAD_X_PX = 8;
-const CHORD_WIDTH_PER_BEAT_PX = 24;
+const CHORD_WIDTH_PER_BEAT_PX = 64;
 const NOTE_PILL_HEIGHT_PX = 18;
 const PITCH_PADDING = 1;
 const VOICE_COLORS = ["#4d44e3", "#1f9d79", "#d06a32"] as const;
@@ -266,7 +266,7 @@ export function CustomHarmonyEditor({
     <Flex {...dsScreenShell} py={{ base: 4, md: 6 }} align="stretch">
       <Box
         w="100%"
-        maxW="1120px"
+        maxW="1360px"
         p={{ base: 4, md: 6 }}
         maxH="calc(100dvh - 2rem)"
         overflow="hidden"
@@ -442,14 +442,28 @@ export function CustomHarmonyEditor({
                         <Box
                           h={`${CHORD_HEADER_HEIGHT_PX}px`}
                           px={2}
-                          py={2}
+                          py={1.5}
                           borderBottom="1px solid"
                           borderColor={dsColors.border}
                         >
-                          <Text color={dsColors.text} fontSize="sm" fontWeight="semibold" whiteSpace="nowrap" overflow="hidden" textOverflow="ellipsis">
+                          <Text
+                            color={dsColors.text}
+                            fontSize="sm"
+                            fontWeight="semibold"
+                            whiteSpace="normal"
+                            lineHeight="1.15"
+                            overflow="hidden"
+                          >
                             {previewItem?.chordText ?? formatChordSymbol(chord)}
                           </Text>
-                          <Text color={dsColors.textMuted} fontSize="10px" whiteSpace="nowrap" overflow="hidden" textOverflow="ellipsis">
+                          <Text
+                            color={dsColors.textMuted}
+                            fontSize="10px"
+                            mt={0.5}
+                            whiteSpace="normal"
+                            lineHeight="1.15"
+                            overflow="hidden"
+                          >
                             {degreeMarkersByChord[chordIndex]
                               ?.map((marker: DegreeMarker) => marker.label)
                               .join(" ")}

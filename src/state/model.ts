@@ -202,14 +202,20 @@ class AppModel {
     { checkForEqualityOnNotify: false },
   );
 
-  readonly harmonyVoicing = new Derived<HarmonyVoicing | null>(
-    () => this.derivedArrangementInfo.get().harmonyVoicing,
+  readonly harmonyVoicingLegacy = new Derived<HarmonyVoicing | null>(
+    () => this.derivedArrangementInfo.get().harmonyVoicingLegacy,
     [this.derivedArrangementInfo],
     { checkForEqualityOnNotify: false },
   );
 
   readonly harmonyVoicingDynamic = new Derived<HarmonyVoicing | null>(
     () => this.derivedArrangementInfo.get().harmonyVoicingDynamic,
+    [this.derivedArrangementInfo],
+    { checkForEqualityOnNotify: false },
+  );
+
+  readonly selectedHarmonyVoicing = new Derived<HarmonyVoicing | null>(
+    () => this.derivedArrangementInfo.get().selectedHarmonyVoicing,
     [this.derivedArrangementInfo],
     { checkForEqualityOnNotify: false },
   );

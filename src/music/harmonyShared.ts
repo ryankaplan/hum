@@ -10,7 +10,7 @@
  * search approach while centralizing the low-level voicing rules in one place.
  */
 
-import { chordSemitones, fullChordSemitones } from "./parse";
+import { chordSemitones, fullChordSemitones, rootSemitone } from "./parse";
 import type {
   Chord,
   HarmonyRangeCoverage,
@@ -26,12 +26,42 @@ import type {
 export type HarmonyVoicingCandidate = {
   notes: [MidiNote, MidiNote, MidiNote];
   strategy: HarmonyVoicingStrategy;
+  recipePriority?: number;
+};
+
+export type DynamicHarmonyRecipe = {
+  pitchClasses: [number, number, number];
+  chordTones: HarmonyChordAnnotation["chordTones"];
 };
 
 type VoicedChord = {
   notes: [MidiNote, MidiNote, MidiNote];
   strategy: HarmonyChordAnnotation["strategy"];
 };
+
+type TopDirection = -1 | 0 | 1;
+
+type BeamState = {
+  path: HarmonyVoicingCandidate[];
+  totalScore: number;
+  previousCandidate: HarmonyVoicingCandidate;
+  previousTopInterval: number | null;
+  previousTopDirection: TopDirection;
+  topMin: MidiNote;
+  topMax: MidiNote;
+  reversalStreak: number;
+  unresolvedLeapDirection: Exclude<TopDirection, 0> | null;
+  orderKey: number;
+};
+
+const DYNAMIC_BEAM_WIDTH = 24;
+const TOP_LINE_SPAN_SOFT_LIMIT = 9;
+const REVERSAL_AFTER_NONSTEP_PENALTY = 2.2;
+const REPEATED_REVERSAL_PENALTY = 1.4;
+const UNRECOVERED_LEAP_PENALTY = 3.4;
+const TOP_LINE_SPAN_EXCESS_PENALTY = 0.8;
+const TOP_LINE_COMMON_TONE_REWARD = 0.45;
+const DYNAMIC_RECIPE_PRIORITY_PENALTY = 3;
 
 export function resolveHarmonyPartCount(harmonyPartCount: number): number {
   return harmonyPartCount === 1 ? 1 : 3;
@@ -106,11 +136,12 @@ export function makeAnnotation(
   generator: HarmonyVoicingGenerator,
   strategy: HarmonyVoicingStrategy,
   chord: Chord,
+  chordTones: HarmonyChordAnnotation["chordTones"] = chordToneFormula(chord),
 ): HarmonyChordAnnotation {
   return {
     generator,
     strategy,
-    chordTones: chordToneFormula(chord),
+    chordTones,
   };
 }
 
@@ -172,70 +203,32 @@ function fullChordPitchClasses(chord: Chord): number[] {
   ];
 }
 
+function fullChordIntervals(chord: Chord): number[] {
+  const rootPitchClass = normalizePitchClass(rootSemitone(chord.root));
+  return uniquePitchClasses(
+    fullChordSemitones(chord.root, chord.quality).map((tone) =>
+      normalizePitchClass(tone - rootPitchClass),
+    ),
+  );
+}
+
 export function generateHarmonyCandidates(
   chord: Chord,
   range: VocalRange,
 ): HarmonyVoicingCandidate[] {
-  const classes = chordClasses(chord);
-  const classSet = new Set(classes);
   const candidates = new Map<string, HarmonyVoicingCandidate>();
-
-  for (let soprano = range.low; soprano <= range.high; soprano++) {
-    if (!classSet.has(normalizePitchClass(soprano))) continue;
-
-    const closed = buildClosedVoicing(soprano, classSet);
-    if (isCandidateInRange(closed, range)) {
-      addCandidate(candidates, {
-        notes: closed,
-        strategy: "closed",
-      });
-    }
-
-    const dropped = applyDrop2(closed);
-    if (isCandidateInRange(dropped, range)) {
-      addCandidate(candidates, {
-        notes: dropped,
-        strategy: "drop2",
-      });
-    }
-  }
-
-  for (const permutation of permuteChordClasses(classes)) {
-    const [lowClass, midClass, topClass] = permutation;
-    const lowNotes = pitchClassNotesInRange(lowClass, range);
-    const midNotes = pitchClassNotesInRange(midClass, range);
-    const topNotes = pitchClassNotesInRange(topClass, range);
-
-    for (const low of lowNotes) {
-      for (const middle of midNotes) {
-        if (middle <= low) continue;
-        for (const top of topNotes) {
-          if (top <= middle) continue;
-          const notes = [low, middle, top] as [MidiNote, MidiNote, MidiNote];
-          if (!isCandidateSpacingAllowed(notes)) continue;
-          addCandidate(candidates, {
-            notes,
-            strategy: classifyCandidateStrategy(notes),
-          });
-        }
-      }
-    }
-  }
-
-  const allCandidates = [...candidates.values()].sort(compareCandidates);
-  if (chord.bass == null) {
-    return allCandidates;
-  }
-
-  for (const candidate of generateBassAnchoredCandidates(chord, range)) {
+  for (const candidate of generateRecipeBasedCandidates(chord, range)) {
     addCandidate(candidates, candidate);
   }
-  const combinedCandidates = [...candidates.values()].sort(compareCandidates);
-  const bassPitchClass = normalizePitchClassFromNoteName(chord.bass);
-  const bassAnchored = combinedCandidates.filter(
-    (candidate) => normalizePitchClass(candidate.notes[0]) === bassPitchClass,
-  );
-  return bassAnchored.length > 0 ? bassAnchored : combinedCandidates;
+
+  const generated = [...candidates.values()];
+  if (generated.length > 0) {
+    return generated.sort((left, right) =>
+      compareDynamicSearchCandidates(left, right, chord, range),
+    );
+  }
+
+  return generated;
 }
 
 export function scoreHarmonyCandidate(
@@ -346,92 +339,71 @@ export function chooseBestDynamicPath(
   candidateSets: HarmonyVoicingCandidate[][],
   range: VocalRange,
 ): HarmonyVoicingCandidate[] {
-  const scores: number[][] = candidateSets.map((set) =>
-    set.map(() => Number.POSITIVE_INFINITY),
-  );
-  const previousIndexes: number[][] = candidateSets.map((set) =>
-    set.map(() => -1),
-  );
-
-  for (
-    let candidateIndex = 0;
-    candidateIndex < candidateSets[0]!.length;
-    candidateIndex++
-  ) {
-    const candidate = candidateSets[0]![candidateIndex]!;
-    scores[0]![candidateIndex] = scoreHarmonyCandidate(
-      candidate,
-      null,
-      range,
-      chords[0],
-    );
-  }
+  let beam: BeamState[] = candidateSets[0]!
+    .map((candidate, index) => {
+      const top = candidate.notes[2];
+      return {
+        path: [candidate],
+        totalScore: scoreDynamicSearchCandidate(
+          candidate,
+          null,
+          range,
+          chords[0],
+        ),
+        previousCandidate: candidate,
+        previousTopInterval: null,
+        previousTopDirection: 0,
+        topMin: top,
+        topMax: top,
+        reversalStreak: 0,
+        unresolvedLeapDirection: null,
+        orderKey: index,
+      } satisfies BeamState;
+    })
+    .sort(compareBeamStates)
+    .slice(0, DYNAMIC_BEAM_WIDTH);
 
   for (let chordIndex = 1; chordIndex < candidateSets.length; chordIndex++) {
-    const currentSet = candidateSets[chordIndex]!;
-    const previousSet = candidateSets[chordIndex - 1]!;
+    const nextBeam: BeamState[] = [];
+    const chord = chords[chordIndex]!;
+    let orderKey = 0;
 
-    for (
-      let candidateIndex = 0;
-      candidateIndex < currentSet.length;
-      candidateIndex++
-    ) {
-      const candidate = currentSet[candidateIndex]!;
-      let bestScore = Number.POSITIVE_INFINITY;
-      let bestPreviousIndex = -1;
-
-      for (
-        let previousIndex = 0;
-        previousIndex < previousSet.length;
-        previousIndex++
-      ) {
-        const previousCandidate = previousSet[previousIndex]!;
-        const priorScore = scores[chordIndex - 1]![previousIndex]!;
-        const nextScore =
-          priorScore +
-          scoreHarmonyCandidate(
+    for (const state of beam) {
+      for (const candidate of candidateSets[chordIndex]!) {
+        const contourScore = scoreContourTransition(state, candidate);
+        nextBeam.push({
+          path: [...state.path, candidate],
+          totalScore:
+            state.totalScore +
+            scoreDynamicSearchCandidate(
+              candidate,
+              state.previousCandidate,
+              range,
+              chord,
+            ) +
+            contourScore,
+          previousCandidate: candidate,
+          previousTopInterval:
+            candidate.notes[2] - state.previousCandidate.notes[2],
+          previousTopDirection: topDirection(
+            candidate.notes[2] - state.previousCandidate.notes[2],
+          ),
+          topMin: Math.min(state.topMin, candidate.notes[2]),
+          topMax: Math.max(state.topMax, candidate.notes[2]),
+          reversalStreak: nextReversalStreak(state, candidate),
+          unresolvedLeapDirection: nextUnresolvedLeapDirection(
+            state,
             candidate,
-            previousCandidate,
-            range,
-            chords[chordIndex],
-          );
-
-        if (nextScore < bestScore) {
-          bestScore = nextScore;
-          bestPreviousIndex = previousIndex;
-        }
+          ),
+          orderKey: orderKey++,
+        });
       }
-
-      scores[chordIndex]![candidateIndex] = bestScore;
-      previousIndexes[chordIndex]![candidateIndex] = bestPreviousIndex;
     }
+
+    beam = nextBeam.sort(compareBeamStates).slice(0, DYNAMIC_BEAM_WIDTH);
   }
 
-  const lastScores = scores[scores.length - 1]!;
-  let bestFinalIndex = 0;
-  for (let i = 1; i < lastScores.length; i++) {
-    if (lastScores[i]! < lastScores[bestFinalIndex]!) {
-      bestFinalIndex = i;
-    }
-  }
-
-  const result = Array.from(
-    { length: candidateSets.length },
-    () => null,
-  ) as Array<HarmonyVoicingCandidate | null>;
-  let cursor = bestFinalIndex;
-  for (
-    let chordIndex = candidateSets.length - 1;
-    chordIndex >= 0;
-    chordIndex--
-  ) {
-    result[chordIndex] = candidateSets[chordIndex]![cursor]!;
-    cursor = chordIndex > 0 ? previousIndexes[chordIndex]![cursor]! : -1;
-  }
-
-  return result.filter(
-    (candidate): candidate is HarmonyVoicingCandidate => candidate != null,
-  );
+  return beam[0]?.path ?? [];
 }
 
 export function buildFallbackCandidate(
@@ -653,6 +625,524 @@ function pitchClassNotesInRange(
     }
   }
   return notes;
+}
+
+function generateRecipeBasedCandidates(
+  chord: Chord,
+  range: VocalRange,
+): HarmonyVoicingCandidate[] {
+  if (chord.bass != null) {
+    const slashCandidates = generateRecipeBasedSlashCandidates(chord, range);
+    if (slashCandidates.length > 0) {
+      return slashCandidates;
+    }
+  }
+
+  return generateRecipeBasedNonSlashCandidates(chord, range);
+}
+
+function generateRecipeBasedNonSlashCandidates(
+  chord: Chord,
+  range: VocalRange,
+): HarmonyVoicingCandidate[] {
+  const candidates = new Map<string, HarmonyVoicingCandidate>();
+
+  for (const [recipePriority, recipe] of generateDynamicHarmonyRecipes(
+    chord,
+  ).entries()) {
+    for (const permutation of permuteChordClasses(recipe.pitchClasses)) {
+      const [lowClass, midClass, topClass] = permutation;
+      const lowNotes = pitchClassNotesInRange(lowClass, range);
+      const midNotes = pitchClassNotesInRange(midClass, range);
+      const topNotes = pitchClassNotesInRange(topClass, range);
+
+      for (const low of lowNotes) {
+        for (const middle of midNotes) {
+          if (middle <= low) continue;
+          for (const top of topNotes) {
+            if (top <= middle) continue;
+            const notes = [low, middle, top] as [MidiNote, MidiNote, MidiNote];
+            if (!isCandidateSpacingAllowed(notes)) continue;
+            addCandidate(candidates, {
+              notes,
+              strategy: classifyCandidateStrategy(notes),
+              recipePriority,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  return [...candidates.values()];
+}
+
+function generateRecipeBasedSlashCandidates(
+  chord: Chord,
+  range: VocalRange,
+): HarmonyVoicingCandidate[] {
+  if (chord.bass == null) return [];
+
+  const bassClass = normalizePitchClassFromNoteName(chord.bass);
+  const lowNotes = pitchClassNotesInRange(bassClass, range);
+  const upperPairs = preferredSlashUpperPairs(chord, bassClass);
+  const candidates = new Map<string, HarmonyVoicingCandidate>();
+
+  for (const low of lowNotes) {
+    for (const [recipePriority, [firstUpper, secondUpper]] of upperPairs.entries()) {
+      const upperPermutations: Array<[number, number]> = [
+        [firstUpper, secondUpper],
+        [secondUpper, firstUpper],
+      ];
+
+      for (const [midClass, topClass] of upperPermutations) {
+        const middleNotes = pitchClassNotesInRange(midClass, range);
+        const topNotes = pitchClassNotesInRange(topClass, range);
+
+        for (const middle of middleNotes) {
+          if (middle <= low) continue;
+          for (const top of topNotes) {
+            if (top <= middle) continue;
+            const notes = [low, middle, top] as [MidiNote, MidiNote, MidiNote];
+            if (!isBassAnchoredCandidateSpacingAllowed(notes)) continue;
+            addCandidate(candidates, {
+              notes,
+              strategy: classifyCandidateStrategy(notes),
+              recipePriority,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  return [...candidates.values()];
+}
+
+export function generateDynamicHarmonyRecipes(
+  chord: Chord,
+): DynamicHarmonyRecipe[] {
+  const rootPitchClass = normalizePitchClass(rootSemitone(chord.root));
+  const availableIntervals = new Set(fullChordIntervals(chord));
+  const seen = new Set<string>();
+  const recipes: DynamicHarmonyRecipe[] = [];
+
+  for (const intervals of dynamicRecipeIntervalPreferences(chord.quality)) {
+    const normalizedIntervals = intervals.map((interval) =>
+      normalizePitchClass(interval),
+    ) as [number, number, number];
+    if (
+      normalizedIntervals.some((interval) => availableIntervals.has(interval) === false)
+    ) {
+      continue;
+    }
+
+    const dedupedIntervals = uniquePitchClasses(normalizedIntervals);
+    if (dedupedIntervals.length !== 3) continue;
+
+    const pitchClasses = dedupedIntervals.map((interval) =>
+      normalizePitchClass(rootPitchClass + interval),
+    ) as [number, number, number];
+    const key = pitchClasses.join(",");
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    recipes.push({
+      pitchClasses,
+      chordTones: formatChordIntervals(
+        chord.quality,
+        normalizedIntervals,
+      ),
+    });
+  }
+
+  return recipes;
+}
+
+export function describeHarmonyCandidateChordTones(
+  chord: Chord,
+  candidate: HarmonyVoicingCandidate,
+): HarmonyChordAnnotation["chordTones"] {
+  const rootPitchClass = normalizePitchClass(rootSemitone(chord.root));
+  const order = dynamicFormulaIntervals(chord.quality);
+  const intervals = uniquePitchClasses(
+    candidate.notes.map((note) => normalizePitchClass(note - rootPitchClass)),
+  ).sort((left, right) => {
+    const leftIndex = order.indexOf(left);
+    const rightIndex = order.indexOf(right);
+    if (leftIndex !== rightIndex) {
+      if (leftIndex === -1) return 1;
+      if (rightIndex === -1) return -1;
+      return leftIndex - rightIndex;
+    }
+    return left - right;
+  });
+
+  return formatChordIntervals(chord.quality, intervals);
+}
+
+function dynamicRecipeIntervalPreferences(
+  quality: Chord["quality"],
+): Array<[number, number, number]> {
+  switch (quality) {
+    case "major":
+      return [[0, 4, 7]];
+    case "minor":
+      return [[0, 3, 7]];
+    case "diminished":
+      return [[0, 3, 6]];
+    case "major6":
+      return [
+        [0, 4, 9],
+        [4, 7, 9],
+      ];
+    case "minor6":
+      return [
+        [0, 3, 9],
+        [3, 7, 9],
+      ];
+    case "dominant7":
+      return [
+        [0, 4, 10],
+        [4, 7, 10],
+      ];
+    case "minor7":
+      return [
+        [0, 3, 10],
+        [3, 7, 10],
+      ];
+    case "major7":
+      return [
+        [0, 4, 11],
+        [4, 7, 11],
+      ];
+    case "dominant9":
+      return [
+        [4, 10, 2],
+        [0, 4, 10],
+        [4, 7, 10],
+      ];
+    case "minor9":
+      return [
+        [3, 10, 2],
+        [0, 3, 10],
+        [3, 7, 10],
+      ];
+    case "dominant7Flat9":
+      return [
+        [4, 10, 1],
+        [0, 4, 10],
+        [4, 7, 10],
+      ];
+    case "minor7Flat9":
+      return [
+        [3, 10, 1],
+        [0, 3, 10],
+        [3, 7, 10],
+      ];
+    case "sus2":
+      return [[0, 2, 7]];
+    case "sus4":
+      return [[0, 5, 7]];
+    case "dominant9Sus2":
+      return [
+        [0, 2, 10],
+        [2, 7, 10],
+      ];
+    case "dominant9Sus4":
+      return [
+        [5, 10, 2],
+        [0, 5, 10],
+        [5, 7, 10],
+      ];
+  }
+}
+
+function dynamicPriorityPitchClasses(chord: Chord): number[] {
+  const rootPitchClass = normalizePitchClass(rootSemitone(chord.root));
+  return uniquePitchClasses(
+    dynamicPriorityIntervals(chord).map((interval) =>
+      normalizePitchClass(rootPitchClass + interval),
+    ),
+  );
+}
+
+function dynamicPriorityIntervals(chord: Chord): number[] {
+  const availableIntervals = new Set(fullChordIntervals(chord));
+  return dynamicPriorityIntervalPreferences(chord.quality).filter((interval) =>
+    availableIntervals.has(normalizePitchClass(interval)),
+  );
+}
+
+function dynamicPriorityIntervalPreferences(quality: Chord["quality"]): number[] {
+  switch (quality) {
+    case "major":
+      return [0, 4, 7];
+    case "minor":
+      return [0, 3, 7];
+    case "diminished":
+      return [0, 3, 6];
+    case "major6":
+      return [0, 4, 9, 7];
+    case "minor6":
+      return [0, 3, 9, 7];
+    case "dominant7":
+      return [4, 10, 0, 7];
+    case "minor7":
+      return [3, 10, 0, 7];
+    case "major7":
+      return [4, 11, 0, 7];
+    case "dominant9":
+      return [4, 10, 2, 0, 7];
+    case "minor9":
+      return [3, 10, 2, 0, 7];
+    case "dominant7Flat9":
+      return [4, 10, 1, 0, 7];
+    case "minor7Flat9":
+      return [3, 10, 1, 0, 7];
+    case "sus2":
+      return [0, 2, 7];
+    case "sus4":
+      return [0, 5, 7];
+    case "dominant9Sus2":
+      return [2, 10, 0, 7];
+    case "dominant9Sus4":
+      return [5, 10, 2, 0, 7];
+  }
+}
+
+function dynamicFormulaIntervals(quality: Chord["quality"]): number[] {
+  switch (quality) {
+    case "major":
+      return [0, 4, 7];
+    case "minor":
+      return [0, 3, 7];
+    case "diminished":
+      return [0, 3, 6];
+    case "major6":
+      return [0, 4, 7, 9];
+    case "minor6":
+      return [0, 3, 7, 9];
+    case "dominant7":
+      return [0, 4, 7, 10];
+    case "minor7":
+      return [0, 3, 7, 10];
+    case "major7":
+      return [0, 4, 7, 11];
+    case "dominant9":
+      return [0, 4, 7, 10, 2];
+    case "minor9":
+      return [0, 3, 7, 10, 2];
+    case "dominant7Flat9":
+      return [0, 4, 7, 10, 1];
+    case "minor7Flat9":
+      return [0, 3, 7, 10, 1];
+    case "sus2":
+      return [0, 2, 7];
+    case "sus4":
+      return [0, 5, 7];
+    case "dominant9Sus2":
+      return [0, 2, 7, 10];
+    case "dominant9Sus4":
+      return [0, 5, 7, 10, 2];
+  }
+}
+
+function formatChordIntervals(
+  quality: Chord["quality"],
+  intervals: readonly number[],
+): HarmonyChordAnnotation["chordTones"] {
+  return intervals
+    .map((interval) =>
+      labelIntervalForQuality(quality, normalizePitchClass(interval)),
+    )
+    .join(" ");
+}
+
+function labelIntervalForQuality(
+  quality: Chord["quality"],
+  interval: number,
+): string {
+  switch (normalizePitchClass(interval)) {
+    case 0:
+      return "R";
+    case 1:
+      return "b9";
+    case 2:
+      return quality === "sus2" || quality === "dominant9Sus2" ? "2" : "9";
+    case 3:
+      return "b3";
+    case 4:
+      return "3";
+    case 5:
+      return "4";
+    case 6:
+      return "b5";
+    case 7:
+      return "5";
+    case 9:
+      return "6";
+    case 10:
+      return "b7";
+    case 11:
+      return "7";
+    default:
+      return String(interval);
+  }
+}
+
+function preferredSlashUpperPairs(
+  chord: Chord,
+  bassClass: number,
+): Array<[number, number]> {
+  const priorityClasses = dynamicPriorityPitchClasses(chord).filter(
+    (pitchClass) => pitchClass !== bassClass,
+  );
+  const prioritizedSource =
+    priorityClasses.length >= 2
+      ? priorityClasses
+      : fullChordPitchClasses(chord).filter((pitchClass) => pitchClass !== bassClass);
+  const source = prioritizedSource.length >= 2
+    ? uniquePitchClasses(prioritizedSource)
+    : uniquePitchClasses(fullChordPitchClasses(chord));
+  const pairs: Array<[number, number]> = [];
+
+  for (let i = 0; i < source.length; i++) {
+    for (let j = i + 1; j < source.length; j++) {
+      pairs.push([source[i]!, source[j]!]);
+    }
+  }
+
+  return pairs;
+}
+
+function uniquePitchClasses(values: number[]): number[] {
+  const seen = new Set<number>();
+  const result: number[] = [];
+
+  for (const value of values) {
+    const normalized = normalizePitchClass(value);
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    result.push(normalized);
+  }
+
+  return result;
+}
+
+function compareDynamicSearchCandidates(
+  left: HarmonyVoicingCandidate,
+  right: HarmonyVoicingCandidate,
+  chord: Chord,
+  range: VocalRange,
+): number {
+  const leftScore = scoreDynamicSearchCandidate(left, null, range, chord);
+  const rightScore = scoreDynamicSearchCandidate(right, null, range, chord);
+  if (leftScore !== rightScore) return leftScore - rightScore;
+  return compareCandidates(left, right);
+}
+
+function scoreDynamicSearchCandidate(
+  candidate: HarmonyVoicingCandidate,
+  previousCandidate: HarmonyVoicingCandidate | null,
+  range: VocalRange,
+  chord?: Chord,
+): number {
+  return (
+    scoreHarmonyCandidate(candidate, previousCandidate, range, chord) +
+    (candidate.recipePriority ?? 0) * DYNAMIC_RECIPE_PRIORITY_PENALTY
+  );
+}
+
+function scoreContourTransition(
+  state: BeamState,
+  candidate: HarmonyVoicingCandidate,
+): number {
+  const previousTop = state.previousCandidate.notes[2];
+  const currentTop = candidate.notes[2];
+  const topInterval = currentTop - previousTop;
+  const topMotion = Math.abs(topInterval);
+  const currentDirection = topDirection(topInterval);
+  let score = 0;
+
+  if (state.unresolvedLeapDirection != null) {
+    const recovered =
+      currentDirection === -state.unresolvedLeapDirection &&
+      topMotion > 0 &&
+      topMotion <= 2;
+    if (!recovered) {
+      score += UNRECOVERED_LEAP_PENALTY;
+    }
+  }
+
+  const reversesAfterNonStep =
+    state.previousTopDirection !== 0 &&
+    currentDirection !== 0 &&
+    currentDirection !== state.previousTopDirection &&
+    Math.abs(state.previousTopInterval ?? 0) > 2;
+  const reversesDirection =
+    state.previousTopDirection !== 0 &&
+    currentDirection !== 0 &&
+    currentDirection !== state.previousTopDirection;
+
+  if (reversesAfterNonStep) {
+    score += REVERSAL_AFTER_NONSTEP_PENALTY;
+  }
+  if (reversesDirection && state.reversalStreak > 0) {
+    score += REPEATED_REVERSAL_PENALTY * state.reversalStreak;
+  }
+
+  const nextTopMin = Math.min(state.topMin, currentTop);
+  const nextTopMax = Math.max(state.topMax, currentTop);
+  const nextSpan = nextTopMax - nextTopMin;
+  if (nextSpan > TOP_LINE_SPAN_SOFT_LIMIT) {
+    score += (nextSpan - TOP_LINE_SPAN_SOFT_LIMIT) * TOP_LINE_SPAN_EXCESS_PENALTY;
+  }
+
+  if (normalizePitchClass(previousTop) === normalizePitchClass(currentTop)) {
+    score -= TOP_LINE_COMMON_TONE_REWARD;
+  }
+
+  return score;
+}
+
+function nextReversalStreak(
+  state: BeamState,
+  candidate: HarmonyVoicingCandidate,
+): number {
+  const topInterval = candidate.notes[2] - state.previousCandidate.notes[2];
+  const currentDirection = topDirection(topInterval);
+  const reversesDirection =
+    state.previousTopDirection !== 0 &&
+    currentDirection !== 0 &&
+    currentDirection !== state.previousTopDirection;
+  return reversesDirection ? state.reversalStreak + 1 : 0;
+}
+
+function nextUnresolvedLeapDirection(
+  state: BeamState,
+  candidate: HarmonyVoicingCandidate,
+): Exclude<TopDirection, 0> | null {
+  const topInterval = candidate.notes[2] - state.previousCandidate.notes[2];
+  const currentDirection = topDirection(topInterval);
+  const topMotion = Math.abs(topInterval);
+  if (topMotion > 5 && currentDirection !== 0) {
+    return currentDirection;
+  }
+  return null;
+}
+
+function topDirection(value: number): TopDirection {
+  if (value > 0) return 1;
+  if (value < 0) return -1;
+  return 0;
+}
+
+function compareBeamStates(left: BeamState, right: BeamState): number {
+  if (left.totalScore !== right.totalScore) {
+    return left.totalScore - right.totalScore;
+  }
+  return left.orderKey - right.orderKey;
 }
 
 function generateBassAnchoredCandidates(

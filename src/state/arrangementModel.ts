@@ -10,6 +10,7 @@ import type {
   HarmonyRangeCoverage,
   HarmonyVoicing,
   Meter,
+  SelectedHarmonyGenerator,
 } from "../music/types";
 
 export type TotalPartCount = 2 | 4;
@@ -32,6 +33,7 @@ export type ArrangementDocState = {
   vocalRangeLow: string;
   vocalRangeHigh: string;
   harmonyRangeCoverage: HarmonyRangeCoverage;
+  selectedHarmonyGenerator: SelectedHarmonyGenerator;
   totalParts: TotalPartCount;
 };
 
@@ -41,8 +43,9 @@ export type ArrangementInfo = {
   parsedChords: Chord[];
   invalidChordIds: string[];
   parseIssues: string[];
-  harmonyVoicing: HarmonyVoicing | null;
+  harmonyVoicingLegacy: HarmonyVoicing | null;
   harmonyVoicingDynamic: HarmonyVoicing | null;
+  selectedHarmonyVoicing: HarmonyVoicing | null;
   beatSec: number;
   progressionDurationSec: number;
   progressionIsValid: boolean;
@@ -85,6 +88,7 @@ export function createDefaultArrangementDocState(): ArrangementDocState {
     vocalRangeLow: "C3",
     vocalRangeHigh: "A4",
     harmonyRangeCoverage: "lower two thirds",
+    selectedHarmonyGenerator: "dynamic",
     totalParts: 4,
   };
 }
@@ -120,6 +124,9 @@ export function parseArrangementDocState(raw: unknown): ArrangementDocState {
     harmonyRangeCoverage: parseHarmonyRangeCoverage(
       value?.harmonyRangeCoverage,
     ),
+    selectedHarmonyGenerator: parseSelectedHarmonyGenerator(
+      value?.selectedHarmonyGenerator,
+    ),
     totalParts: parseTotalPartCount(value?.totalParts),
   };
 }
@@ -128,6 +135,35 @@ function parseHarmonyRangeCoverage(raw: unknown): HarmonyRangeCoverage {
   return raw === "lower two thirds" || raw === "whole-range"
     ? raw
     : "lower two thirds";
+}
+
+function parseSelectedHarmonyGenerator(raw: unknown): SelectedHarmonyGenerator {
+  return raw === "legacy" || raw === "dynamic" ? raw : "dynamic";
+}
+
+export function resolveHarmonyVoicingForGenerator(
+  generator: SelectedHarmonyGenerator,
+  voicings: {
+    harmonyVoicingLegacy: HarmonyVoicing | null;
+    harmonyVoicingDynamic: HarmonyVoicing | null;
+  },
+): HarmonyVoicing | null {
+  return generator === "legacy"
+    ? voicings.harmonyVoicingLegacy
+    : voicings.harmonyVoicingDynamic;
+}
+
+export function resolveSelectedHarmonyVoicing(
+  input: Pick<ArrangementDocState, "selectedHarmonyGenerator">,
+  voicings: {
+    harmonyVoicingLegacy: HarmonyVoicing | null;
+    harmonyVoicingDynamic: HarmonyVoicing | null;
+  },
+): HarmonyVoicing | null {
+  return resolveHarmonyVoicingForGenerator(
+    input.selectedHarmonyGenerator,
+    voicings,
+  );
 }
 
 export function flattenArrangementLyrics(
@@ -420,7 +456,11 @@ export function computeArrangementInfo(
     parsedArrangement.parsedChords.length > 0 &&
     parsedArrangement.invalidChordIds.length === 0 &&
     parsedArrangement.parseIssues.length === 0;
-  const voicingIsValid = progressionIsValid && voicing != null;
+  const selectedVoicing = resolveSelectedHarmonyVoicing(input, {
+    harmonyVoicingLegacy: voicing,
+    harmonyVoicingDynamic: dynamicVoicing,
+  });
+  const voicingIsValid = progressionIsValid && selectedVoicing != null;
 
   return {
     input,
@@ -428,8 +468,9 @@ export function computeArrangementInfo(
     parsedChords: parsedArrangement.parsedChords,
     invalidChordIds: parsedArrangement.invalidChordIds,
     parseIssues: parsedArrangement.parseIssues,
-    harmonyVoicing: voicing,
+    harmonyVoicingLegacy: voicing,
     harmonyVoicingDynamic: dynamicVoicing,
+    selectedHarmonyVoicing: selectedVoicing,
     beatSec,
     progressionDurationSec:
       parsedArrangement.parsedChords.length > 0 && input.tempo > 0

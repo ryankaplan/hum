@@ -24,6 +24,7 @@ import {
   decodeMonitorTracks,
 } from "../audio/monitorPlayer";
 import type { MonitorPlayer } from "../audio/monitorPlayer";
+import { resolveRecordingHarmonyGuidance } from "../recording/harmonyGuidance";
 import { CameraPreview } from "./CameraPreview";
 import {
   dsColors,
@@ -234,7 +235,7 @@ export function RecordingWizard() {
   const arrangementInfo = useObservable(model.derivedArrangementInfo);
   const chords = arrangementInfo.parsedChords;
   const lyricsByChord = flattenArrangementLyrics(arrangementInfo.measures);
-  const voicing = useObservable(model.harmonyVoicing);
+  const voicing = useObservable(model.selectedHarmonyVoicing);
   const latencyCorrectionSec = useObservable(model.latencyCorrectionSec);
 
   const [phase, setPhase] = useState<RecordPhase>("pre-roll");
@@ -263,12 +264,11 @@ export function RecordingWizard() {
   const hasPriorHarmonyMonitorControl = partIndex > 0 && !isMelodyPart;
   const beatsPerBar = arrangement.meter[0];
 
-  const harmonyLine =
-    voicing != null && partIndex < harmonyPartCount
-      ? (voicing.lines[partIndex] ?? null)
-      : null;
-  const countInCueMidi =
-    harmonyLine?.find((midi): midi is number => midi != null) ?? null;
+  const { harmonyLine, countInCueMidi } = resolveRecordingHarmonyGuidance(
+    voicing,
+    partIndex,
+    totalParts,
+  );
 
   const ctx = useObservable(model.audioContext);
   const orderedTrackIds = tracksDocument.trackOrder;

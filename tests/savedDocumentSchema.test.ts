@@ -4,7 +4,10 @@ import {
   SAVED_HUM_DOCUMENT_SCHEMA_VERSION,
 } from "../src/state/savedDocumentSchema";
 
-function makeSavedHumDocument(harmonyRangeCoverage: string) {
+function makeSavedHumDocument(
+  harmonyRangeCoverage: string,
+  selectedHarmonyGenerator?: "legacy" | "dynamic",
+) {
   return {
     schemaVersion: SAVED_HUM_DOCUMENT_SCHEMA_VERSION,
     id: "current",
@@ -15,6 +18,7 @@ function makeSavedHumDocument(harmonyRangeCoverage: string) {
       vocalRangeLow: "C3",
       vocalRangeHigh: "A4",
       harmonyRangeCoverage,
+      selectedHarmonyGenerator,
       totalParts: 4,
     },
     tracks: {
@@ -50,6 +54,17 @@ describe("parseSavedHumDocument", () => {
     for (const coverage of coverages) {
       const parsed = parseSavedHumDocument(makeSavedHumDocument(coverage));
       expect(parsed?.arrangement.harmonyRangeCoverage).toBe(coverage);
+    }
+  });
+
+  it("accepts supported selected harmony generators", () => {
+    const generators = ["legacy", "dynamic"] as const;
+
+    for (const generator of generators) {
+      const parsed = parseSavedHumDocument(
+        makeSavedHumDocument("lower two thirds", generator),
+      );
+      expect(parsed?.arrangement.selectedHarmonyGenerator).toBe(generator);
     }
   });
 

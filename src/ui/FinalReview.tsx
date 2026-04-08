@@ -1,13 +1,4 @@
-import {
-  Box,
-  Button,
-  Flex,
-  Grid,
-  Heading,
-  Progress,
-  Stack,
-  Text,
-} from "@chakra-ui/react";
+import { Box, Button, Flex, Progress, Stack, Text } from "@chakra-ui/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useObservable } from "../observable";
 import {
@@ -39,6 +30,7 @@ import {
 } from "./timeline";
 import type { EditorSelection } from "./timeline";
 import {
+  dsPanel,
   dsOutlineButton,
   dsPrimaryButton,
   dsScreenShell,
@@ -56,6 +48,12 @@ const WAVEFORM_BAR_STEP_PX = 4;
 const WAVEFORM_BARS_MIN = 16;
 const WAVEFORM_BARS_MAX = 960;
 const SEGMENT_WAVEFORM_HORIZONTAL_PADDING_PX = 8;
+const PREVIEW_CELL_POSITIONS = [
+  { left: "0%", top: "0%" },
+  { left: "50%", top: "0%" },
+  { left: "0%", top: "50%" },
+  { left: "50%", top: "50%" },
+] as const;
 
 type ActiveAudioSource = {
   source: AudioBufferSourceNode;
@@ -86,7 +84,10 @@ export function FinalReview() {
     () =>
       documentState.trackOrder
         .map((trackId) => documentState.tracksById[trackId] ?? null)
-        .filter((track): track is (typeof documentState.tracksById)[string] => track != null),
+        .filter(
+          (track): track is (typeof documentState.tracksById)[string] =>
+            track != null,
+        ),
     [documentState],
   );
   const timelines = useMemo<TrackClip[][]>(
@@ -130,7 +131,10 @@ export function FinalReview() {
   const baseDurationSec = progressionDurationSec(chords, arrangement.tempo);
   const beatSec = arrangement.tempo > 0 ? 60 / arrangement.tempo : 0;
 
-  const timelineEndSec = useMemo(() => getTimelineEndSec(timelines), [timelines]);
+  const timelineEndSec = useMemo(
+    () => getTimelineEndSec(timelines),
+    [timelines],
+  );
 
   const beatLineTimes = useMemo(() => {
     if (beatSec <= 0 || timelineEndSec <= 0) return [] as number[];
@@ -190,7 +194,8 @@ export function FinalReview() {
 
           const segStart = segment.timelineStartSec;
           const segEnd = segment.timelineStartSec + segment.durationSec;
-          if (segEnd <= startTimelineSec || segStart >= endTimelineSec) continue;
+          if (segEnd <= startTimelineSec || segStart >= endTimelineSec)
+            continue;
 
           const playFrom = Math.max(startTimelineSec, segStart);
           const playTo = Math.min(endTimelineSec, segEnd);
@@ -267,7 +272,8 @@ export function FinalReview() {
         trackId != null
           ? model.tracksDocument.getPrimaryRecordingIdForTrack(trackId)
           : null;
-      const url = recordingId != null ? model.getRecordingUrl(recordingId) : null;
+      const url =
+        recordingId != null ? model.getRecordingUrl(recordingId) : null;
       const video = document.createElement("video");
       video.muted = true;
       video.playsInline = true;
@@ -308,7 +314,8 @@ export function FinalReview() {
     for (let i = 0; i < trackCount; i++) {
       const trackId = documentState.trackOrder[i];
       if (trackId == null) continue;
-      const recordingId = model.tracksDocument.getPrimaryRecordingIdForTrack(trackId);
+      const recordingId =
+        model.tracksDocument.getPrimaryRecordingIdForTrack(trackId);
       if (recordingId == null) continue;
       const recording = model.tracksDocument.getRecording(recordingId);
       if (recording == null) continue;
@@ -612,6 +619,13 @@ export function FinalReview() {
 
   function handleStartOver() {
     if (isSyncingFrames) return;
+    if (
+      !window.confirm(
+        "Start over? This will discard the current review session.",
+      )
+    ) {
+      return;
+    }
     stopPlaybackEngine(false);
     model.resetSession();
     model.appScreen.set("setup");
@@ -693,23 +707,128 @@ export function FinalReview() {
 
   return (
     <Flex {...dsScreenShell} py={8}>
-      <Box w="100%" maxW="980px">
-        <Stack gap={6}>
-          <Box>
-            <Heading size="xl" color="appText">
-              Final Review
-            </Heading>
-            <Text color="appTextMuted" fontSize="sm" mt={1}>
-              Edit synced A/V tracks before exporting
-            </Text>
-          </Box>
+      <Box w="100%" maxW="1100px">
+        <Box position="fixed" top={4} left={0} right={0} zIndex={30} px={4}>
+          <Box
+            maxW="1100px"
+            mx="auto"
+            {...dsPanel}
+            px={{ base: 3, md: 4 }}
+            py={3}
+          >
+            <Flex
+              direction={{ base: "column", md: "row" }}
+              align={{ base: "stretch", md: "center" }}
+              justify="space-between"
+              gap={3}
+            >
+              <Text
+                color="appAccent"
+                fontSize={{ base: "2rem", md: "2.2rem" }}
+                lineHeight="0.95"
+                letterSpacing="-0.02em"
+                fontFamily="'Quicksand', 'Manrope', 'Avenir Next', sans-serif"
+                fontWeight="500"
+              >
+                hum
+              </Text>
 
+              <Flex
+                direction={{ base: "column", sm: "row" }}
+                align={{ base: "stretch", sm: "center" }}
+                justify="end"
+                gap={2.5}
+                flexShrink={0}
+              >
+                {showWebmFallbackMessage && (
+                  <Text color="appTextMuted" fontSize="xs" alignSelf="center">
+                    Export will use WebM in this browser.
+                  </Text>
+                )}
+
+                {exporting && (
+                  <Box minW={{ base: "100%", sm: "180px" }} alignSelf="center">
+                    <Text
+                      color="appText"
+                      fontSize="xs"
+                      fontWeight="medium"
+                      mb={1.5}
+                    >
+                      Exporting... {Math.round(exportProgress * 100)}%
+                    </Text>
+                    <Progress.Root
+                      value={exportProgress * 100}
+                      colorPalette="brand"
+                    >
+                      <Progress.Track>
+                        <Progress.Range />
+                      </Progress.Track>
+                    </Progress.Root>
+                  </Box>
+                )}
+
+                <Button
+                  variant="ghost"
+                  color="appTextSubtle"
+                  size="sm"
+                  onClick={handleStartOver}
+                  disabled={exporting || isSyncingFrames}
+                >
+                  Start Over
+                </Button>
+
+                {exportedUrl != null ? (
+                  <>
+                    <Button
+                      {...dsOutlineButton}
+                      size="lg"
+                      onClick={() => {
+                        model.clearExportedUrl();
+                      }}
+                    >
+                      Export Again
+                    </Button>
+                    <Button
+                      {...dsPrimaryButton}
+                      size="lg"
+                      onClick={handleDownload}
+                    >
+                      Download {formatLabel(ctaExportFormat)}
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    {...dsPrimaryButton}
+                    size="lg"
+                    onClick={handleExport}
+                    disabled={
+                      exporting || isSyncingFrames || timelineEndSec <= 0
+                    }
+                    loading={exporting}
+                    loadingText="Exporting..."
+                  >
+                    Export {formatLabel(ctaExportFormat)}
+                  </Button>
+                )}
+              </Flex>
+            </Flex>
+          </Box>
+        </Box>
+
+        <Stack gap={6} pt={{ base: 28, md: 24 }}>
           <Flex direction={{ base: "column", lg: "row" }} gap={6} align="start">
             <Box
-              borderRadius="xl"
+              position="relative"
+              borderRadius="2xl"
               overflow="hidden"
               bg="appMediaBg"
-              w={{ base: "min(100%, 340px)", lg: "min(46%, calc(70vh * 9 / 16))" }}
+              border="1px solid"
+              borderColor="appBorder"
+              boxShadow="0 10px 24px color-mix(in srgb, var(--app-text) 14%, transparent)"
+              w={{
+                base: "min(100%, 340px)",
+                lg: "min(46%, calc(70vh * 9 / 16))",
+              }}
               aspectRatio="9/16"
               flexShrink={0}
               mx={{ base: "auto", lg: 0 }}
@@ -718,6 +837,48 @@ export function FinalReview() {
                 ref={canvasRef}
                 style={{ width: "100%", height: "100%", display: "block" }}
               />
+
+              {documentState.trackOrder.slice(0, 4).map((_, i) => {
+                const placement = PREVIEW_CELL_POSITIONS[i];
+                if (placement == null) return null;
+                return (
+                  <Box
+                    key={`redo-overlay-${i}`}
+                    position="absolute"
+                    left={placement.left}
+                    top={placement.top}
+                    w="50%"
+                    h="50%"
+                    p={3}
+                    display="flex"
+                    alignItems="flex-end"
+                    justifyContent="center"
+                    pointerEvents="none"
+                  >
+                    <Button
+                      size="xs"
+                      borderRadius="full"
+                      bg="rgba(12, 12, 14, 0.3)"
+                      color="white"
+                      border="1px solid"
+                      borderColor="rgba(255, 255, 255, 0.1)"
+                      backdropFilter="blur(4px)"
+                      boxShadow="0 8px 18px rgba(0, 0, 0, 0.2)"
+                      fontSize="xs"
+                      fontWeight="medium"
+                      h={8}
+                      minW="72px"
+                      px={3}
+                      pointerEvents="auto"
+                      onClick={() => handleRedoPart(i)}
+                      disabled={exporting || isSyncingFrames}
+                      _hover={{ bg: "rgba(12, 12, 14, 0.45)" }}
+                    >
+                      Edit
+                    </Button>
+                  </Box>
+                );
+              })}
             </Box>
 
             <Box flex="1" minW={0}>
@@ -730,83 +891,6 @@ export function FinalReview() {
               />
             </Box>
           </Flex>
-
-          <Box>
-            <Text color="appTextMuted" fontSize="xs" mb={3} fontWeight="semibold">
-              REDO A PART
-            </Text>
-            <Grid templateColumns={`repeat(${trackCount}, 1fr)`} gap={2}>
-              {Array.from({ length: trackCount }).map((_, i) => (
-                <Button
-                  key={i}
-                  size="sm"
-                  {...dsOutlineButton}
-                  fontSize="xs"
-                  onClick={() => handleRedoPart(i)}
-                  disabled={exporting || isSyncingFrames}
-                >
-                  {getPartLabel(i, trackCount)}
-                </Button>
-              ))}
-            </Grid>
-          </Box>
-
-          {exporting && (
-            <Box>
-              <Text color="appTextMuted" fontSize="sm" mb={2}>
-                Exporting… {Math.round(exportProgress * 100)}%
-              </Text>
-              <Progress.Root value={exportProgress * 100} colorPalette="brand">
-                <Progress.Track>
-                  <Progress.Range />
-                </Progress.Track>
-              </Progress.Root>
-            </Box>
-          )}
-
-          {exportedUrl != null ? (
-            <Stack gap={3}>
-              <Button {...dsPrimaryButton} size="lg" onClick={handleDownload}>
-                Download {formatLabel(ctaExportFormat)}
-              </Button>
-              <Button
-                variant="ghost"
-                color="appTextMuted"
-                onClick={() => {
-                  model.clearExportedUrl();
-                }}
-              >
-                Export Again
-              </Button>
-            </Stack>
-          ) : (
-            <Button
-              {...dsPrimaryButton}
-              size="lg"
-              onClick={handleExport}
-              disabled={exporting || isSyncingFrames || timelineEndSec <= 0}
-              loading={exporting}
-              loadingText="Exporting…"
-            >
-              Export {formatLabel(ctaExportFormat)}
-            </Button>
-          )}
-
-          {showWebmFallbackMessage && (
-            <Text color="appTextMuted" fontSize="xs" mt={-3}>
-              MP4 is not supported in this browser, so export will use WebM.
-            </Text>
-          )}
-
-          <Button
-            variant="ghost"
-            color="appTextSubtle"
-            size="sm"
-            onClick={handleStartOver}
-            disabled={exporting || isSyncingFrames}
-          >
-            Start Over
-          </Button>
         </Stack>
       </Box>
     </Flex>
@@ -814,7 +898,10 @@ export function FinalReview() {
 }
 
 function getCachedSegmentRenderAsset(input: {
-  cache: Map<string, { cacheKey: string; asset: TracksEditorSegmentRenderAsset }>;
+  cache: Map<
+    string,
+    { cacheKey: string; asset: TracksEditorSegmentRenderAsset }
+  >;
   clip: TrackClip;
   laneRuntime: TrackRuntimeWaveform;
   waveformVersion: number;
@@ -827,7 +914,10 @@ function getCachedSegmentRenderAsset(input: {
   );
   const waveformBarCount = Math.max(
     WAVEFORM_BARS_MIN,
-    Math.min(WAVEFORM_BARS_MAX, Math.round(waveformWidthPx / WAVEFORM_BAR_STEP_PX)),
+    Math.min(
+      WAVEFORM_BARS_MAX,
+      Math.round(waveformWidthPx / WAVEFORM_BAR_STEP_PX),
+    ),
   );
   const waveformKey =
     laneRuntime == null
@@ -852,7 +942,10 @@ function getCachedSegmentRenderAsset(input: {
       : samplePeaksForSegment(
           laneRuntime.peaks,
           laneRuntime.sourceWindow.durationSec,
-          Math.max(0, clip.sourceStartSec - laneRuntime.sourceWindow.sourceStartSec),
+          Math.max(
+            0,
+            clip.sourceStartSec - laneRuntime.sourceWindow.sourceStartSec,
+          ),
           clip.durationSec,
           waveformBarCount,
         ).map((sample) => Math.max(12, Math.round(sample * 100)));
@@ -875,7 +968,9 @@ function buildVolumePolylinePoints(
   durationSec: number,
 ): string {
   if (durationSec <= 0) return "0,50";
-  const sorted = [...volumeEnvelope.points].sort((a, b) => a.timeSec - b.timeSec);
+  const sorted = [...volumeEnvelope.points].sort(
+    (a, b) => a.timeSec - b.timeSec,
+  );
   return sorted
     .map((point) => {
       const x = clamp((point.timeSec / durationSec) * 100, 0, 100);
@@ -918,7 +1013,8 @@ function scheduleClipVolumeGain(input: {
   gain.setValueAtTime(startGainMultiplier, startAtSec);
 
   for (const point of volumeEnvelope.points) {
-    if (point.timeSec <= localStartSec || point.timeSec >= localEndSec) continue;
+    if (point.timeSec <= localStartSec || point.timeSec >= localEndSec)
+      continue;
     gain.linearRampToValueAtTime(
       point.gainMultiplier,
       startAtSec + (point.timeSec - localStartSec),
@@ -930,17 +1026,17 @@ function scheduleClipVolumeGain(input: {
     localEndSec,
     segmentDurationSec,
   );
-  gain.linearRampToValueAtTime(
-    endGainMultiplier,
-    startAtSec + playDurationSec,
-  );
+  gain.linearRampToValueAtTime(endGainMultiplier, startAtSec + playDurationSec);
 }
 
 function formatLabel(format: "mp4" | "webm"): string {
   return format === "mp4" ? "MP4" : "WebM";
 }
 
-function formatLaneWarning(unavailableLanes: number[], trackCount: number): string {
+function formatLaneWarning(
+  unavailableLanes: number[],
+  trackCount: number,
+): string {
   if (unavailableLanes.length === 0) return "";
   const labels = unavailableLanes
     .map((lane) => getPartLabel(lane, trackCount))

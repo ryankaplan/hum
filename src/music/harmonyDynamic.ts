@@ -1,11 +1,10 @@
 /*
  * Dynamic-programming harmony generation.
  *
- * This approach builds the same candidate set as the greedy generator, but
- * instead of committing immediately at each chord, it scores whole paths across
- * the progression. A dynamic-programming pass finds the lowest-cost route from
- * start to finish, which lets it trade off a slightly worse local move for a
- * better long-range result.
+ * This approach builds a candidate set for each chord and scores whole paths
+ * across the progression. A dynamic-programming pass finds the lowest-cost
+ * route from start to finish, which lets it trade off a slightly worse local
+ * move for a better long-range result.
  *
  * It is the most globally optimized method in this folder and serves as the
  * "best path" search over the shared voicing candidate space.

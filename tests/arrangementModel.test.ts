@@ -22,7 +22,7 @@ function makeArrangementDocState(
 
 describe("computeArrangementInfo", () => {
   it("uses the selected harmony placement to set harmony top", () => {
-    const lowerThreeQuarters = computeArrangementInfo(
+    const lowerTwoThirds = computeArrangementInfo(
       makeArrangementDocState("A", {
         harmonyRangeCoverage: "lower two thirds",
       }),
@@ -33,7 +33,7 @@ describe("computeArrangementInfo", () => {
       }),
     );
 
-    expect(lowerThreeQuarters.harmonyVoicing?.harmonyTop).toBe(64);
+    expect(lowerTwoThirds.harmonyVoicing?.harmonyTop).toBe(62);
     expect(wholeRange.harmonyVoicing?.harmonyTop).toBe(69);
   });
 });

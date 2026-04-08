@@ -38,7 +38,6 @@ export const arrangementDocument = model.arrangementDocument;
 export const arrangementInfo = model.derivedArrangementInfo;
 export const parsedChords = model.parsedChords;
 export const harmonyVoicing = model.harmonyVoicing;
-export const harmonyVoicingGreedy = model.harmonyVoicingGreedy;
 export const harmonyVoicingDynamic = model.harmonyVoicingDynamic;
 export const exportPreferences = model.exportPreferences;
 

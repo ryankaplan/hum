@@ -41,7 +41,7 @@ import {
 } from "./designSystem";
 import { InfoIcon, PlayIcon, StopIcon } from "./icons";
 
-type PreviewMode = "legacy" | "greedy" | "dynamic" | null;
+type PreviewMode = "legacy" | "dynamic" | null;
 
 const METER_OPTIONS: { label: string; value: Meter }[] = [
   { label: "4/4", value: [4, 4] },
@@ -77,7 +77,6 @@ type SetupCardProps = {
   onHarmonyCoverageChange: (value: HarmonyRangeCoverage) => void;
   onPartCountChange: (value: "2" | "4") => void;
   onPreviewLegacy: () => void;
-  onPreviewGreedy: () => void;
   onPreviewDynamic: () => void;
   onStopPreview: () => void;
   onStart: () => void;
@@ -98,7 +97,6 @@ function SetupCard({
   onHarmonyCoverageChange,
   onPartCountChange,
   onPreviewLegacy,
-  onPreviewGreedy,
   onPreviewDynamic,
   onStopPreview,
   onStart,
@@ -110,7 +108,6 @@ function SetupCard({
     invalidChordIds,
     parseIssues,
     harmonyVoicing: voicing,
-    harmonyVoicingGreedy: greedyVoicing,
     harmonyVoicingDynamic: dynamicVoicing,
     isValid,
   } = arrangement;
@@ -306,7 +303,6 @@ function SetupCard({
 
         {parsed.length > 0 &&
           voicing != null &&
-          greedyVoicing != null &&
           dynamicVoicing != null && (
             <Box bg={dsColors.surfaceRaised} borderRadius="xl" p={4}>
               <Flex justify="space-between" align="center" mb={2} gap={2}>
@@ -364,42 +360,6 @@ function SetupCard({
                     borderRadius="full"
                     borderColor="transparent"
                     color={
-                      previewingMode === "greedy"
-                        ? dsColors.accent
-                        : dsColors.textMuted
-                    }
-                    _hover={{
-                      bg: dsColors.surfaceSubtle,
-                      color:
-                        previewingMode === "greedy"
-                          ? dsColors.accent
-                          : dsColors.text,
-                    }}
-                    onClick={
-                      previewingMode === "greedy"
-                        ? onStopPreview
-                        : onPreviewGreedy
-                    }
-                  >
-                    <Flex align="center" gap={1.5}>
-                      {previewingMode === "greedy" ? (
-                        <StopIcon size={14} strokeWidth={2.1} />
-                      ) : (
-                        <PlayIcon size={14} strokeWidth={2.1} />
-                      )}
-                      <Text fontSize="xs" fontWeight="semibold">
-                        Greedy
-                      </Text>
-                    </Flex>
-                  </Button>
-                  <Button
-                    {...dsOutlineButton}
-                    size="xs"
-                    h={7}
-                    px={2.5}
-                    borderRadius="full"
-                    borderColor="transparent"
-                    color={
                       previewingMode === "dynamic"
                         ? dsColors.accent
                         : dsColors.textMuted
@@ -435,12 +395,6 @@ function SetupCard({
                   title="Legacy"
                   parsed={parsed}
                   voicing={voicing}
-                  chordPreviewItems={chordPreviewItems}
-                />
-                <VoicingComparisonSection
-                  title="Greedy"
-                  parsed={parsed}
-                  voicing={greedyVoicing}
                   chordPreviewItems={chordPreviewItems}
                 />
                 <VoicingComparisonSection
@@ -648,9 +602,7 @@ export function SetupScreen() {
     const voicing =
       mode === "legacy"
         ? arrangement.harmonyVoicing
-        : mode === "greedy"
-          ? arrangement.harmonyVoicingGreedy
-          : arrangement.harmonyVoicingDynamic;
+        : arrangement.harmonyVoicingDynamic;
     const tempo = arrangement.input.tempo;
 
     if (voicing == null || parsed.length === 0) return;
@@ -760,7 +712,6 @@ export function SetupScreen() {
     },
     onPartCountChange: handlePartCountChange,
     onPreviewLegacy: () => handlePreview("legacy"),
-    onPreviewGreedy: () => handlePreview("greedy"),
     onPreviewDynamic: () => handlePreview("dynamic"),
     onStopPreview: handleStopPreview,
     onStart: handleStart,

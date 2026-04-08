@@ -1,7 +1,12 @@
 import type { Chord, HarmonyLine, MidiNote } from "./types";
 import { totalBeats } from "./parse";
 import type { MonitorPlayer } from "../audio/monitorPlayer";
-import { playClick, playGuideTone, stopAllSynths } from "../audio/synths";
+import {
+  playClick,
+  playCountInCueTone,
+  playGuideTone,
+  stopAllSynths,
+} from "../audio/synths";
 import { AUDIO_SCHEDULE_LEAD_SEC } from "../transport/core";
 
 function midiToFrequency(midi: MidiNote): number {
@@ -60,6 +65,7 @@ export function playCountIn(
   ctx: AudioContext,
   beatsPerBar: number,
   tempo: number,
+  countInCueMidi?: MidiNote | null,
   onBeat?: (beat: number, totalBeats: number) => void,
 ): CountInResult {
   const secPerBeat = 60 / tempo;
@@ -74,6 +80,15 @@ export function playCountIn(
   // Schedule all count-in clicks on the AudioContext clock
   for (let i = 0; i < beatsPerBar; i++) {
     playClick(ctx, startTime + i * secPerBeat, i === 0);
+  }
+
+  if (countInCueMidi != null) {
+    playCountInCueTone(
+      ctx,
+      midiToFrequency(countInCueMidi),
+      startTime,
+      recordingStartTime,
+    );
   }
 
   // Beat callbacks via polling

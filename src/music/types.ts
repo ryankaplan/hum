@@ -53,7 +53,7 @@ export type VocalRange = {
 export type HarmonyRangeCoverage = "lower two thirds" | "whole-range";
 
 export type HarmonyVoicingStrategy = "drop2" | "closed" | "open" | "spread";
-export type HarmonyVoicingGenerator = "legacy" | "greedy" | "dynamic";
+export type HarmonyVoicingGenerator = "legacy" | "dynamic";
 
 export type ChordToneFormula =
   | "R 3 5"

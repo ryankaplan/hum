@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { generateHarmonyGreedy } from "../src/music/harmony";
+import { generateHarmonyDynamic } from "../src/music/harmony";
 import { midiToNoteName } from "../src/music/types";
 import { parseChordText } from "../src/music/parse";
 
-function renderGreedyProgressionVoicings(tokens: readonly string[]): string[] {
+function renderDynamicProgressionVoicings(tokens: readonly string[]): string[] {
   const chords = tokens.map((token) => {
     const chord = parseChordText(token, 4);
     if (chord == null) {
@@ -12,7 +12,7 @@ function renderGreedyProgressionVoicings(tokens: readonly string[]): string[] {
     return chord;
   });
 
-  const voicing = generateHarmonyGreedy(
+  const voicing = generateHarmonyDynamic(
     chords,
     { low: 48, high: 72 },
     3,
@@ -30,11 +30,11 @@ function renderGreedyProgressionVoicings(tokens: readonly string[]): string[] {
   });
 }
 
-function renderGreedyChordVoicing(token: string): string {
-  return renderGreedyProgressionVoicings([token])[0]!;
+function renderDynamicChordVoicing(token: string): string {
+  return renderDynamicProgressionVoicings([token])[0]!;
 }
 
-describe("greedy harmony chord examples", () => {
+describe("dynamic harmony chord examples", () => {
   const examples = [
     "A",
     "Am",
@@ -52,8 +52,8 @@ describe("greedy harmony chord examples", () => {
     "Fm6/Ab",
   ] as const;
 
-  it("shows one-chord greedy voicings", () => {
-    expect(examples.map((token) => renderGreedyChordVoicing(token)))
+  it("shows one-chord dynamic voicings", () => {
+    expect(examples.map((token) => renderDynamicChordVoicing(token)))
       .toMatchInlineSnapshot(`
         [
           "A -> A3 C#4 E4",
@@ -74,8 +74,8 @@ describe("greedy harmony chord examples", () => {
       `);
   });
 
-  it("shows a 4-5-1 greedy progression", () => {
-    expect(renderGreedyProgressionVoicings(["D", "E", "A"]))
+  it("shows a 4-5-1 dynamic progression", () => {
+    expect(renderDynamicProgressionVoicings(["D", "E", "A"]))
       .toMatchInlineSnapshot(`
         [
           "D -> D3 F#3 A3",

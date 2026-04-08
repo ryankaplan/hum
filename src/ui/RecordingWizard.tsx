@@ -267,6 +267,8 @@ export function RecordingWizard() {
     voicing != null && partIndex < harmonyPartCount
       ? (voicing.lines[partIndex] ?? null)
       : null;
+  const countInCueMidi =
+    harmonyLine?.find((midi): midi is number => midi != null) ?? null;
 
   const ctx = useObservable(model.audioContext);
   const orderedTrackIds = tracksDocument.trackOrder;
@@ -497,6 +499,7 @@ export function RecordingWizard() {
         stream,
         chords,
         harmonyLine: guideToneEnabled ? harmonyLine : null,
+        countInCueMidi,
         beatsPerBar,
         tempo: arrangement.tempo,
         latencyCorrectionSec,

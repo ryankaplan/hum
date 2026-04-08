@@ -341,31 +341,6 @@ export function scoreHarmonyCandidate(
   return score;
 }
 
-export function chooseBestGreedyCandidate(
-  chord: Chord,
-  candidates: HarmonyVoicingCandidate[],
-  previousCandidate: HarmonyVoicingCandidate | null,
-  range: VocalRange,
-): HarmonyVoicingCandidate | null {
-  let best: HarmonyVoicingCandidate | null = null;
-  let bestScore = Number.POSITIVE_INFINITY;
-
-  for (const candidate of candidates) {
-    const score = scoreHarmonyCandidate(
-      candidate,
-      previousCandidate,
-      range,
-      chord,
-    );
-    if (score < bestScore) {
-      best = candidate;
-      bestScore = score;
-    }
-  }
-
-  return best;
-}
-
 export function chooseBestDynamicPath(
   chords: Chord[],
   candidateSets: HarmonyVoicingCandidate[][],

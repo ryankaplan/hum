@@ -1,7 +1,6 @@
 import {
   generateHarmony,
   generateHarmonyDynamic,
-  generateHarmonyGreedy,
 } from "../music/harmony";
 import { parseChordText } from "../music/parse";
 import { progressionDurationSec } from "../music/playback";
@@ -43,7 +42,6 @@ export type ArrangementInfo = {
   invalidChordIds: string[];
   parseIssues: string[];
   harmonyVoicing: HarmonyVoicing | null;
-  harmonyVoicingGreedy: HarmonyVoicing | null;
   harmonyVoicingDynamic: HarmonyVoicing | null;
   beatSec: number;
   progressionDurationSec: number;
@@ -393,7 +391,6 @@ export function computeArrangementInfo(
   );
 
   let voicing: HarmonyVoicing | null = null;
-  let greedyVoicing: HarmonyVoicing | null = null;
   let dynamicVoicing: HarmonyVoicing | null = null;
   try {
     const low = noteNameToMidi(input.vocalRangeLow);
@@ -401,12 +398,6 @@ export function computeArrangementInfo(
     if (high > low && parsedArrangement.parsedChords.length > 0) {
       const harmonyPartCount = Math.max(1, input.totalParts - 1);
       voicing = generateHarmony(
-        parsedArrangement.parsedChords,
-        { low, high },
-        harmonyPartCount,
-        input.harmonyRangeCoverage,
-      );
-      greedyVoicing = generateHarmonyGreedy(
         parsedArrangement.parsedChords,
         { low, high },
         harmonyPartCount,
@@ -421,7 +412,6 @@ export function computeArrangementInfo(
     }
   } catch {
     voicing = null;
-    greedyVoicing = null;
     dynamicVoicing = null;
   }
 
@@ -439,7 +429,6 @@ export function computeArrangementInfo(
     invalidChordIds: parsedArrangement.invalidChordIds,
     parseIssues: parsedArrangement.parseIssues,
     harmonyVoicing: voicing,
-    harmonyVoicingGreedy: greedyVoicing,
     harmonyVoicingDynamic: dynamicVoicing,
     beatSec,
     progressionDurationSec:

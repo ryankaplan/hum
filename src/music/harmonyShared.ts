@@ -763,22 +763,32 @@ export function describeHarmonyCandidateChordTones(
   chord: Chord,
   candidate: HarmonyVoicingCandidate,
 ): HarmonyChordAnnotation["chordTones"] {
-  const rootPitchClass = normalizePitchClass(rootSemitone(chord.root));
-  const order = dynamicFormulaIntervals(chord.quality);
-  const intervals = uniquePitchClasses(
-    candidate.notes.map((note) => normalizePitchClass(note - rootPitchClass)),
-  ).sort((left, right) => {
-    const leftIndex = order.indexOf(left);
-    const rightIndex = order.indexOf(right);
-    if (leftIndex !== rightIndex) {
-      if (leftIndex === -1) return 1;
-      if (rightIndex === -1) return -1;
-      return leftIndex - rightIndex;
-    }
-    return left - right;
-  });
+  return describeHarmonyNotesForChord(chord, candidate.notes);
+}
 
+export function describeHarmonyNotesForChord(
+  chord: Chord,
+  notes: readonly MidiNote[],
+): HarmonyChordAnnotation["chordTones"] {
+  const rootPitchClass = normalizePitchClass(rootSemitone(chord.root));
+  const intervals = sortIntervalsForQuality(
+    chord.quality,
+    uniquePitchClasses(
+      notes.map((note) => normalizePitchClass(note - rootPitchClass)),
+    ),
+  );
+  if (intervals.length === 0) {
+    return chordToneFormula(chord);
+  }
   return formatChordIntervals(chord.quality, intervals);
+}
+
+export function labelHarmonyNoteForChord(chord: Chord, midi: MidiNote): string {
+  const rootPitchClass = normalizePitchClass(rootSemitone(chord.root));
+  return labelIntervalForQuality(
+    chord.quality,
+    normalizePitchClass(midi - rootPitchClass),
+  );
 }
 
 function dynamicRecipeIntervalPreferences(
@@ -948,6 +958,23 @@ function dynamicFormulaIntervals(quality: Chord["quality"]): number[] {
   }
 }
 
+function sortIntervalsForQuality(
+  quality: Chord["quality"],
+  intervals: readonly number[],
+): number[] {
+  const order = dynamicFormulaIntervals(quality);
+  return [...intervals].sort((left, right) => {
+    const leftIndex = order.indexOf(left);
+    const rightIndex = order.indexOf(right);
+    if (leftIndex !== rightIndex) {
+      if (leftIndex === -1) return 1;
+      if (rightIndex === -1) return -1;
+      return leftIndex - rightIndex;
+    }
+    return left - right;
+  });
+}
+
 function formatChordIntervals(
   quality: Chord["quality"],
   intervals: readonly number[],
@@ -980,6 +1007,8 @@ function labelIntervalForQuality(
       return "b5";
     case 7:
       return "5";
+    case 8:
+      return "#5";
     case 9:
       return "6";
     case 10:

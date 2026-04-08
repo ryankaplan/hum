@@ -49,7 +49,7 @@
  * - On parse failure or schema version mismatch, callers should clear the draft
  *   instead of trying to partially recover it.
  */
-export const SAVED_HUM_DOCUMENT_SCHEMA_VERSION = "5";
+export const SAVED_HUM_DOCUMENT_SCHEMA_VERSION = "6";
 
 export const SAVED_HUM_DOCUMENT_ID = "current";
 
@@ -68,6 +68,7 @@ export type SavedArrangementDocument = {
   vocalRangeHigh: string;
   harmonyRangeCoverage: "lower two thirds" | "whole-range";
   totalParts: 2 | 4;
+  customHarmony: { lines: number[][] } | null;
 };
 
 export type SavedVolumePoint = {
@@ -195,6 +196,25 @@ function parseSavedArrangementDocument(
     vocalRangeHigh: raw.vocalRangeHigh,
     harmonyRangeCoverage: raw.harmonyRangeCoverage ?? "lower two thirds",
     totalParts: raw.totalParts,
+    customHarmony: parseSavedCustomHarmony(raw.customHarmony),
+  };
+}
+
+function parseSavedCustomHarmony(raw: unknown): { lines: number[][] } | null {
+  if (raw == null) return null;
+  if (
+    !isRecord(raw) ||
+    !Array.isArray(raw.lines) ||
+    raw.lines.some(
+      (line) =>
+        !Array.isArray(line) ||
+        line.some((entry) => isFiniteNumber(entry) === false),
+    )
+  ) {
+    return null;
+  }
+  return {
+    lines: raw.lines.map((line) => [...line]),
   };
 }
 

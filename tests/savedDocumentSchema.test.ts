@@ -35,6 +35,7 @@ function makeSavedHumDocument(
     appScreen: "setup",
     latencyCorrectionSec: 0,
     isCalibrated: false,
+    selectedMicId: "mic-1",
   };
 }
 
@@ -86,5 +87,14 @@ describe("parseSavedHumDocument", () => {
     });
 
     expect(parsed).toBeNull();
+  });
+
+  it("accepts a missing selected mic id for older drafts", () => {
+    const raw = makeSavedHumDocument("lower two thirds");
+    delete raw.selectedMicId;
+
+    const parsed = parseSavedHumDocument(raw);
+
+    expect(parsed?.selectedMicId).toBeUndefined();
   });
 });

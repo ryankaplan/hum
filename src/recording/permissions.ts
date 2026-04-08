@@ -1,21 +1,32 @@
 import { model } from "../state/model";
+import {
+  acquireConfiguredMediaStream,
+  getStreamAudioDeviceId,
+  streamMatchesAudioDeviceId,
+} from "./mediaStream";
 
 // Called when the user clicks "Calibrate Microphone" on the setup screen.
 // Acquires camera + mic, sets up AudioContext, then transitions to calibration.
 export async function acquirePermissionsAndStart(): Promise<void> {
   model.permissionError.set(null);
+  const expectedMicId = model.selectedMicId.get();
 
   let stream: MediaStream;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        aspectRatio: { ideal: 9 / 16 },
-        width: { ideal: 720 },
-        height: { ideal: 1280 },
-        facingMode: { ideal: "user" },
-      },
-      audio: true,
-    });
+    try {
+      stream = await acquireConfiguredMediaStream({
+        audioDeviceId: expectedMicId,
+        includeVideo: true,
+      });
+    } catch (err) {
+      if (expectedMicId != null) {
+        stream = await acquireConfiguredMediaStream({
+          includeVideo: true,
+        });
+      } else {
+        throw err;
+      }
+    }
   } catch (err) {
     const message =
       err instanceof DOMException
@@ -34,6 +45,7 @@ export async function acquirePermissionsAndStart(): Promise<void> {
   }
 
   model.mediaStream.set(stream);
+  model.setSelectedMicId(getStreamAudioDeviceId(stream));
 
   await model.ensureAudioContext();
 
@@ -41,6 +53,8 @@ export async function acquirePermissionsAndStart(): Promise<void> {
     Object.keys(model.tracksDocument.document.get().recordingsById).length > 0;
   if (!hasDraftWork) {
     model.resetSession();
+  } else if (!streamMatchesAudioDeviceId(stream, expectedMicId)) {
+    model.clearCalibration();
   }
   if (shouldSkipCalibrationFromUrl()) {
     // Debug path: bypass calibration and use zero correction.

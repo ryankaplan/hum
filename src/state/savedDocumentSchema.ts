@@ -125,6 +125,7 @@ export type SavedHumDocument = {
   appScreen: SavedAppScreen;
   latencyCorrectionSec: number;
   isCalibrated: boolean;
+  selectedMicId?: string | null;
 };
 
 export type SavedMediaAsset = {
@@ -379,7 +380,10 @@ export function parseSavedHumDocument(raw: unknown): SavedHumDocument | null {
       raw.appScreen !== "recording" &&
       raw.appScreen !== "review") ||
     isFiniteNumber(raw.latencyCorrectionSec) === false ||
-    typeof raw.isCalibrated !== "boolean"
+    typeof raw.isCalibrated !== "boolean" ||
+    (raw.selectedMicId !== undefined &&
+      raw.selectedMicId !== null &&
+      typeof raw.selectedMicId !== "string")
   ) {
     return null;
   }
@@ -394,5 +398,6 @@ export function parseSavedHumDocument(raw: unknown): SavedHumDocument | null {
     appScreen: raw.appScreen,
     latencyCorrectionSec: raw.latencyCorrectionSec,
     isCalibrated: raw.isCalibrated,
+    selectedMicId: raw.selectedMicId as string | null | undefined,
   };
 }

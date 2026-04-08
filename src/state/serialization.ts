@@ -27,6 +27,7 @@ export type DraftSnapshot = {
   appScreen: AppScreen;
   latencyCorrectionSec: number;
   isCalibrated: boolean;
+  selectedMicId: string | null;
 };
 
 export type DeserializedDraftSnapshot = {
@@ -35,6 +36,7 @@ export type DeserializedDraftSnapshot = {
   appScreen: AppScreen;
   latencyCorrectionSec: number;
   isCalibrated: boolean;
+  selectedMicId: string | null;
 };
 
 export function serializeHumDocument(input: DraftSnapshot): SavedHumDocument {
@@ -50,6 +52,7 @@ export function serializeHumDocument(input: DraftSnapshot): SavedHumDocument {
     appScreen: serializeAppScreen(input.appScreen),
     latencyCorrectionSec: input.latencyCorrectionSec,
     isCalibrated: input.isCalibrated,
+    selectedMicId: input.selectedMicId,
   };
 }
 
@@ -66,6 +69,7 @@ export function deserializeHumDocument(
     appScreen: deserializeAppScreen(saved.appScreen),
     latencyCorrectionSec: saved.latencyCorrectionSec,
     isCalibrated: saved.isCalibrated,
+    selectedMicId: saved.selectedMicId ?? null,
   };
 }
 

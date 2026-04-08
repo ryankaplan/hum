@@ -117,6 +117,7 @@ function makeController(
       appScreen: "setup" as AppScreen,
       latencyCorrectionSec: 0,
       isCalibrated: false,
+      selectedMicId: null,
     }),
     applyRestoredDraft: vi.fn(),
     onBootstrapped: vi.fn(),

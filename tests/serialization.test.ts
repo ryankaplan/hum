@@ -35,6 +35,7 @@ function makeDraftSnapshot(
     appScreen: "setup",
     latencyCorrectionSec: 0,
     isCalibrated: false,
+    selectedMicId: "mic-1",
   };
 }
 
@@ -57,5 +58,12 @@ describe("serializeHumDocument / deserializeHumDocument", () => {
     expect(restored.document.arrangement.selectedHarmonyGenerator).toBe(
       "dynamic",
     );
+  });
+
+  it("round-trips the selected mic id", () => {
+    const serialized = serializeHumDocument(makeDraftSnapshot("dynamic"));
+    const restored = deserializeHumDocument(serialized);
+
+    expect(restored.selectedMicId).toBe("mic-1");
   });
 });

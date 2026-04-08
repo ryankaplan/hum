@@ -18,6 +18,10 @@ import {
   type CalibrationPreviewSession,
   type SpeechCalibrationCapture,
 } from "../recording/latencyCalibration";
+import {
+  acquireConfiguredMediaStream,
+  getStreamAudioDeviceId,
+} from "../recording/mediaStream";
 import { model } from "../state/model";
 import {
   dsColors,
@@ -250,6 +254,7 @@ export function LatencyCalibrationScreen() {
   const stream = useObservable(model.mediaStream);
   const ctx = useObservable(model.audioContext);
   const arrangement = useObservable(model.arrangementDocument);
+  const persistedSelectedMicId = useObservable(model.selectedMicId);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -269,6 +274,14 @@ export function LatencyCalibrationScreen() {
 
   const correctionSec = manualShiftToCorrectionSec(manualShiftSec);
   const canContinue = capture != null && !busy;
+
+  useEffect(() => {
+    const activeMicId = getStreamAudioDeviceId(stream);
+    const nextSelectedMicId = activeMicId ?? persistedSelectedMicId ?? "";
+    if (nextSelectedMicId !== "" && nextSelectedMicId !== selectedMicId) {
+      setSelectedMicId(nextSelectedMicId);
+    }
+  }, [persistedSelectedMicId, selectedMicId, stream]);
 
   useEffect(() => {
     function enumerate() {
@@ -326,18 +339,12 @@ export function LatencyCalibrationScreen() {
     if (stream == null || deviceId === selectedMicId) return;
     setError(null);
     try {
-      const newAudioStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          deviceId: { exact: deviceId },
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-        },
+      const newAudioStream = await acquireConfiguredMediaStream({
+        audioDeviceId: deviceId,
+        includeVideo: false,
       });
       const newAudioTrack = newAudioStream.getAudioTracks()[0];
       if (newAudioTrack == null) return;
-      console.log(newAudioTrack.getSettings());
-      console.log(newAudioTrack.getConstraints());
 
       for (const track of stream.getAudioTracks()) {
         track.stop();
@@ -354,7 +361,8 @@ export function LatencyCalibrationScreen() {
       setCaptureBeat(-1);
       model.clearCalibration();
       model.mediaStream.set(nextStream);
-      setSelectedMicId(deviceId);
+      model.setSelectedMicId(getStreamAudioDeviceId(nextStream) ?? deviceId);
+      setSelectedMicId(getStreamAudioDeviceId(nextStream) ?? deviceId);
     } catch (err) {
       console.error("Failed to switch microphone", err);
       setError("Could not switch microphone. Please try another input.");

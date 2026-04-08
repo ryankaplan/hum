@@ -30,6 +30,11 @@ import {
   type TracksEditorState,
 } from "./tracksModel";
 import { DraftSessionController } from "./draftSessionController";
+import {
+  acquireConfiguredMediaStream,
+  getStreamAudioDeviceId,
+  streamMatchesAudioDeviceId,
+} from "../recording/mediaStream";
 
 type WaveformPeaks = number[];
 
@@ -139,6 +144,7 @@ class AppModel {
       appScreen: this.appScreen.get(),
       latencyCorrectionSec: this.latencyCorrectionSec.get(),
       isCalibrated: this.isCalibrated.get(),
+      selectedMicId: this.selectedMicId.get(),
     }),
     applyRestoredDraft: (input) => {
       this.arrangementDocument.set(input.document.arrangement);
@@ -148,6 +154,7 @@ class AppModel {
       this.returnToReviewAfterRecording.set(false);
       this.latencyCorrectionSec.set(input.latencyCorrectionSec);
       this.isCalibrated.set(input.isCalibrated);
+      this.selectedMicId.set(input.selectedMicId);
       this.hasRestoredDraft.set(true);
       for (const mediaAsset of input.mediaAssets) {
         this.registerMediaAsset(mediaAsset.mediaAssetId, mediaAsset.blob);
@@ -180,6 +187,7 @@ class AppModel {
   readonly permissionError = new Observable<string | null>(null);
   readonly latencyCorrectionSec = new Observable<number>(0);
   readonly isCalibrated = new Observable<boolean>(false);
+  readonly selectedMicId = new Observable<string | null>(null);
 
   readonly derivedArrangementInfo = new Derived<DerivedArrangementInfo>(
     () => computeArrangementInfo(this.arrangementDocument.get()),
@@ -255,6 +263,9 @@ class AppModel {
       this.draftSession.handleStateChanged();
     });
     this.isCalibrated.onAfterChange(() => {
+      this.draftSession.handleStateChanged();
+    });
+    this.selectedMicId.onAfterChange(() => {
       this.draftSession.handleStateChanged();
     });
 
@@ -613,6 +624,10 @@ class AppModel {
     this.isCalibrated.set(false);
   }
 
+  setSelectedMicId(deviceId: string | null): void {
+    this.selectedMicId.set(deviceId == null || deviceId === "" ? null : deviceId);
+  }
+
   resetSession(): void {
     this.draftSession.clearDraftAfter(() => {
       const totalParts = this.arrangementDocument.get().totalParts;
@@ -758,9 +773,31 @@ class AppModel {
 
     if (restored.appScreen === "recording" || restored.appScreen === "calibration") {
       try {
-        const stream = await this.acquireMediaStream();
+        const expectedMicId = restored.selectedMicId;
+        let stream: MediaStream | null = null;
+        try {
+          stream = await this.acquireMediaStream(expectedMicId);
+        } catch (error) {
+          if (expectedMicId != null) {
+            stream = await this.acquireMediaStream(null);
+          } else {
+            throw error;
+          }
+        }
         if (stream != null) {
           this.mediaStream.set(stream);
+          const activeMicId = getStreamAudioDeviceId(stream);
+          this.setSelectedMicId(activeMicId ?? expectedMicId ?? null);
+
+          const canReuseCalibration =
+            restored.isCalibrated &&
+            streamMatchesAudioDeviceId(stream, expectedMicId);
+          if (!canReuseCalibration) {
+            this.clearCalibration();
+            if (restored.appScreen === "recording") {
+              this.appScreen.set("calibration");
+            }
+          }
         } else {
           this.appScreen.set("setup");
         }
@@ -771,7 +808,9 @@ class AppModel {
     }
   }
 
-  private async acquireMediaStream(): Promise<MediaStream | null> {
+  private async acquireMediaStream(
+    audioDeviceId: string | null,
+  ): Promise<MediaStream | null> {
     if (typeof navigator === "undefined" || navigator.mediaDevices == null) {
       return null;
     }
@@ -783,14 +822,9 @@ class AppModel {
       }
     }
 
-    return await navigator.mediaDevices.getUserMedia({
-      video: {
-        aspectRatio: { ideal: 9 / 16 },
-        width: { ideal: 720 },
-        height: { ideal: 1280 },
-        facingMode: { ideal: "user" },
-      },
-      audio: true,
+    return await acquireConfiguredMediaStream({
+      audioDeviceId,
+      includeVideo: true,
     });
   }
 }

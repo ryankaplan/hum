@@ -23,6 +23,7 @@ type DraftSnapshot = {
   appScreen: AppScreen;
   latencyCorrectionSec: number;
   isCalibrated: boolean;
+  selectedMicId: string | null;
 };
 
 type RestoreDraftInput = {
@@ -31,6 +32,7 @@ type RestoreDraftInput = {
   appScreen: AppScreen;
   latencyCorrectionSec: number;
   isCalibrated: boolean;
+  selectedMicId: string | null;
   mediaAssets: Array<{ mediaAssetId: string; blob: Blob }>;
 };
 
@@ -87,6 +89,7 @@ export class DraftSessionController {
         appScreen,
         latencyCorrectionSec: restored.latencyCorrectionSec,
         isCalibrated: restored.isCalibrated,
+        selectedMicId: restored.selectedMicId,
         mediaAssets: loaded.mediaAssets.map((asset) => ({
           mediaAssetId: asset.mediaAssetId,
           blob: asset.blob,

@@ -92,6 +92,12 @@ function serializeArrangementDocument(
     vocalRangeHigh: arrangement.vocalRangeHigh,
     harmonyRangeCoverage: arrangement.harmonyRangeCoverage,
     totalParts: arrangement.totalParts,
+    customHarmony:
+      arrangement.customHarmony == null
+        ? null
+        : {
+            lines: arrangement.customHarmony.lines.map((line) => [...line]),
+          },
   };
 }
 
@@ -106,6 +112,12 @@ function deserializeArrangementDocument(
     vocalRangeHigh: saved.vocalRangeHigh,
     harmonyRangeCoverage: saved.harmonyRangeCoverage,
     totalParts: saved.totalParts,
+    customHarmony:
+      saved.customHarmony == null
+        ? null
+        : {
+            lines: saved.customHarmony.lines.map((line) => [...line]),
+          },
   };
 }
 

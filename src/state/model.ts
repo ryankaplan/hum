@@ -208,6 +208,12 @@ class AppModel {
     { checkForEqualityOnNotify: false },
   );
 
+  readonly effectiveHarmonyVoicing = new Derived<HarmonyVoicing | null>(
+    () => this.derivedArrangementInfo.get().effectiveHarmonyVoicing,
+    [this.derivedArrangementInfo],
+    { checkForEqualityOnNotify: false },
+  );
+
   readonly harmonyVoicingDynamic = new Derived<HarmonyVoicing | null>(
     () => this.derivedArrangementInfo.get().harmonyVoicingDynamic,
     [this.derivedArrangementInfo],
@@ -251,10 +257,15 @@ class AppModel {
   }
 
   setArrangementInput(patch: Partial<ArrangementDocState>): void {
-    this.arrangementDocument.set({
+    const next = {
       ...this.arrangementDocument.get(),
       ...patch,
-    });
+    };
+    const nextInfo = computeArrangementInfo(next);
+    if (next.customHarmony != null && !nextInfo.hasCustomHarmony) {
+      next.customHarmony = null;
+    }
+    this.arrangementDocument.set(next);
   }
 
   setExportPreferences(patch: Partial<ExportPreferences>): void {

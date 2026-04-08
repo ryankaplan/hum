@@ -234,7 +234,7 @@ export function RecordingWizard() {
   const arrangementInfo = useObservable(model.derivedArrangementInfo);
   const chords = arrangementInfo.parsedChords;
   const lyricsByChord = flattenArrangementLyrics(arrangementInfo.measures);
-  const voicing = useObservable(model.harmonyVoicing);
+  const voicing = useObservable(model.effectiveHarmonyVoicing);
   const latencyCorrectionSec = useObservable(model.latencyCorrectionSec);
 
   const [phase, setPhase] = useState<RecordPhase>("pre-roll");

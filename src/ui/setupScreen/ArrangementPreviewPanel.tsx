@@ -1,6 +1,11 @@
 import { Box, Button, Flex, NativeSelect, Stack, Text } from "@chakra-ui/react";
 import type { SelectedHarmonyGenerator } from "../../music/types";
-import { dsColors, dsFocusRing, dsInputControl, dsOutlineButton } from "../designSystem";
+import {
+  dsColors,
+  dsFocusRing,
+  dsInputControl,
+  dsOutlineButton,
+} from "../designSystem";
 import { PlayIcon, StopIcon } from "../icons";
 import { VoicingComparisonSection } from "./VoicingComparisonSection";
 import type { ArrangementPreviewPanelProps } from "./types";
@@ -50,8 +55,8 @@ export function ArrangementPreviewPanel({
                 }
                 {...controlStyles}
               >
-                <option value="legacy">Legacy</option>
-                <option value="dynamic">Dynamic</option>
+                <option value="legacy">Basic</option>
+                <option value="dynamic">Beam Search</option>
               </NativeSelect.Field>
             </NativeSelect.Root>
             <Button
@@ -105,12 +110,12 @@ export function ArrangementPreviewPanel({
               _hover={{
                 bg: dsColors.surfaceSubtle,
                 color:
-                  previewingMode === "custom"
-                    ? dsColors.accent
-                    : dsColors.text,
+                  previewingMode === "custom" ? dsColors.accent : dsColors.text,
               }}
               disabled={!hasCustomHarmony || effectiveHarmonyVoicing == null}
-              onClick={previewingMode === "custom" ? onStopPreview : onPreviewCustom}
+              onClick={
+                previewingMode === "custom" ? onStopPreview : onPreviewCustom
+              }
             >
               <Flex align="center" gap={1.5}>
                 {previewingMode === "custom" ? (

@@ -1,3 +1,8 @@
+To fix asap:
+
+- Sound sometimes bad / garbled??
+- Re-take puts me through flow again
+
 Chordus
 Chorum
 

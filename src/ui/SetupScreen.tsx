@@ -59,7 +59,6 @@ const RANGE_OPTIONS = [
 
 const HARMONY_COVERAGE_OPTIONS = [
   { label: "Lower Two Thirds", value: "lower two thirds" },
-  { label: "Lower Three Quarters", value: "lower three quarters" },
   { label: "Whole Range", value: "whole-range" },
 ] as const;
 
@@ -204,7 +203,9 @@ function SetupCard({
               rows={6}
               value={chordsInput}
               onChange={(e) => onChordsChange(e.target.value)}
-              placeholder={"A Bm C\n\nA. Bm. C\n\nA          E    F#m     D      A    E\nWhere are we?   What the hell is going on?"}
+              placeholder={
+                "A Bm C\n\nA. Bm. C\n\nA          E    F#m     D      A    E\nWhere are we?   What the hell is going on?"
+              }
               fontFamily="'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', monospace"
               lineHeight="1.45"
               spellCheck={false}
@@ -271,7 +272,9 @@ function SetupCard({
               <NativeSelect.Field
                 value={harmonyRangeCoverage}
                 onChange={(e) =>
-                  onHarmonyCoverageChange(e.target.value as HarmonyRangeCoverage)
+                  onHarmonyCoverageChange(
+                    e.target.value as HarmonyRangeCoverage,
+                  )
                 }
                 {...controlStyles}
               >
@@ -305,150 +308,150 @@ function SetupCard({
           voicing != null &&
           greedyVoicing != null &&
           dynamicVoicing != null && (
-          <Box bg={dsColors.surfaceRaised} borderRadius="xl" p={4}>
-            <Flex justify="space-between" align="center" mb={2} gap={2}>
-              <Text
-                color={dsColors.textMuted}
-                fontSize="xs"
-                fontWeight="semibold"
-              >
-                ARRANGEMENT - {measures.length} measure
-                {measures.length !== 1 ? "s" : ""}, {parsed.length} chord
-                {parsed.length !== 1 ? "s" : ""}
-              </Text>
-              <Flex gap={2}>
-                <Button
-                  {...dsOutlineButton}
-                  size="xs"
-                  h={7}
-                  px={2.5}
-                  borderRadius="full"
-                  borderColor="transparent"
-                  color={
-                    previewingMode === "legacy"
-                      ? dsColors.accent
-                      : dsColors.textMuted
-                  }
-                  _hover={{
-                    bg: dsColors.surfaceSubtle,
-                    color:
+            <Box bg={dsColors.surfaceRaised} borderRadius="xl" p={4}>
+              <Flex justify="space-between" align="center" mb={2} gap={2}>
+                <Text
+                  color={dsColors.textMuted}
+                  fontSize="xs"
+                  fontWeight="semibold"
+                >
+                  ARRANGEMENT - {measures.length} measure
+                  {measures.length !== 1 ? "s" : ""}, {parsed.length} chord
+                  {parsed.length !== 1 ? "s" : ""}
+                </Text>
+                <Flex gap={2}>
+                  <Button
+                    {...dsOutlineButton}
+                    size="xs"
+                    h={7}
+                    px={2.5}
+                    borderRadius="full"
+                    borderColor="transparent"
+                    color={
                       previewingMode === "legacy"
                         ? dsColors.accent
-                        : dsColors.text,
-                  }}
-                  onClick={
-                    previewingMode === "legacy"
-                      ? onStopPreview
-                      : onPreviewLegacy
-                  }
-                >
-                  <Flex align="center" gap={1.5}>
-                    {previewingMode === "legacy" ? (
-                      <StopIcon size={14} strokeWidth={2.1} />
-                    ) : (
-                      <PlayIcon size={14} strokeWidth={2.1} />
-                    )}
-                    <Text fontSize="xs" fontWeight="semibold">
-                      Legacy
-                    </Text>
-                  </Flex>
-                </Button>
-                <Button
-                  {...dsOutlineButton}
-                  size="xs"
-                  h={7}
-                  px={2.5}
-                  borderRadius="full"
-                  borderColor="transparent"
-                  color={
-                    previewingMode === "greedy"
-                      ? dsColors.accent
-                      : dsColors.textMuted
-                  }
-                  _hover={{
-                    bg: dsColors.surfaceSubtle,
-                    color:
+                        : dsColors.textMuted
+                    }
+                    _hover={{
+                      bg: dsColors.surfaceSubtle,
+                      color:
+                        previewingMode === "legacy"
+                          ? dsColors.accent
+                          : dsColors.text,
+                    }}
+                    onClick={
+                      previewingMode === "legacy"
+                        ? onStopPreview
+                        : onPreviewLegacy
+                    }
+                  >
+                    <Flex align="center" gap={1.5}>
+                      {previewingMode === "legacy" ? (
+                        <StopIcon size={14} strokeWidth={2.1} />
+                      ) : (
+                        <PlayIcon size={14} strokeWidth={2.1} />
+                      )}
+                      <Text fontSize="xs" fontWeight="semibold">
+                        Legacy
+                      </Text>
+                    </Flex>
+                  </Button>
+                  <Button
+                    {...dsOutlineButton}
+                    size="xs"
+                    h={7}
+                    px={2.5}
+                    borderRadius="full"
+                    borderColor="transparent"
+                    color={
                       previewingMode === "greedy"
                         ? dsColors.accent
-                        : dsColors.text,
-                  }}
-                  onClick={
-                    previewingMode === "greedy"
-                      ? onStopPreview
-                      : onPreviewGreedy
-                  }
-                >
-                  <Flex align="center" gap={1.5}>
-                    {previewingMode === "greedy" ? (
-                      <StopIcon size={14} strokeWidth={2.1} />
-                    ) : (
-                      <PlayIcon size={14} strokeWidth={2.1} />
-                    )}
-                    <Text fontSize="xs" fontWeight="semibold">
-                      Greedy
-                    </Text>
-                  </Flex>
-                </Button>
-                <Button
-                  {...dsOutlineButton}
-                  size="xs"
-                  h={7}
-                  px={2.5}
-                  borderRadius="full"
-                  borderColor="transparent"
-                  color={
-                    previewingMode === "dynamic"
-                      ? dsColors.accent
-                      : dsColors.textMuted
-                  }
-                  _hover={{
-                    bg: dsColors.surfaceSubtle,
-                    color:
+                        : dsColors.textMuted
+                    }
+                    _hover={{
+                      bg: dsColors.surfaceSubtle,
+                      color:
+                        previewingMode === "greedy"
+                          ? dsColors.accent
+                          : dsColors.text,
+                    }}
+                    onClick={
+                      previewingMode === "greedy"
+                        ? onStopPreview
+                        : onPreviewGreedy
+                    }
+                  >
+                    <Flex align="center" gap={1.5}>
+                      {previewingMode === "greedy" ? (
+                        <StopIcon size={14} strokeWidth={2.1} />
+                      ) : (
+                        <PlayIcon size={14} strokeWidth={2.1} />
+                      )}
+                      <Text fontSize="xs" fontWeight="semibold">
+                        Greedy
+                      </Text>
+                    </Flex>
+                  </Button>
+                  <Button
+                    {...dsOutlineButton}
+                    size="xs"
+                    h={7}
+                    px={2.5}
+                    borderRadius="full"
+                    borderColor="transparent"
+                    color={
                       previewingMode === "dynamic"
                         ? dsColors.accent
-                        : dsColors.text,
-                  }}
-                  onClick={
-                    previewingMode === "dynamic"
-                      ? onStopPreview
-                      : onPreviewDynamic
-                  }
-                >
-                  <Flex align="center" gap={1.5}>
-                    {previewingMode === "dynamic" ? (
-                      <StopIcon size={14} strokeWidth={2.1} />
-                    ) : (
-                      <PlayIcon size={14} strokeWidth={2.1} />
-                    )}
-                    <Text fontSize="xs" fontWeight="semibold">
-                      Dynamic
-                    </Text>
-                  </Flex>
-                </Button>
+                        : dsColors.textMuted
+                    }
+                    _hover={{
+                      bg: dsColors.surfaceSubtle,
+                      color:
+                        previewingMode === "dynamic"
+                          ? dsColors.accent
+                          : dsColors.text,
+                    }}
+                    onClick={
+                      previewingMode === "dynamic"
+                        ? onStopPreview
+                        : onPreviewDynamic
+                    }
+                  >
+                    <Flex align="center" gap={1.5}>
+                      {previewingMode === "dynamic" ? (
+                        <StopIcon size={14} strokeWidth={2.1} />
+                      ) : (
+                        <PlayIcon size={14} strokeWidth={2.1} />
+                      )}
+                      <Text fontSize="xs" fontWeight="semibold">
+                        Dynamic
+                      </Text>
+                    </Flex>
+                  </Button>
+                </Flex>
               </Flex>
-            </Flex>
-            <Stack gap={3}>
-              <VoicingComparisonSection
-                title="Legacy"
-                parsed={parsed}
-                voicing={voicing}
-                chordPreviewItems={chordPreviewItems}
-              />
-              <VoicingComparisonSection
-                title="Greedy"
-                parsed={parsed}
-                voicing={greedyVoicing}
-                chordPreviewItems={chordPreviewItems}
-              />
-              <VoicingComparisonSection
-                title="Dynamic"
-                parsed={parsed}
-                voicing={dynamicVoicing}
-                chordPreviewItems={chordPreviewItems}
-              />
-            </Stack>
-          </Box>
-        )}
+              <Stack gap={3}>
+                <VoicingComparisonSection
+                  title="Legacy"
+                  parsed={parsed}
+                  voicing={voicing}
+                  chordPreviewItems={chordPreviewItems}
+                />
+                <VoicingComparisonSection
+                  title="Greedy"
+                  parsed={parsed}
+                  voicing={greedyVoicing}
+                  chordPreviewItems={chordPreviewItems}
+                />
+                <VoicingComparisonSection
+                  title="Dynamic"
+                  parsed={parsed}
+                  voicing={dynamicVoicing}
+                  chordPreviewItems={chordPreviewItems}
+                />
+              </Stack>
+            </Box>
+          )}
 
         {(invalidChordIds.length > 0 || parseIssues.length > 0) && (
           <Box

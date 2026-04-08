@@ -24,7 +24,7 @@ describe("computeArrangementInfo", () => {
   it("uses the selected harmony placement to set harmony top", () => {
     const lowerThreeQuarters = computeArrangementInfo(
       makeArrangementDocState("A", {
-        harmonyRangeCoverage: "lower three quarters",
+        harmonyRangeCoverage: "lower two thirds",
       }),
     );
     const wholeRange = computeArrangementInfo(

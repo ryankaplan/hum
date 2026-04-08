@@ -50,16 +50,9 @@ export type VocalRange = {
   high: MidiNote;
 };
 
-export type HarmonyRangeCoverage =
-  | "lower two thirds"
-  | "lower three quarters"
-  | "whole-range";
+export type HarmonyRangeCoverage = "lower two thirds" | "whole-range";
 
-export type HarmonyVoicingStrategy =
-  | "drop2"
-  | "closed"
-  | "open"
-  | "spread";
+export type HarmonyVoicingStrategy = "drop2" | "closed" | "open" | "spread";
 export type HarmonyVoicingGenerator = "legacy" | "greedy" | "dynamic";
 
 export type ChordToneFormula =

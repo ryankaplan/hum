@@ -127,14 +127,14 @@ export function parseArrangementDocState(raw: unknown): ArrangementDocState {
 }
 
 function parseHarmonyRangeCoverage(raw: unknown): HarmonyRangeCoverage {
-  return raw === "lower two thirds" ||
-    raw === "lower three quarters" ||
-    raw === "whole-range"
+  return raw === "lower two thirds" || raw === "whole-range"
     ? raw
     : "lower two thirds";
 }
 
-export function flattenArrangementLyrics(measures: ArrangementMeasure[]): string[] {
+export function flattenArrangementLyrics(
+  measures: ArrangementMeasure[],
+): string[] {
   const lyrics: string[] = [];
   for (const measure of measures) {
     for (const chord of measure.chords) {
@@ -258,7 +258,10 @@ function parseChordLine(line: string, lineIndex: number): ParsedChordLine {
   };
 }
 
-function collectUnsupportedSegments(line: string, tokenPattern: RegExp): string[] {
+function collectUnsupportedSegments(
+  line: string,
+  tokenPattern: RegExp,
+): string[] {
   const matcher = new RegExp(tokenPattern.source, tokenPattern.flags);
   const segments: string[] = [];
   let cursor = 0;
@@ -346,7 +349,10 @@ function groupTokensIntoMeasures(
       });
 
       for (const current of currentTokens) {
-        const parsed = parseChordText(current.chordText, current.beats * beatsPerBar);
+        const parsed = parseChordText(
+          current.chordText,
+          current.beats * beatsPerBar,
+        );
         if (parsed != null) {
           parsedChords.push(parsed);
         }
@@ -381,7 +387,10 @@ function createChordId(
 export function computeArrangementInfo(
   input: ArrangementDocState,
 ): ArrangementInfo {
-  const parsedArrangement = parseArrangementText(input.chordsInput, input.meter[0]);
+  const parsedArrangement = parseArrangementText(
+    input.chordsInput,
+    input.meter[0],
+  );
 
   let voicing: HarmonyVoicing | null = null;
   let greedyVoicing: HarmonyVoicing | null = null;

@@ -66,10 +66,11 @@ export function createEmptyHarmonyVoicing(
   };
 }
 
-export function createHarmonyLines(
-  harmonyPartCount: number,
-): HarmonyLine[] {
-  return Array.from({ length: resolveHarmonyPartCount(harmonyPartCount) }, () => []);
+export function createHarmonyLines(harmonyPartCount: number): HarmonyLine[] {
+  return Array.from(
+    { length: resolveHarmonyPartCount(harmonyPartCount) },
+    () => [],
+  );
 }
 
 export function appendVoicesToLines(
@@ -154,7 +155,11 @@ export function chordToneFormula(
 
 function chordClasses(chord: Chord): [number, number, number] {
   const [r, t, f] = chordSemitones(chord.root, chord.quality);
-  return [normalizePitchClass(r), normalizePitchClass(t), normalizePitchClass(f)];
+  return [
+    normalizePitchClass(r),
+    normalizePitchClass(t),
+    normalizePitchClass(f),
+  ];
 }
 
 function fullChordPitchClasses(chord: Chord): number[] {
@@ -346,7 +351,12 @@ export function chooseBestGreedyCandidate(
   let bestScore = Number.POSITIVE_INFINITY;
 
   for (const candidate of candidates) {
-    const score = scoreHarmonyCandidate(candidate, previousCandidate, range, chord);
+    const score = scoreHarmonyCandidate(
+      candidate,
+      previousCandidate,
+      range,
+      chord,
+    );
     if (score < bestScore) {
       best = candidate;
       bestScore = score;
@@ -368,7 +378,11 @@ export function chooseBestDynamicPath(
     set.map(() => -1),
   );
 
-  for (let candidateIndex = 0; candidateIndex < candidateSets[0]!.length; candidateIndex++) {
+  for (
+    let candidateIndex = 0;
+    candidateIndex < candidateSets[0]!.length;
+    candidateIndex++
+  ) {
     const candidate = candidateSets[0]![candidateIndex]!;
     scores[0]![candidateIndex] = scoreHarmonyCandidate(
       candidate,
@@ -382,12 +396,20 @@ export function chooseBestDynamicPath(
     const currentSet = candidateSets[chordIndex]!;
     const previousSet = candidateSets[chordIndex - 1]!;
 
-    for (let candidateIndex = 0; candidateIndex < currentSet.length; candidateIndex++) {
+    for (
+      let candidateIndex = 0;
+      candidateIndex < currentSet.length;
+      candidateIndex++
+    ) {
       const candidate = currentSet[candidateIndex]!;
       let bestScore = Number.POSITIVE_INFINITY;
       let bestPreviousIndex = -1;
 
-      for (let previousIndex = 0; previousIndex < previousSet.length; previousIndex++) {
+      for (
+        let previousIndex = 0;
+        previousIndex < previousSet.length;
+        previousIndex++
+      ) {
         const previousCandidate = previousSet[previousIndex]!;
         const priorScore = scores[chordIndex - 1]![previousIndex]!;
         const nextScore =
@@ -418,11 +440,16 @@ export function chooseBestDynamicPath(
     }
   }
 
-  const result = Array.from({ length: candidateSets.length }, () => null) as Array<
-    HarmonyVoicingCandidate | null
-  >;
+  const result = Array.from(
+    { length: candidateSets.length },
+    () => null,
+  ) as Array<HarmonyVoicingCandidate | null>;
   let cursor = bestFinalIndex;
-  for (let chordIndex = candidateSets.length - 1; chordIndex >= 0; chordIndex--) {
+  for (
+    let chordIndex = candidateSets.length - 1;
+    chordIndex >= 0;
+    chordIndex--
+  ) {
     result[chordIndex] = candidateSets[chordIndex]![cursor]!;
     cursor = chordIndex > 0 ? previousIndexes[chordIndex]![cursor]! : -1;
   }
@@ -462,7 +489,12 @@ function voiceChord(
 
   const classes = new Set(chordClasses(chord));
   const sopranoTarget = prevSoprano ?? range.high;
-  const soprano = nearestChordTone(classes, sopranoTarget, range.low, range.high);
+  const soprano = nearestChordTone(
+    classes,
+    sopranoTarget,
+    range.low,
+    range.high,
+  );
 
   const closed = buildClosedVoicing(soprano, classes);
   const dropped = applyDrop2(closed);
@@ -544,7 +576,7 @@ function nearestChordTone(
 ): MidiNote {
   for (let delta = 0; delta <= high - low; delta++) {
     if (target + delta <= high) {
-      if (classes.has(((target + delta) % 12 + 12) % 12)) {
+      if (classes.has((((target + delta) % 12) + 12) % 12)) {
         return target + delta;
       }
     }
@@ -780,8 +812,6 @@ function harmonyCoverageRatio(coverage: HarmonyRangeCoverage): number {
   switch (coverage) {
     case "lower two thirds":
       return 2 / 3;
-    case "lower three quarters":
-      return 0.75;
     case "whole-range":
       return 1;
   }

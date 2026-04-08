@@ -45,11 +45,7 @@ describe("parseSavedHumDocument", () => {
   });
 
   it("accepts the current harmony coverage values", () => {
-    const coverages = [
-      "lower two thirds",
-      "lower three quarters",
-      "whole-range",
-    ] as const;
+    const coverages = ["lower two thirds", "whole-range"] as const;
 
     for (const coverage of coverages) {
       const parsed = parseSavedHumDocument(makeSavedHumDocument(coverage));

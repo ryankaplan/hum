@@ -66,10 +66,7 @@ export type SavedArrangementDocument = {
   meter: [number, number];
   vocalRangeLow: string;
   vocalRangeHigh: string;
-  harmonyRangeCoverage:
-    | "lower two thirds"
-    | "lower three quarters"
-    | "whole-range";
+  harmonyRangeCoverage: "lower two thirds" | "whole-range";
   totalParts: 2 | 4;
 };
 
@@ -184,7 +181,6 @@ function parseSavedArrangementDocument(
     typeof raw.vocalRangeHigh !== "string" ||
     (raw.harmonyRangeCoverage !== undefined &&
       raw.harmonyRangeCoverage !== "lower two thirds" &&
-      raw.harmonyRangeCoverage !== "lower three quarters" &&
       raw.harmonyRangeCoverage !== "whole-range") ||
     (raw.totalParts !== 2 && raw.totalParts !== 4)
   ) {

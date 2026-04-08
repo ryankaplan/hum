@@ -77,9 +77,13 @@ export async function loadDraftFromIndexedDb(): Promise<LoadedDraft | null> {
     const rawDocument = await requestToPromise(
       documents.get(SAVED_HUM_DOCUMENT_ID),
     );
+    if (rawDocument == null) {
+      await transactionDone(tx);
+      return null;
+    }
     const savedDocument = parseSavedHumDocument(rawDocument);
     if (savedDocument == null) {
-      return null;
+      throw new Error("Saved draft document is invalid");
     }
 
     const index = mediaAssets.index("documentId");
@@ -97,7 +101,7 @@ export async function loadDraftFromIndexedDb(): Promise<LoadedDraft | null> {
       mediaAssetIds.has(asset.mediaAssetId),
     );
     if (filtered.length !== mediaAssetIds.size) {
-      return null;
+      throw new Error("Saved draft is missing referenced media assets");
     }
 
     return {

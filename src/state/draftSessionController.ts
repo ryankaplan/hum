@@ -7,7 +7,10 @@ import {
   saveDraftDocumentToIndexedDb,
   saveMediaAssetToIndexedDb,
 } from "./draftPersistence";
-import { SAVED_HUM_DOCUMENT_ID } from "./savedDocumentSchema";
+import {
+  SAVED_HUM_DOCUMENT_ID,
+  type SavedHumDocument,
+} from "./savedDocumentSchema";
 import { deserializeHumDocument, serializeHumDocument } from "./serialization";
 
 type DraftSnapshot = {
@@ -42,8 +45,21 @@ export class DraftSessionController {
   private pendingSaveTimer: number | null = null;
   private documentWriteInFlight = false;
   private queuedDocumentSave = false;
+  private persistenceChain: Promise<void> = Promise.resolve();
+  private pendingAssetSaves = new Map<string, Promise<void>>();
+  private pendingAssetDeletes = new Set<string>();
 
-  constructor(private options: DraftSessionControllerOptions) {}
+  constructor(private options: DraftSessionControllerOptions) {
+    if (typeof window !== "undefined") {
+      window.addEventListener("pagehide", this.handleLifecycleFlush);
+    }
+    if (typeof document !== "undefined") {
+      document.addEventListener(
+        "visibilitychange",
+        this.handleVisibilityChange,
+      );
+    }
+  }
 
   async restoreOnBoot(): Promise<RestoreDraftInput | null> {
     try {
@@ -94,28 +110,36 @@ export class DraftSessionController {
   }
 
   async persistMediaAsset(mediaAssetId: string, blob: Blob): Promise<void> {
-    try {
+    this.pendingAssetDeletes.delete(mediaAssetId);
+    const task = this.enqueuePersistence(async () => {
       await saveMediaAssetToIndexedDb({
         mediaAssetId,
         blob,
         mimeType: blob.type,
         documentId: SAVED_HUM_DOCUMENT_ID,
       });
+    });
+    this.pendingAssetSaves.set(mediaAssetId, task);
+
+    try {
+      await task;
     } catch (error) {
       console.error("Failed to persist media asset", error);
+    } finally {
+      if (this.pendingAssetSaves.get(mediaAssetId) === task) {
+        this.pendingAssetSaves.delete(mediaAssetId);
+      }
     }
   }
 
   async deleteMediaAsset(mediaAssetId: string): Promise<void> {
-    try {
-      await deleteMediaAssetFromIndexedDb(mediaAssetId);
-    } catch (error) {
-      console.error("Failed to delete persisted media asset", error);
-    }
+    this.pendingAssetDeletes.add(mediaAssetId);
+    this.scheduleDocumentSave();
   }
 
   clearDraftAfter(runReset: () => void): void {
     this.cancelScheduledSave();
+    this.queuedDocumentSave = false;
     this.suppressed = true;
     runReset();
     void this.clearDraft().finally(() => {
@@ -124,6 +148,7 @@ export class DraftSessionController {
   }
 
   private scheduleDocumentSave(): void {
+    if (!this.ready || this.suppressed) return;
     this.queuedDocumentSave = true;
     this.cancelScheduledSave();
     this.pendingSaveTimer = window.setTimeout(() => {
@@ -148,7 +173,10 @@ export class DraftSessionController {
     const savedDocument = serializeHumDocument(this.options.getSnapshot());
 
     try {
-      await saveDraftDocumentToIndexedDb(savedDocument);
+      await this.enqueuePersistence(async () => {
+        await saveDraftDocumentToIndexedDb(savedDocument);
+        await this.deleteUnreferencedPendingAssets(savedDocument);
+      });
       this.options.onHasDraftChange(true);
     } catch (error) {
       console.error("Failed to persist draft document", error);
@@ -161,8 +189,11 @@ export class DraftSessionController {
   }
 
   private async clearDraft(): Promise<void> {
+    this.pendingAssetDeletes.clear();
     try {
-      await clearDraftFromIndexedDb();
+      await this.enqueuePersistence(async () => {
+        await clearDraftFromIndexedDb();
+      });
       this.options.onHasDraftChange(false);
     } catch (error) {
       console.error("Failed to clear persisted draft", error);
@@ -175,6 +206,54 @@ export class DraftSessionController {
       return await fn();
     } finally {
       this.suppressed = false;
+    }
+  }
+
+  private readonly handleLifecycleFlush = () => {
+    this.flushPendingWork();
+  };
+
+  private readonly handleVisibilityChange = () => {
+    if (document.visibilityState === "hidden") {
+      this.flushPendingWork();
+    }
+  };
+
+  private flushPendingWork(): void {
+    if (!this.queuedDocumentSave) return;
+    this.cancelScheduledSave();
+    void this.flushDocumentSave();
+  }
+
+  private enqueuePersistence(task: () => Promise<void>): Promise<void> {
+    const next = this.persistenceChain.then(task, task);
+    this.persistenceChain = next.catch(() => undefined);
+    return next;
+  }
+
+  private async deleteUnreferencedPendingAssets(
+    savedDocument: SavedHumDocument,
+  ): Promise<void> {
+    if (this.pendingAssetDeletes.size === 0) return;
+
+    const referencedMediaAssetIds = new Set(
+      Object.values(savedDocument.tracks.recordingsById).map(
+        (recording) => recording.mediaAssetId,
+      ),
+    );
+    const assetIdsToDelete = Array.from(this.pendingAssetDeletes).filter(
+      (mediaAssetId) =>
+        !referencedMediaAssetIds.has(mediaAssetId) &&
+        !this.pendingAssetSaves.has(mediaAssetId),
+    );
+
+    for (const mediaAssetId of assetIdsToDelete) {
+      try {
+        await deleteMediaAssetFromIndexedDb(mediaAssetId);
+        this.pendingAssetDeletes.delete(mediaAssetId);
+      } catch (error) {
+        console.error("Failed to delete persisted media asset", error);
+      }
     }
   }
 }

@@ -1,6 +1,7 @@
 To fix asap:
 
-- [ ] Way to record melody first as template / waveform for timing
+- [ ] Make it possible to re-record part of a take
+- [x] Way to record melody first as template / waveform for timing
 - [x] Sound sometimes bad / garbled??
 - [x] Re-take puts me through flow again
 

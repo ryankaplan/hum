@@ -139,6 +139,7 @@ export type RecordingPlaybackOpts = {
   ctx: AudioContext;
   chords: Chord[];
   harmonyLine: HarmonyLine | null; // null = melody (no guide tones)
+  backingHarmonyLines?: HarmonyLine[];
   beatsPerBar: number;
   tempo: number;
   // Pass the count-in's gridStartTime for a grid-continuous timeline.
@@ -188,7 +189,7 @@ export function startRecordingPlayback(
     let beatOffset = 0;
     for (let i = 0; i < opts.chords.length; i++) {
       const chord = opts.chords[i]!;
-        const midi = getHarmonyLineNote(opts.harmonyLine, i);
+      const midi = getHarmonyLineNote(opts.harmonyLine, i);
       if (midi != null) {
         const noteStartTime = startTime + beatOffset * secPerBeat;
         const durationSec = chord.beats * secPerBeat * 0.95;
@@ -204,6 +205,31 @@ export function startRecordingPlayback(
         );
       }
       beatOffset += chord.beats;
+    }
+  }
+
+  if (opts.backingHarmonyLines != null) {
+    for (const line of opts.backingHarmonyLines) {
+      let beatOffset = 0;
+      for (let i = 0; i < opts.chords.length; i++) {
+        const chord = opts.chords[i]!;
+        const midi = getHarmonyLineNote(line, i);
+        if (midi != null) {
+          const noteStartTime = startTime + beatOffset * secPerBeat;
+          const durationSec = chord.beats * secPerBeat * 0.95;
+          guideStops.push(
+            playGuideTone(
+              ctx,
+              midiToFrequency(midi),
+              noteStartTime,
+              durationSec,
+              guideToneLevel,
+              guideToneDestination,
+            ),
+          );
+        }
+        beatOffset += chord.beats;
+      }
     }
   }
 

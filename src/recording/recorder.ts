@@ -32,6 +32,7 @@ export type RecordingOpts = {
   chords: Chord[];
   // null for melody (no guide tones during recording)
   harmonyLine: HarmonyLine | null;
+  backingHarmonyLines?: HarmonyLine[];
   countInCueMidi?: MidiNote | null;
   beatsPerBar: number;
   tempo: number;
@@ -74,6 +75,7 @@ export function startRecordTake(opts: RecordingOpts): RecordingSession {
     stream,
     chords,
     harmonyLine,
+    backingHarmonyLines,
     countInCueMidi,
     beatsPerBar,
     tempo,
@@ -177,6 +179,7 @@ export function startRecordTake(opts: RecordingOpts): RecordingSession {
       ctx,
       chords,
       harmonyLine,
+      backingHarmonyLines,
       beatsPerBar,
       tempo,
       startTime: gridStartTime,

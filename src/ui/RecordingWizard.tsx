@@ -270,6 +270,7 @@ export function RecordingWizard() {
     useState<ReferenceWaveform | null>(null);
 
   const reviewVideoRef = useRef<HTMLVideoElement>(null);
+  const reviewUrlRef = useRef<string | null>(null);
   const monitorPlayerRef = useRef<MonitorPlayer | null>(null);
   const beatGainRef = useRef<GainNode | null>(null);
   const guideToneGainRef = useRef<GainNode | null>(null);
@@ -304,6 +305,7 @@ export function RecordingWizard() {
   const orderedTrackIds = tracksDocument.trackOrder;
   const currentTrackId = orderedTrackIds[partIndex] ?? null;
   const isRedoingCurrentPart = returnToReviewAfterRecording;
+  const melodyBackingLines = isMelodyPart ? (voicing?.lines ?? []) : [];
   const keptUrls = orderedTrackIds.map((trackId) => {
     const recordingId =
       model.tracksDocument.getPrimaryRecordingIdForTrack(trackId);
@@ -467,6 +469,16 @@ export function RecordingWizard() {
     }
   }, [phase, reviewUrl]);
 
+  useEffect(() => {
+    return () => {
+      const url = reviewUrlRef.current;
+      if (url != null) {
+        URL.revokeObjectURL(url);
+        reviewUrlRef.current = null;
+      }
+    };
+  }, []);
+
   // Reset local phase state when partIndex changes (e.g. after keep)
   useEffect(() => {
     stopAllPlayback();
@@ -474,6 +486,10 @@ export function RecordingWizard() {
     recordSessionRef.current = null;
     listenSessionRef.current = null;
     setPhase("pre-roll");
+    if (reviewUrlRef.current != null) {
+      URL.revokeObjectURL(reviewUrlRef.current);
+      reviewUrlRef.current = null;
+    }
     setReviewUrl(null);
     setActiveChordIndex(0);
     setCurrentAbsoluteBeat(-1);
@@ -517,6 +533,7 @@ export function RecordingWizard() {
       ctx,
       chords,
       harmonyLine: guideToneEnabled ? harmonyLine : null,
+      backingHarmonyLines: melodyBackingLines,
       beatsPerBar,
       tempo: arrangement.tempo,
       beatLevel: 1,
@@ -590,6 +607,7 @@ export function RecordingWizard() {
         stream,
         chords,
         harmonyLine: guideToneEnabled ? harmonyLine : null,
+        backingHarmonyLines: melodyBackingLines,
         countInCueMidi,
         beatsPerBar,
         tempo: arrangement.tempo,
@@ -625,6 +643,10 @@ export function RecordingWizard() {
 
       currentBlobRef.current = result.blob;
       currentAlignmentOffsetRef.current = result.alignmentOffsetSec;
+      if (reviewUrlRef.current != null) {
+        URL.revokeObjectURL(reviewUrlRef.current);
+      }
+      reviewUrlRef.current = result.url;
       setReviewUrl(result.url);
       setPhase("review");
     } catch (err) {
@@ -666,6 +688,12 @@ export function RecordingWizard() {
       alignmentOffsetSec: currentAlignmentOffsetRef.current,
     });
 
+    if (reviewUrlRef.current != null) {
+      URL.revokeObjectURL(reviewUrlRef.current);
+      reviewUrlRef.current = null;
+    }
+    setReviewUrl(null);
+
     const nextIncompletePartIndex =
       model.getNextIncompletePartIndex(partIndex + 1) ??
       model.getNextIncompletePartIndex(0);
@@ -681,6 +709,10 @@ export function RecordingWizard() {
   function handleRedo() {
     stopTransportAudio();
     setPhase("pre-roll");
+    if (reviewUrlRef.current != null) {
+      URL.revokeObjectURL(reviewUrlRef.current);
+      reviewUrlRef.current = null;
+    }
     setReviewUrl(null);
     currentBlobRef.current = null;
   }

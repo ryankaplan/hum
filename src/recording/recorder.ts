@@ -20,6 +20,7 @@ export type RecordingResult = {
 
 export type RecordingCallbacks = {
   onCountInBeat?: (beat: number, totalBeats: number) => void;
+  // Fires when beat 1 of the recording playback actually lands.
   onRecordingStart?: () => void;
   onBeat?: (beat: number) => void;
   onChordChange?: (chordIndex: number) => void;
@@ -109,17 +110,18 @@ export function startRecordTake(opts: RecordingOpts): RecordingSession {
     monitorPlayer?.stop();
 
     // 1. Count-in
-    const { promise: countInPromise, recordingStartTime } = playCountIn(
-      ctx,
-      beatsPerBar,
-      tempo,
-      countInCueMidi,
-      callbacks?.onCountInBeat,
-      beatLevel,
-      guideToneLevel,
-      beatDestination,
-      guideToneDestination,
-    );
+    const { promise: countInPromise, gridStartTime, alignmentStartTime } =
+      playCountIn(
+        ctx,
+        beatsPerBar,
+        tempo,
+        countInCueMidi,
+        callbacks?.onCountInBeat,
+        beatLevel,
+        guideToneLevel,
+        beatDestination,
+        guideToneDestination,
+      );
 
     await Promise.race([countInPromise, stopSignal]);
     if (cancelled) {
@@ -156,9 +158,19 @@ export function startRecordTake(opts: RecordingOpts): RecordingSession {
     // 3. Start recorder and compute trim offset.
     recorder.start(100);
     const recorderStartCtxTime = ctx.currentTime;
-    callbacks?.onRecordingStart?.();
-    const baseTrimOffsetSec = recordingStartTime - recorderStartCtxTime;
+    const baseTrimOffsetSec = alignmentStartTime - recorderStartCtxTime;
     const alignmentOffsetSec = baseTrimOffsetSec + latencyCorrectionSec;
+    let playbackStarted = false;
+    const handleBeat =
+      callbacks?.onBeat != null || callbacks?.onRecordingStart != null
+        ? (beat: number) => {
+            if (!playbackStarted && beat === 0) {
+              playbackStarted = true;
+              callbacks?.onRecordingStart?.();
+            }
+            callbacks?.onBeat?.(beat);
+          }
+        : undefined;
 
     // 4. Start playback aligned with count-in.
     playback = startRecordingPlayback({
@@ -167,13 +179,13 @@ export function startRecordTake(opts: RecordingOpts): RecordingSession {
       harmonyLine,
       beatsPerBar,
       tempo,
-      startTime: recordingStartTime,
+      startTime: gridStartTime,
       monitorPlayer,
       beatLevel,
       guideToneLevel,
       beatDestination,
       guideToneDestination,
-      onBeat: callbacks?.onBeat,
+      onBeat: handleBeat,
       onChordChange: callbacks?.onChordChange,
     });
 

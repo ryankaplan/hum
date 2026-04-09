@@ -510,7 +510,7 @@ export function RecordingWizard() {
 
     setPhase("listening");
     setActiveChordIndex(0);
-    setCurrentAbsoluteBeat(0);
+    setCurrentAbsoluteBeat(-1);
 
     if (ctx == null) return;
     const session = startRecordingPlayback({
@@ -555,6 +555,7 @@ export function RecordingWizard() {
         listenSessionRef.current = null;
         setPhase("pre-roll");
         setActiveChordIndex(0);
+        setCurrentAbsoluteBeat(-1);
       }
     }, durationMs);
   }
@@ -578,6 +579,7 @@ export function RecordingWizard() {
     setPhase("counting-in");
     setActiveChordIndex(0);
     setCountInBeat(0);
+    setCurrentAbsoluteBeat(-1);
 
     if (ctx == null) return;
 
@@ -602,7 +604,6 @@ export function RecordingWizard() {
           onRecordingStart: () => {
             setPhase("recording");
             setActiveChordIndex(0);
-            setCurrentAbsoluteBeat(0);
           },
           onBeat: (beat) => {
             setCurrentAbsoluteBeat(beat);

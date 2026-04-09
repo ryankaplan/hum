@@ -49,13 +49,16 @@ export type PlaybackSession = {
 // ─── Count-in ────────────────────────────────────────────────────────────────
 
 export type CountInResult = {
-  // The AudioContext time at which beat 1 of the RECORDING will fall.
-  // Derived from a single ctx.currentTime read plus the count-in duration,
-  // so it is grid-continuous with the count-in clicks.
-  recordingStartTime: number;
+  // The AudioContext time at which beat 1 of the musical grid is scheduled.
+  // Derived from a single ctx.currentTime read plus the count-in duration, so
+  // it stays grid-continuous with the count-in clicks.
+  gridStartTime: number;
+  // The moment the user will hear beat 1, accounting for device output
+  // latency. This is used for clip alignment, not for playback scheduling.
+  alignmentStartTime: number;
   // Resolves when the count-in is complete and the caller should begin
-  // setting up the MediaRecorder. Resolves ~half a beat before
-  // recordingStartTime so there is ample lead time.
+  // setting up the MediaRecorder. Resolves ~half a beat before the musical
+  // downbeat so playback can start on time even on slower devices.
   promise: Promise<void>;
 };
 
@@ -74,12 +77,16 @@ export function playCountIn(
 ): CountInResult {
   const secPerBeat = 60 / tempo;
   const startTime = ctx.currentTime + AUDIO_SCHEDULE_LEAD_SEC;
-  // Shift recordingStartTime forward by the device's output latency so that
+  const gridStartTime = startTime + beatsPerBar * secPerBeat;
+  // Shift alignmentStartTime forward by the device's output latency so that
   // trimOffsetSec captures the full gap between MediaRecorder.start() and when
   // the user actually *hears* beat 1. On wired audio this is ~10ms; on
   // Bluetooth (e.g. AirPods) it can be 150–300ms. Without this, the recorded
   // audio is trimmed too early and the take lands behind the beat.
-  const recordingStartTime = startTime + beatsPerBar * secPerBeat + ctx.outputLatency;
+  const outputLatency = Number.isFinite(ctx.outputLatency)
+    ? ctx.outputLatency
+    : 0;
+  const alignmentStartTime = gridStartTime + outputLatency;
 
   // Schedule all count-in clicks on the AudioContext clock
   for (let i = 0; i < beatsPerBar; i++) {
@@ -97,7 +104,7 @@ export function playCountIn(
       ctx,
       midiToFrequency(countInCueMidi),
       startTime,
-      recordingStartTime,
+      gridStartTime,
       cueLevel,
       cueDestination ?? ctx.destination,
     );
@@ -112,17 +119,18 @@ export function playCountIn(
     setTimeout(() => {
       tracker.stop();
       activeTrackers.delete(tracker);
-    }, (recordingStartTime - ctx.currentTime + 0.3) * 1000);
+    }, (gridStartTime - ctx.currentTime + 0.3) * 1000);
   }
 
-  // Resolve half a beat before recordingStartTime — enough lead time for the
+  // Resolve half a beat before gridStartTime — enough lead time for the
   // caller to create a MediaRecorder and call start() before the beat lands.
-  const resolveDelayMs = (recordingStartTime - 0.5 * secPerBeat - ctx.currentTime) * 1000;
+  const resolveDelayMs =
+    (gridStartTime - 0.5 * secPerBeat - ctx.currentTime) * 1000;
   const promise = new Promise<void>((resolve) => {
     setTimeout(resolve, Math.max(0, resolveDelayMs));
   });
 
-  return { recordingStartTime, promise };
+  return { gridStartTime, alignmentStartTime, promise };
 }
 
 // ─── Recording playback ───────────────────────────────────────────────────────
@@ -133,7 +141,7 @@ export type RecordingPlaybackOpts = {
   harmonyLine: HarmonyLine | null; // null = melody (no guide tones)
   beatsPerBar: number;
   tempo: number;
-  // Pass the count-in's recordingStartTime for a grid-continuous timeline.
+  // Pass the count-in's gridStartTime for a grid-continuous timeline.
   // If omitted, defaults to ctx.currentTime + AUDIO_SCHEDULE_LEAD_SEC.
   startTime?: number;
   monitorPlayer?: MonitorPlayer | null;
@@ -180,7 +188,7 @@ export function startRecordingPlayback(
     let beatOffset = 0;
     for (let i = 0; i < opts.chords.length; i++) {
       const chord = opts.chords[i]!;
-      const midi = getHarmonyLineNote(opts.harmonyLine, i);
+        const midi = getHarmonyLineNote(opts.harmonyLine, i);
       if (midi != null) {
         const noteStartTime = startTime + beatOffset * secPerBeat;
         const durationSec = chord.beats * secPerBeat * 0.95;
@@ -269,7 +277,12 @@ export function stopAllPlayback(): void {
 
 // Play a single note immediately — used when the user taps a note chip.
 export function playNotePreview(ctx: AudioContext, midi: MidiNote, durationSec = 1.2): void {
-  playGuideTone(ctx, midiToFrequency(midi), ctx.currentTime + 0.01, durationSec);
+  playGuideTone(
+    ctx,
+    midiToFrequency(midi),
+    ctx.currentTime + 0.01,
+    durationSec,
+  );
 }
 
 // ─── Harmony preview ─────────────────────────────────────────────────────────

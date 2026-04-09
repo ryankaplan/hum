@@ -31,8 +31,6 @@ function makeSavedHumDocument(
     exportPreferences: {
       preferredFormat: null,
     },
-    currentPartIndex: 0,
-    appScreen: "setup",
   };
 }
 
@@ -100,9 +98,9 @@ describe("parseSavedHumDocument", () => {
     expect(parsed?.arrangement.customHarmony?.lines).toEqual([[48, null, 55]]);
   });
 
-  it("accepts current drafts without session calibration fields", () => {
+  it("accepts current drafts without persisted workflow state", () => {
     const parsed = parseSavedHumDocument(makeSavedHumDocument("lower two thirds"));
 
-    expect(parsed?.appScreen).toBe("setup");
+    expect(parsed?.tracks.reverbWet).toBe(0.2);
   });
 });

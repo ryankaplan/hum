@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AppScreen, HumDocument } from "../src/state/model";
+import type { HumDocument } from "../src/state/model";
 
 const persistenceMocks = vi.hoisted(() => ({
   clearDraftFromIndexedDb: vi.fn<() => Promise<void>>(),
@@ -112,8 +112,6 @@ function makeController(
   return new DraftSessionController({
     getSnapshot: () => ({
       document: getDocument(),
-      currentPartIndex: 0,
-      appScreen: "setup" as AppScreen,
     }),
     applyRestoredDraft: vi.fn(),
     onBootstrapped: vi.fn(),

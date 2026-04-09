@@ -1,7 +1,5 @@
-import type { PartIndex } from "../music/types";
 import type { ClipVolumeEnvelope } from "./clipAutomation";
 import type {
-  AppScreen,
   ArrangementDocState,
   ExportPreferences,
   HumDocument,
@@ -11,7 +9,6 @@ import {
   SAVED_HUM_DOCUMENT_ID,
   SAVED_HUM_DOCUMENT_SCHEMA_VERSION,
   type SavedArrangementDocument,
-  type SavedAppScreen,
   type SavedClip,
   type SavedClipVolumeEnvelope,
   type SavedExportPreferences,
@@ -23,14 +20,10 @@ import {
 
 export type DraftSnapshot = {
   document: HumDocument;
-  currentPartIndex: number;
-  appScreen: AppScreen;
 };
 
 export type DeserializedDraftSnapshot = {
   document: HumDocument;
-  currentPartIndex: PartIndex;
-  appScreen: AppScreen;
 };
 
 export function serializeHumDocument(input: DraftSnapshot): SavedHumDocument {
@@ -42,8 +35,6 @@ export function serializeHumDocument(input: DraftSnapshot): SavedHumDocument {
     exportPreferences: serializeExportPreferences(
       input.document.exportPreferences,
     ),
-    currentPartIndex: Math.max(0, Math.floor(input.currentPartIndex)),
-    appScreen: serializeAppScreen(input.appScreen),
   };
 }
 
@@ -56,21 +47,7 @@ export function deserializeHumDocument(
       tracks: deserializeTracksDocument(saved.tracks),
       exportPreferences: deserializeExportPreferences(saved.exportPreferences),
     },
-    currentPartIndex: clampPartIndex(saved.currentPartIndex),
-    appScreen: deserializeAppScreen(saved.appScreen),
   };
-}
-
-function clampPartIndex(value: number): PartIndex {
-  return value <= 0 ? 0 : value >= 3 ? 3 : (Math.floor(value) as PartIndex);
-}
-
-function serializeAppScreen(screen: AppScreen): SavedAppScreen {
-  return screen;
-}
-
-function deserializeAppScreen(screen: SavedAppScreen): AppScreen {
-  return screen;
 }
 
 function serializeArrangementDocument(

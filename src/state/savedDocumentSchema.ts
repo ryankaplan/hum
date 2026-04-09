@@ -49,12 +49,11 @@
  * - On parse failure or schema version mismatch, callers should clear the draft
  *   instead of trying to partially recover it.
  */
-export const SAVED_HUM_DOCUMENT_SCHEMA_VERSION = "7";
+export const SAVED_HUM_DOCUMENT_SCHEMA_VERSION = "8";
 
 export const SAVED_HUM_DOCUMENT_ID = "current";
 
 export type SavedExportVideoFormat = "mp4" | "webm";
-export type SavedAppScreen = "setup" | "calibration" | "recording" | "review";
 
 export type SavedExportPreferences = {
   preferredFormat: SavedExportVideoFormat | null;
@@ -120,8 +119,6 @@ export type SavedHumDocument = {
   arrangement: SavedArrangementDocument;
   tracks: SavedTracksDocument;
   exportPreferences: SavedExportPreferences;
-  currentPartIndex: number;
-  appScreen: SavedAppScreen;
 };
 
 export type SavedMediaAsset = {
@@ -369,12 +366,7 @@ export function parseSavedHumDocument(raw: unknown): SavedHumDocument | null {
     typeof raw.id !== "string" ||
     arrangement == null ||
     tracks == null ||
-    exportPreferences == null ||
-    isFiniteNumber(raw.currentPartIndex) === false ||
-    (raw.appScreen !== "setup" &&
-      raw.appScreen !== "calibration" &&
-      raw.appScreen !== "recording" &&
-      raw.appScreen !== "review")
+    exportPreferences == null
   ) {
     return null;
   }
@@ -385,7 +377,5 @@ export function parseSavedHumDocument(raw: unknown): SavedHumDocument | null {
     arrangement,
     tracks,
     exportPreferences,
-    currentPartIndex: raw.currentPartIndex,
-    appScreen: raw.appScreen,
   };
 }

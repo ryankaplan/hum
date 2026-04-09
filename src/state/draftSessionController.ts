@@ -1,5 +1,4 @@
-import type { PartIndex } from "../music/types";
-import type { AppScreen, HumDocument } from "./model";
+import type { HumDocument } from "./model";
 import {
   clearDraftFromIndexedDb,
   deleteMediaAssetFromIndexedDb,
@@ -12,21 +11,15 @@ import {
   type SavedHumDocument,
 } from "./savedDocumentSchema";
 import {
-  findIncompletePartIndex,
-  getPrimaryRecordingIdForTrack,
 } from "./recordingProgress";
 import { deserializeHumDocument, serializeHumDocument } from "./serialization";
 
 type DraftSnapshot = {
   document: HumDocument;
-  currentPartIndex: number;
-  appScreen: AppScreen;
 };
 
 type RestoreDraftInput = {
   document: HumDocument;
-  currentPartIndex: PartIndex;
-  appScreen: AppScreen;
   mediaAssets: Array<{ mediaAssetId: string; blob: Blob }>;
 };
 
@@ -69,18 +62,8 @@ export class DraftSessionController {
       }
 
       const restored = deserializeHumDocument(loaded.savedDocument);
-      const currentPartIndex = resolveRestoredCurrentPartIndex(
-        restored.currentPartIndex,
-        restored.document,
-      );
-      const appScreen = resolveRestoredScreen(
-        restored.appScreen,
-        restored.document,
-      );
       const result: RestoreDraftInput = {
         document: restored.document,
-        currentPartIndex,
-        appScreen,
         mediaAssets: loaded.mediaAssets.map((asset) => ({
           mediaAssetId: asset.mediaAssetId,
           blob: asset.blob,
@@ -257,38 +240,4 @@ export class DraftSessionController {
       }
     }
   }
-}
-
-function resolveRestoredCurrentPartIndex(
-  preferredIndex: number,
-  document: HumDocument,
-): PartIndex {
-  const maxIndex = Math.max(0, document.tracks.trackOrder.length - 1);
-  const clamped = Math.min(maxIndex, Math.max(0, Math.floor(preferredIndex)));
-  const preferredTrackId = document.tracks.trackOrder[clamped] ?? null;
-  if (
-    preferredTrackId != null &&
-    getPrimaryRecordingIdForTrack(document.tracks, preferredTrackId) == null
-  ) {
-    return clamped as PartIndex;
-  }
-
-  const firstIncompleteIndex = findIncompletePartIndex(document.tracks);
-  if (firstIncompleteIndex != null) return firstIncompleteIndex;
-
-  return 0;
-}
-
-function resolveRestoredScreen(
-  preferredScreen: AppScreen,
-  document: HumDocument,
-): AppScreen {
-  if (preferredScreen === "review" && hasAnyTake(document)) {
-    return "review";
-  }
-  return preferredScreen;
-}
-
-function hasAnyTake(document: HumDocument): boolean {
-  return Object.keys(document.tracks.recordingsById).length > 0;
 }

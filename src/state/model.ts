@@ -30,10 +30,6 @@ import {
   type TracksEditorState,
 } from "./tracksModel";
 import { DraftSessionController } from "./draftSessionController";
-import {
-  acquireConfiguredMediaStream,
-  getStreamAudioDeviceId,
-} from "../recording/mediaStream";
 
 type WaveformPeaks = number[];
 
@@ -160,20 +156,17 @@ class AppModel {
   private readonly draftSession = new DraftSessionController({
     getSnapshot: () => ({
       document: this.getHumDocument(),
-      currentPartIndex: this.currentPartIndex.get(),
-      appScreen: this.appScreen.get(),
     }),
     applyRestoredDraft: (input) => {
       this.arrangementDocument.set(input.document.arrangement);
       this.tracksDocument.replaceDocument(input.document.tracks);
       this.exportPreferences.set(input.document.exportPreferences);
-      this.currentPartIndex.set(input.currentPartIndex);
       this.returnToReviewAfterRecording.set(false);
       this.hasRestoredDraft.set(true);
       for (const mediaAsset of input.mediaAssets) {
         this.registerMediaAsset(mediaAsset.mediaAssetId, mediaAsset.blob);
       }
-      this.appScreen.set(input.appScreen);
+      this.applyRestoredSessionState(input.document);
     },
     onBootstrapped: () => {
       this.bootstrapped.set(true);
@@ -267,13 +260,6 @@ class AppModel {
     this.tracksDocument.document.onAfterChange(() => {
       this.draftSession.handleStateChanged();
     });
-    this.currentPartIndex.onAfterChange(() => {
-      this.draftSession.handleStateChanged();
-    });
-    this.appScreen.onAfterChange(() => {
-      this.draftSession.handleStateChanged();
-    });
-
     if (typeof window !== "undefined" && "AudioContext" in window) {
       this.audioContext.set(new AudioContext());
     }
@@ -763,44 +749,17 @@ class AppModel {
   private async restoreDraftOnBoot(): Promise<void> {
     const restored = await this.draftSession.restoreOnBoot();
     if (restored == null) return;
-
-    if (restored.appScreen === "recording" || restored.appScreen === "calibration") {
-      try {
-        const stream = await this.acquireMediaStream(null);
-        if (stream != null) {
-          this.mediaStream.set(stream);
-          this.setSelectedMicId(getStreamAudioDeviceId(stream));
-          this.clearCalibration();
-          this.appScreen.set("calibration");
-        } else {
-          this.appScreen.set("setup");
-        }
-      } catch (error) {
-        console.error("Failed to restore media permissions", error);
-        this.appScreen.set("setup");
-      }
-    }
   }
 
-  private async acquireMediaStream(
-    audioDeviceId: string | null,
-  ): Promise<MediaStream | null> {
-    if (typeof navigator === "undefined" || navigator.mediaDevices == null) {
-      return null;
-    }
-
-    const existing = this.mediaStream.get();
-    if (existing != null) {
-      for (const track of existing.getTracks()) {
-        track.stop();
-      }
-    }
-
-    return await acquireConfiguredMediaStream({
-      audioDeviceId,
-      includeVideo: true,
-    });
+  private applyRestoredSessionState(document: HumDocument): void {
+    const nextPartIndex = findIncompletePartIndex(document.tracks) ?? 0;
+    this.currentPartIndex.set(nextPartIndex);
+    this.appScreen.set(hasAnyTake(document) ? "review" : "setup");
   }
+}
+
+function hasAnyTake(document: HumDocument): boolean {
+  return Object.keys(document.tracks.recordingsById).length > 0;
 }
 
 export function Model(): AppModel {

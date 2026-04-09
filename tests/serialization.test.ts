@@ -34,8 +34,6 @@ function makeDraftSnapshot(
         preferredFormat: null,
       },
     },
-    currentPartIndex: 0,
-    appScreen: "setup",
   };
 }
 

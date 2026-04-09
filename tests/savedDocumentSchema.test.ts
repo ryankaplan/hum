@@ -89,6 +89,20 @@ describe("parseSavedHumDocument", () => {
     expect(parsed).toBeNull();
   });
 
+  it("accepts nullable custom harmony payloads", () => {
+    const parsed = parseSavedHumDocument({
+      ...makeSavedHumDocument("lower two thirds"),
+      arrangement: {
+        ...makeSavedHumDocument("lower two thirds").arrangement,
+        customHarmony: {
+          lines: [[48, null, 55]],
+        },
+      },
+    });
+
+    expect(parsed?.arrangement.customHarmony?.lines).toEqual([[48, null, 55]]);
+  });
+
   it("accepts a missing selected mic id for older drafts", () => {
     const raw = makeSavedHumDocument("lower two thirds");
     delete raw.selectedMicId;

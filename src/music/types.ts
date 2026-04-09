@@ -43,7 +43,15 @@ export type MidiNote = number;
 
 // The note a single voice sings for each chord in the progression.
 // One entry per chord, same length as the Chord[] array.
-export type HarmonyLine = MidiNote[];
+// Null means that voice rests for that chord.
+export type HarmonyLine = Array<MidiNote | null>;
+
+export function getHarmonyLineNote(
+  line: HarmonyLine | null | undefined,
+  chordIndex: number,
+): MidiNote | null {
+  return line?.[chordIndex] ?? null;
+}
 
 export type VocalRange = {
   low: MidiNote;

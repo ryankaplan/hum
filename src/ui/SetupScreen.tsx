@@ -7,6 +7,7 @@ import { useObservable } from "../observable";
 import { acquirePermissionsAndStart } from "../recording/permissions";
 import { resolveHarmonyVoicingForGenerator } from "../state/arrangementModel";
 import type {
+  HarmonyLine,
   HarmonyRangeCoverage,
   SelectedHarmonyGenerator,
 } from "../music/types";
@@ -30,7 +31,9 @@ export function SetupScreen() {
   const [previewingMode, setPreviewingMode] = useState<PreviewMode>(null);
   const [starting, setStarting] = useState(false);
   const [isCustomizingHarmony, setIsCustomizingHarmony] = useState(false);
-  const [customHarmonyDraft, setCustomHarmonyDraft] = useState<number[][]>([]);
+  const [customHarmonyDraft, setCustomHarmonyDraft] = useState<HarmonyLine[]>(
+    [],
+  );
   const [tempoInputValue, setTempoInputValue] = useState(
     String(arrangement.input.tempo),
   );
@@ -113,11 +116,11 @@ export function SetupScreen() {
       arrangement.selectedHarmonyVoicing?.lines;
     if (baseLines == null) return;
     handleStopPreview();
-    setCustomHarmonyDraft(baseLines.map((line: number[]) => [...line]));
+    setCustomHarmonyDraft(baseLines.map((line: HarmonyLine) => [...line]));
     setIsCustomizingHarmony(true);
   }
 
-  function handleSaveCustomHarmony(lines: number[][]) {
+  function handleSaveCustomHarmony(lines: HarmonyLine[]) {
     handleStopPreview();
     model.setArrangementInput({
       customHarmony: {

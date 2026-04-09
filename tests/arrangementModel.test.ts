@@ -78,4 +78,24 @@ describe("computeArrangementInfo", () => {
       "R 5 b7",
     );
   });
+
+  it("keeps nullable custom harmony slots and ignores rests in annotations", () => {
+    const info = computeArrangementInfo(
+      makeArrangementDocState("A E", {
+        customHarmony: {
+          lines: [
+            [45, null],
+            [52, 52],
+            [57, 59],
+          ],
+        },
+      }),
+    );
+
+    expect(info.hasCustomHarmony).toBe(true);
+    expect(info.effectiveHarmonyVoicing?.lines[0]).toEqual([45, null]);
+    expect(info.effectiveHarmonyVoicing?.annotations[1]?.chordTones).toBe(
+      "R 5",
+    );
+  });
 });

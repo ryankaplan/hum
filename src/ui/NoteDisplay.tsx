@@ -1,6 +1,6 @@
 import { Box, Text } from "@chakra-ui/react";
 import { useEffect, useRef, useState } from "react";
-import { midiToNoteName } from "../music/types";
+import { getHarmonyLineNote, midiToNoteName } from "../music/types";
 import type { Chord, HarmonyLine, MidiNote } from "../music/types";
 import { playNotePreview } from "../music/playback";
 import { dsColors, dsPanel } from "./designSystem";
@@ -88,7 +88,7 @@ export function NoteDisplay({
     );
   }
 
-  function handleNoteClick(midi: MidiNote | undefined) {
+  function handleNoteClick(midi: MidiNote | null) {
     if (midi == null) return;
     playNotePreview(ctx, midi);
   }
@@ -98,7 +98,7 @@ export function NoteDisplay({
   for (let i = 0; i < chords.length; i++) {
     const chord = chords[i];
     const beats = chord?.beats ?? 0;
-    const midi = harmonyLine[i];
+    const midi = getHarmonyLineNote(harmonyLine, i);
     if (chord != null && midi != null) {
       segments.push({
         chordIndex: i,

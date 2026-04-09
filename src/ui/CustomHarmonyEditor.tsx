@@ -1,5 +1,13 @@
 import { Box, Button, Flex, Heading, Stack, Text } from "@chakra-ui/react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  type ChangeEvent as ReactChangeEvent,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import {
   describeHarmonyNotesForChord,
   labelHarmonyNoteForChord,
@@ -13,6 +21,7 @@ import {
 import type { PlaybackSession } from "../music/playback";
 import { formatChordSymbol } from "../music/parse";
 import {
+  getHarmonyLineNote,
   getPartLabel,
   midiToNoteName,
   noteNameToMidi,
@@ -59,12 +68,22 @@ type NoteCluster = {
   }>;
 };
 
+type RestCluster = {
+  chordIndex: number;
+  members: Array<{
+    voiceIndex: number;
+    color: string;
+    label: string;
+  }>;
+};
+
 const CHORD_HEADER_HEIGHT_PX = 64;
 const NOTE_ROW_HEIGHT_PX = 26;
 const LYRIC_LANE_HEIGHT_PX = 40;
+const REST_ROW_HEIGHT_PX = 34;
 const NOTE_NAME_COL_WIDTH_PX = 84;
 const NOTE_GRID_PAD_X_PX = 8;
-const CHORD_WIDTH_PER_BEAT_PX = 64;
+const DEFAULT_BEAT_WIDTH_PX = 64;
 const NOTE_PILL_HEIGHT_PX = 18;
 const PITCH_PADDING = 1;
 const VOICE_COLORS = ["#4d44e3", "#1f9d79", "#d06a32"] as const;
@@ -87,10 +106,21 @@ export function CustomHarmonyEditor({
   const [previewing, setPreviewing] = useState(false);
   const previewSessionRef = useRef<PlaybackSession | null>(null);
   const scrollViewportRef = useRef<HTMLDivElement | null>(null);
+  const beatsPerBar = Math.max(1, arrangement.input.meter[0]);
+  const defaultMeasureWidthPx = beatsPerBar * DEFAULT_BEAT_WIDTH_PX;
+  const minMeasureWidthPx = beatsPerBar * 40;
+  const maxMeasureWidthPx = beatsPerBar * 96;
+  const measureWidthStepPx = beatsPerBar * 4;
+  const [measureWidthPx, setMeasureWidthPx] = useState(defaultMeasureWidthPx);
+  const beatWidthPx = measureWidthPx / beatsPerBar;
 
   useEffect(() => {
     setLocalLines(draftLines.map((line) => [...line]));
   }, [draftLines]);
+
+  useEffect(() => {
+    setMeasureWidthPx(defaultMeasureWidthPx);
+  }, [defaultMeasureWidthPx]);
 
   useEffect(() => {
     return () => {
@@ -104,7 +134,11 @@ export function CustomHarmonyEditor({
     setSelection((current: Selection | null) => {
       if (current == null) return getDefaultSelection(localLines);
       const line = localLines[current.voiceIndex];
-      if (line == null || line[current.chordIndex] == null) {
+      if (
+        line == null ||
+        current.chordIndex < 0 ||
+        current.chordIndex >= line.length
+      ) {
         return getDefaultSelection(localLines);
       }
       return current;
@@ -162,7 +196,7 @@ export function CustomHarmonyEditor({
   const selectedMidi =
     selection == null
       ? null
-      : (localLines[selection.voiceIndex]?.[selection.chordIndex] ?? null);
+      : getHarmonyLineNote(localLines[selection.voiceIndex], selection.chordIndex);
   const selectedChord =
     selection == null
       ? null
@@ -170,12 +204,16 @@ export function CustomHarmonyEditor({
   const selectedChordSummary =
     selection == null ? null : (chordSummaries[selection.chordIndex] ?? null);
   const selectedCandidates =
-    selection == null || selectedMidi == null
+    selection == null
       ? new Set<number>()
       : new Set(getEditableMidis(selectedMidi, range.low, range.high));
 
   const noteClusters = useMemo(
     () => groupNoteClusters(localLines, arrangement.parsedChords.length),
+    [localLines, arrangement.parsedChords.length],
+  );
+  const restClusters = useMemo(
+    () => groupRestClusters(localLines, arrangement.parsedChords.length),
     [localLines, arrangement.parsedChords.length],
   );
 
@@ -186,17 +224,22 @@ export function CustomHarmonyEditor({
   );
   const gridWidthPx = Math.max(
     320,
-    Math.ceil(totalBeats * CHORD_WIDTH_PER_BEAT_PX + NOTE_GRID_PAD_X_PX * 2),
+    Math.ceil(totalBeats * beatWidthPx + NOTE_GRID_PAD_X_PX * 2),
   );
   const noteAreaHeightPx = pitchRows.length * NOTE_ROW_HEIGHT_PX;
   const totalHeightPx =
     CHORD_HEADER_HEIGHT_PX + noteAreaHeightPx + LYRIC_LANE_HEIGHT_PX;
+  const scrollContentHeightPx = totalHeightPx + REST_ROW_HEIGHT_PX;
 
   useLayoutEffect(() => {
     const el = scrollViewportRef.current;
     if (el == null) return;
     el.scrollTop = 0;
   }, [highMidi, lowMidi, arrangement.parsedChords.length]);
+
+  function focusViewport() {
+    scrollViewportRef.current?.focus();
+  }
 
   function handleMoveSelectedNote(nextMidi: MidiNote) {
     if (selection == null) return;
@@ -211,6 +254,49 @@ export function CustomHarmonyEditor({
       playNotePreview(ctx, nextMidi, 0.8);
     }
     setLocalLines(nextLines);
+    focusViewport();
+  }
+
+  function handleRestSelectedNote() {
+    if (selection == null) return;
+    const nextLines = localLines.map((line: HarmonyLine) => [...line]);
+    nextLines[selection.voiceIndex]![selection.chordIndex] = null;
+    setSelection({
+      chordIndex: selection.chordIndex,
+      voiceIndex: selection.voiceIndex,
+    });
+    setLocalLines(nextLines);
+    focusViewport();
+  }
+
+  function handleViewportKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (
+      event.metaKey ||
+      event.ctrlKey ||
+      event.altKey ||
+      event.shiftKey ||
+      selection == null
+    ) {
+      return;
+    }
+
+    const direction =
+      event.key === "ArrowUp" ? 1 : event.key === "ArrowDown" ? -1 : 0;
+    if (direction === 0) return;
+
+    const nextMidi = getNextMidiForArrowMove(
+      selectedMidi,
+      direction,
+      range.low,
+      range.high,
+    );
+    if (nextMidi == null || nextMidi === selectedMidi) {
+      event.preventDefault();
+      return;
+    }
+
+    event.preventDefault();
+    handleMoveSelectedNote(nextMidi);
   }
 
   async function handlePreview() {
@@ -274,24 +360,57 @@ export function CustomHarmonyEditor({
                 Customize harmony
               </Heading>
               <Text color={dsColors.textMuted} fontSize="sm" mt={1}>
-                Select a colored note, then click any pitch row to move it. Degree labels update against the chord as you edit.
+                Select a colored note, then click any pitch row to move it. Use the Rest footer to make the selected part stay silent for a chord.
               </Text>
             </Box>
-            <Flex gap={2} flexWrap="wrap">
-              <Button {...dsOutlineButton} onClick={handlePreview}>
-                {previewing ? "Stop" : "Play"}
-              </Button>
-              <Button {...dsOutlineButton} onClick={onCancel}>
-                Cancel
-              </Button>
-              <Button
-                {...dsPrimaryButton}
-                onClick={() =>
-                  onSave(localLines.map((line: HarmonyLine) => [...line]))
-                }
-              >
-                Save custom harmony
-              </Button>
+            <Flex gap={3} align={{ base: "stretch", md: "center" }} flexWrap="wrap" justify="flex-end">
+              <Box minW={{ base: "100%", sm: "240px" }}>
+                <Text color={dsColors.textMuted} fontSize="xs" fontWeight="semibold" mb={1}>
+                  MEASURE WIDTH
+                </Text>
+                <Flex align="center" gap={3}>
+                  <input
+                    type="range"
+                    min={minMeasureWidthPx}
+                    max={maxMeasureWidthPx}
+                    step={measureWidthStepPx}
+                    value={measureWidthPx}
+                    onChange={(event: ReactChangeEvent<HTMLInputElement>) =>
+                      setMeasureWidthPx(Number(event.target.value))
+                    }
+                    style={{
+                      flex: 1,
+                      accentColor: "var(--app-accent)",
+                      cursor: "pointer",
+                    }}
+                  />
+                  <Text
+                    color={dsColors.textMuted}
+                    fontSize="xs"
+                    fontWeight="semibold"
+                    minW="52px"
+                    textAlign="right"
+                  >
+                    {Math.round(measureWidthPx)} px
+                  </Text>
+                </Flex>
+              </Box>
+              <Flex gap={2} flexWrap="wrap">
+                <Button {...dsOutlineButton} onClick={handlePreview}>
+                  {previewing ? "Stop" : "Play"}
+                </Button>
+                <Button {...dsOutlineButton} onClick={onCancel}>
+                  Cancel
+                </Button>
+                <Button
+                  {...dsPrimaryButton}
+                  onClick={() =>
+                    onSave(localLines.map((line: HarmonyLine) => [...line]))
+                  }
+                >
+                  Save custom harmony
+                </Button>
+              </Flex>
             </Flex>
           </Flex>
 
@@ -326,7 +445,7 @@ export function CustomHarmonyEditor({
                   </Text>
                   <Text color={dsColors.text} fontSize="sm" fontWeight="semibold">
                     {getPartLabel(selection.voiceIndex, harmonyPartCount + 1)}:{" "}
-                    {selectedMidi != null ? midiToNoteName(selectedMidi) : "—"}
+                    {selectedMidi != null ? midiToNoteName(selectedMidi) : "Rest"}
                     {selectedMidi != null && selectedChord != null
                       ? ` • ${labelHarmonyNoteForChord(selectedChord, selectedMidi)}`
                       : ""}
@@ -352,12 +471,14 @@ export function CustomHarmonyEditor({
               ref={scrollViewportRef}
               overflow="auto"
               maxH="calc(100dvh - 20rem)"
+              tabIndex={0}
+              onKeyDownCapture={handleViewportKeyDown}
             >
               <Flex
                 align="stretch"
                 w={`${NOTE_NAME_COL_WIDTH_PX + gridWidthPx}px`}
                 minW="100%"
-                h={`${totalHeightPx}px`}
+                h={`${scrollContentHeightPx}px`}
               >
               <Box
                 position="sticky"
@@ -403,6 +524,22 @@ export function CustomHarmonyEditor({
                     Lyrics
                   </Text>
                 </Flex>
+                <Flex
+                  position="sticky"
+                  bottom={0}
+                  zIndex={3}
+                  h={`${REST_ROW_HEIGHT_PX}px`}
+                  px={3}
+                  align="center"
+                  justify="flex-end"
+                  borderTop="1px solid"
+                  borderColor={dsColors.border}
+                  bg={dsColors.surfaceRaised}
+                >
+                  <Text color={dsColors.textMuted} fontSize="xs" fontWeight="semibold">
+                    Rest
+                  </Text>
+                </Flex>
               </Box>
 
               <Box
@@ -411,8 +548,8 @@ export function CustomHarmonyEditor({
               >
                 <Box position="relative" w={`${gridWidthPx}px`} h={`${totalHeightPx}px`}>
                   {arrangement.parsedChords.map((chord, chordIndex) => {
-                    const x = NOTE_GRID_PAD_X_PX + chordStarts[chordIndex]! * CHORD_WIDTH_PER_BEAT_PX;
-                    const width = Math.max(44, chord.beats * CHORD_WIDTH_PER_BEAT_PX);
+                    const x = NOTE_GRID_PAD_X_PX + chordStarts[chordIndex]! * beatWidthPx;
+                    const width = Math.max(44, chord.beats * beatWidthPx);
                     const isSelectedChord = selection?.chordIndex === chordIndex;
                     const previewItem = chordPreviewItems[chordIndex];
 
@@ -484,15 +621,15 @@ export function CustomHarmonyEditor({
                       position="absolute"
                       top={0}
                       bottom={0}
-                      left={`${NOTE_GRID_PAD_X_PX + beat * CHORD_WIDTH_PER_BEAT_PX}px`}
+                      left={`${NOTE_GRID_PAD_X_PX + beat * beatWidthPx}px`}
                       w="1px"
                       bg="color-mix(in srgb, var(--app-border-muted) 16%, transparent)"
                     />
                   ))}
 
                   {arrangement.parsedChords.map((chord, chordIndex) => {
-                    const x = NOTE_GRID_PAD_X_PX + chordStarts[chordIndex]! * CHORD_WIDTH_PER_BEAT_PX;
-                    const width = Math.max(44, chord.beats * CHORD_WIDTH_PER_BEAT_PX);
+                    const x = NOTE_GRID_PAD_X_PX + chordStarts[chordIndex]! * beatWidthPx;
+                    const width = Math.max(44, chord.beats * beatWidthPx);
                     return pitchRows.map((midi, rowIndex) => {
                       const y = CHORD_HEADER_HEIGHT_PX + rowIndex * NOTE_ROW_HEIGHT_PX;
                       const isCandidate =
@@ -550,9 +687,9 @@ export function CustomHarmonyEditor({
                     if (chord == null) return null;
                     const x =
                       NOTE_GRID_PAD_X_PX +
-                      chordStarts[cluster.chordIndex]! * CHORD_WIDTH_PER_BEAT_PX +
+                      chordStarts[cluster.chordIndex]! * beatWidthPx +
                       6;
-                    const width = Math.max(30, chord.beats * CHORD_WIDTH_PER_BEAT_PX - 12);
+                    const width = Math.max(30, chord.beats * beatWidthPx - 12);
                     const rowIndex = highMidi - cluster.midi;
                     const baseY =
                       CHORD_HEADER_HEIGHT_PX +
@@ -612,6 +749,7 @@ export function CustomHarmonyEditor({
                                   chordIndex: cluster.chordIndex,
                                   voiceIndex: member.voiceIndex,
                                 });
+                                focusViewport();
                                 if (ctx != null) {
                                   playNotePreview(ctx, cluster.midi, 0.8);
                                 }
@@ -634,8 +772,8 @@ export function CustomHarmonyEditor({
                   {arrangement.parsedChords.map((chord, chordIndex) => {
                     const previewItem = chordPreviewItems[chordIndex];
                     const lyric = previewItem?.lyrics?.trim() ?? "";
-                    const x = NOTE_GRID_PAD_X_PX + chordStarts[chordIndex]! * CHORD_WIDTH_PER_BEAT_PX;
-                    const width = Math.max(44, chord.beats * CHORD_WIDTH_PER_BEAT_PX);
+                    const x = NOTE_GRID_PAD_X_PX + chordStarts[chordIndex]! * beatWidthPx;
+                    const width = Math.max(44, chord.beats * beatWidthPx);
                     const y = CHORD_HEADER_HEIGHT_PX + noteAreaHeightPx;
                     return (
                       <Box
@@ -659,20 +797,172 @@ export function CustomHarmonyEditor({
                           {lyric || " "}
                         </Text>
                       </Box>
-                    );
+                      );
                   })}
                 </Box>
+
+                <RestFooter
+                  chords={arrangement.parsedChords}
+                  chordStarts={chordStarts}
+                  beatWidthPx={beatWidthPx}
+                  gridWidthPx={gridWidthPx}
+                  restClusters={restClusters}
+                  selection={selection}
+                  onRestSelectedChord={handleRestSelectedNote}
+                  onSelectRest={(voiceIndex, chordIndex) => {
+                    setSelection({ voiceIndex, chordIndex });
+                    focusViewport();
+                  }}
+                />
               </Box>
               </Flex>
             </Box>
           </Box>
-
-          <Text color={dsColors.textSubtle} fontSize="xs">
-            Every pitch inside the vocal range is editable. Chord columns keep their current duration, and duplicate notes across voices are supported.
-          </Text>
         </Stack>
       </Box>
     </Flex>
+  );
+}
+
+type RestFooterProps = {
+  chords: Chord[];
+  chordStarts: number[];
+  beatWidthPx: number;
+  gridWidthPx: number;
+  restClusters: RestCluster[];
+  selection: Selection | null;
+  onRestSelectedChord: () => void;
+  onSelectRest: (voiceIndex: number, chordIndex: number) => void;
+};
+
+function RestFooter({
+  chords,
+  chordStarts,
+  beatWidthPx,
+  gridWidthPx,
+  restClusters,
+  selection,
+  onRestSelectedChord,
+  onSelectRest,
+}: RestFooterProps) {
+  return (
+    <Box
+      position="sticky"
+      bottom={0}
+      zIndex={1}
+      w={`${gridWidthPx}px`}
+      h={`${REST_ROW_HEIGHT_PX}px`}
+      borderTop="1px solid"
+      borderColor={dsColors.border}
+      bg={dsColors.surfaceRaised}
+    >
+      <Box position="relative" w={`${gridWidthPx}px`} h={`${REST_ROW_HEIGHT_PX}px`}>
+        {chords.map((chord, chordIndex) => {
+          const x =
+            NOTE_GRID_PAD_X_PX +
+            chordStarts[chordIndex]! * beatWidthPx;
+          const width = Math.max(44, chord.beats * beatWidthPx);
+          const isSelectedChord = selection?.chordIndex === chordIndex;
+
+          return (
+            <Box
+              key={`rest-cell-${chordIndex}`}
+              as="button"
+              position="absolute"
+              top={0}
+              left={`${x}px`}
+              w={`${width}px`}
+              h={`${REST_ROW_HEIGHT_PX}px`}
+              px={2}
+              borderRight="1px solid"
+              borderColor="color-mix(in srgb, var(--app-border-muted) 20%, transparent)"
+              bg={
+                isSelectedChord
+                  ? "color-mix(in srgb, var(--app-accent) 14%, var(--app-surface-raised) 86%)"
+                  : dsColors.surfaceSubtle
+              }
+              onClick={() => {
+                if (isSelectedChord) {
+                  onRestSelectedChord();
+                }
+              }}
+              cursor={isSelectedChord ? "pointer" : "default"}
+              pointerEvents={isSelectedChord ? "auto" : "none"}
+              style={{ borderBottom: "none", borderLeft: "none", borderTop: "none" }}
+            />
+          );
+        })}
+
+        {restClusters.map((cluster: RestCluster) => {
+          const chord = chords[cluster.chordIndex];
+          if (chord == null) return null;
+          const x =
+            NOTE_GRID_PAD_X_PX +
+            chordStarts[cluster.chordIndex]! * beatWidthPx +
+            6;
+          const width = Math.max(30, chord.beats * beatWidthPx - 12);
+
+          return (
+            <Box
+              key={`rest-cluster-${cluster.chordIndex}`}
+              position="absolute"
+              left={`${x}px`}
+              top="6px"
+              w={`${width}px`}
+              h={`${NOTE_PILL_HEIGHT_PX + Math.max(0, cluster.members.length - 1) * 7}px`}
+              pointerEvents="none"
+            >
+              {cluster.members.map((member, memberIndex) => {
+                const isSelected =
+                  selection?.voiceIndex === member.voiceIndex &&
+                  selection?.chordIndex === cluster.chordIndex;
+
+                return (
+                  <Box
+                    as="button"
+                    key={`rest-${cluster.chordIndex}-${member.voiceIndex}`}
+                    position="absolute"
+                    left={`${memberIndex * 6}px`}
+                    top={`${memberIndex * 7}px`}
+                    minW={`${Math.max(32, width - memberIndex * 6)}px`}
+                    h={`${NOTE_PILL_HEIGHT_PX}px`}
+                    px={2}
+                    borderRadius="md"
+                    bg="color-mix(in srgb, var(--app-surface-raised) 78%, white 22%)"
+                    border="1px dashed"
+                    borderColor={isSelected ? dsColors.accent : dsColors.border}
+                    color={isSelected ? dsColors.accent : dsColors.textMuted}
+                    fontSize="11px"
+                    fontWeight="bold"
+                    display="flex"
+                    alignItems="center"
+                    justifyContent="space-between"
+                    gap={2}
+                    cursor="pointer"
+                    pointerEvents="auto"
+                    boxShadow={
+                      isSelected
+                        ? "0 0 0 2px color-mix(in srgb, var(--app-accent) 24%, transparent)"
+                        : "0 1px 2px rgba(0, 0, 0, 0.08)"
+                    }
+                    onClick={() => {
+                      onSelectRest(member.voiceIndex, cluster.chordIndex);
+                    }}
+                  >
+                    <Text fontSize="10px" fontWeight="bold">
+                      {member.label}
+                    </Text>
+                    <Text fontSize="10px" fontWeight="bold">
+                      Rest
+                    </Text>
+                  </Box>
+                );
+              })}
+            </Box>
+          );
+        })}
+      </Box>
+    </Box>
   );
 }
 
@@ -685,6 +975,10 @@ function getDefaultSelection(lines: HarmonyLine[]): Selection | null {
         return { voiceIndex, chordIndex };
       }
     }
+  }
+  const chordCount = lines[0]?.length ?? 0;
+  if (lines.length > 0 && chordCount > 0) {
+    return { voiceIndex: 0, chordIndex: 0 };
   }
   return null;
 }
@@ -708,7 +1002,7 @@ function getChordStartBeats(chords: Chord[]): number[] {
 }
 
 function getEditableMidis(
-  currentMidi: MidiNote,
+  currentMidi: MidiNote | null,
   rangeLow: number,
   rangeHigh: number,
 ): MidiNote[] {
@@ -716,10 +1010,31 @@ function getEditableMidis(
   for (let midi = rangeLow; midi <= rangeHigh; midi++) {
     candidates.push(midi);
   }
-  if (currentMidi < rangeLow || currentMidi > rangeHigh) {
+  if (currentMidi != null && (currentMidi < rangeLow || currentMidi > rangeHigh)) {
     candidates.push(currentMidi);
   }
   return candidates;
+}
+
+export function getNextMidiForArrowMove(
+  currentMidi: MidiNote | null,
+  direction: -1 | 1,
+  rangeLow: number,
+  rangeHigh: number,
+): MidiNote | null {
+  if (currentMidi == null) return null;
+  if (currentMidi < rangeLow) {
+    return direction > 0 ? rangeLow : null;
+  }
+  if (currentMidi > rangeHigh) {
+    return direction < 0 ? rangeHigh : null;
+  }
+
+  const nextMidi = currentMidi + direction;
+  if (nextMidi < rangeLow || nextMidi > rangeHigh) {
+    return null;
+  }
+  return nextMidi;
 }
 
 function groupNoteClusters(
@@ -731,7 +1046,7 @@ function groupNoteClusters(
   for (let chordIndex = 0; chordIndex < chordCount; chordIndex++) {
     const byMidi = new Map<number, NoteCluster>();
     for (let voiceIndex = 0; voiceIndex < lines.length; voiceIndex++) {
-      const midi = lines[voiceIndex]?.[chordIndex];
+      const midi = getHarmonyLineNote(lines[voiceIndex], chordIndex);
       if (midi == null) continue;
       const existing = byMidi.get(midi);
       const member = {
@@ -751,6 +1066,30 @@ function groupNoteClusters(
       }
     }
     clusters.push(...byMidi.values());
+  }
+
+  return clusters;
+}
+
+function groupRestClusters(
+  lines: HarmonyLine[],
+  chordCount: number,
+): RestCluster[] {
+  const clusters: RestCluster[] = [];
+
+  for (let chordIndex = 0; chordIndex < chordCount; chordIndex++) {
+    const members: RestCluster["members"] = [];
+    for (let voiceIndex = 0; voiceIndex < lines.length; voiceIndex++) {
+      if (getHarmonyLineNote(lines[voiceIndex], chordIndex) != null) continue;
+      members.push({
+        voiceIndex,
+        color: VOICE_COLORS[voiceIndex] ?? "#4d44e3",
+        label: shortVoiceLabel(voiceIndex, lines.length + 1),
+      });
+    }
+    if (members.length > 0) {
+      clusters.push({ chordIndex, members });
+    }
   }
 
   return clusters;
@@ -799,7 +1138,7 @@ function getChordNotesAtIndex(
 ): MidiNote[] {
   const notes: MidiNote[] = [];
   for (let voiceIndex = 0; voiceIndex < lines.length; voiceIndex++) {
-    const midi = lines[voiceIndex]?.[chordIndex];
+    const midi = getHarmonyLineNote(lines[voiceIndex], chordIndex);
     if (midi != null) {
       notes.push(midi);
     }

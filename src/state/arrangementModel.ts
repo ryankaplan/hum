@@ -5,7 +5,7 @@ import {
 import { describeHarmonyNotesForChord } from "../music/harmonyShared";
 import { parseChordText } from "../music/parse";
 import { progressionDurationSec } from "../music/playback";
-import { noteNameToMidi } from "../music/types";
+import { getHarmonyLineNote, noteNameToMidi } from "../music/types";
 import type {
   Chord,
   HarmonyLine,
@@ -200,13 +200,19 @@ function parseCustomHarmonyOverride(raw: unknown): CustomHarmonyOverride | null 
 
 function parseHarmonyLine(raw: unknown): HarmonyLine | null {
   if (!Array.isArray(raw)) return null;
-  const line = raw
-    .map((entry) =>
-      typeof entry === "number" && Number.isFinite(entry) ? entry : null,
-    )
-    .filter((entry): entry is number => entry != null);
-
-  return line.length === raw.length ? line : null;
+  const line: HarmonyLine = [];
+  for (const entry of raw) {
+    if (entry === null) {
+      line.push(null);
+      continue;
+    }
+    if (typeof entry === "number" && Number.isFinite(entry)) {
+      line.push(entry);
+      continue;
+    }
+    return null;
+  }
+  return line;
 }
 
 export function flattenArrangementLyrics(
@@ -502,11 +508,7 @@ export function computeArrangementInfo(
         parsedArrangement.parsedChords.length,
       );
       if (selectedVoicing != null && customHarmony != null) {
-        const customHarmonyTop = customHarmony.lines.reduce(
-          (top, line) =>
-            line.reduce((lineTop, midi) => Math.max(lineTop, midi), top),
-          Number.NEGATIVE_INFINITY,
-        );
+        const customHarmonyTop = getHighestMidi(customHarmony.lines);
         const customAnnotations = selectedVoicing.annotations.map(
           (annotation, chordIndex) => {
             const chord = parsedArrangement.parsedChords[chordIndex];
@@ -590,10 +592,21 @@ function getChordNotesAtIndex(
 ): number[] {
   const notes: number[] = [];
   for (let voiceIndex = 0; voiceIndex < lines.length; voiceIndex++) {
-    const midi = lines[voiceIndex]?.[chordIndex];
+    const midi = getHarmonyLineNote(lines[voiceIndex], chordIndex);
     if (midi != null) {
       notes.push(midi);
     }
   }
   return notes;
+}
+
+function getHighestMidi(lines: HarmonyLine[]): number {
+  let top = Number.NEGATIVE_INFINITY;
+  for (const line of lines) {
+    for (const midi of line) {
+      if (midi == null) continue;
+      top = Math.max(top, midi);
+    }
+  }
+  return top;
 }

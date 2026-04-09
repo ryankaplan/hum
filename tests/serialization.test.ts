@@ -19,6 +19,9 @@ function makeDraftSnapshot(
         harmonyRangeCoverage: "lower two thirds",
         selectedHarmonyGenerator,
         totalParts: 4,
+        customHarmony: {
+          lines: [[48, null], [52, 53], [55, 57]],
+        },
       },
       tracks: {
         trackOrder: [],
@@ -65,5 +68,16 @@ describe("serializeHumDocument / deserializeHumDocument", () => {
     const restored = deserializeHumDocument(serialized);
 
     expect(restored.selectedMicId).toBe("mic-1");
+  });
+
+  it("round-trips nullable custom harmony slots", () => {
+    const serialized = serializeHumDocument(makeDraftSnapshot("dynamic"));
+    const restored = deserializeHumDocument(serialized);
+
+    expect(restored.document.arrangement.customHarmony?.lines).toEqual([
+      [48, null],
+      [52, 53],
+      [55, 57],
+    ]);
   });
 });

@@ -69,7 +69,7 @@ export type SavedArrangementDocument = {
   harmonyRangeCoverage: "lower two thirds" | "whole-range";
   selectedHarmonyGenerator?: "legacy" | "dynamic";
   totalParts: 2 | 4;
-  customHarmony: { lines: number[][] } | null;
+  customHarmony: { lines: Array<Array<number | null>> } | null;
 };
 
 export type SavedVolumePoint = {
@@ -212,7 +212,9 @@ function parseSavedArrangementDocument(
   };
 }
 
-function parseSavedCustomHarmony(raw: unknown): { lines: number[][] } | null {
+function parseSavedCustomHarmony(
+  raw: unknown,
+): { lines: Array<Array<number | null>> } | null {
   if (raw == null) return null;
   if (
     !isRecord(raw) ||
@@ -220,13 +222,13 @@ function parseSavedCustomHarmony(raw: unknown): { lines: number[][] } | null {
     raw.lines.some(
       (line) =>
         !Array.isArray(line) ||
-        line.some((entry) => isFiniteNumber(entry) === false),
+        line.some((entry) => entry !== null && isFiniteNumber(entry) === false),
     )
   ) {
     return null;
   }
   return {
-    lines: raw.lines.map((line) => [...line]),
+    lines: raw.lines.map((line) => [...line]) as Array<Array<number | null>>,
   };
 }
 

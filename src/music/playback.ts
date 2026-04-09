@@ -1,4 +1,4 @@
-import type { Chord, HarmonyLine, MidiNote } from "./types";
+import { getHarmonyLineNote, type Chord, type HarmonyLine, type MidiNote } from "./types";
 import { totalBeats } from "./parse";
 import type { MonitorPlayer } from "../audio/monitorPlayer";
 import {
@@ -154,7 +154,7 @@ export function startRecordingPlayback(
     let beatOffset = 0;
     for (let i = 0; i < opts.chords.length; i++) {
       const chord = opts.chords[i]!;
-      const midi: MidiNote | undefined = opts.harmonyLine[i];
+      const midi = getHarmonyLineNote(opts.harmonyLine, i);
       if (midi != null) {
         const noteStartTime = startTime + beatOffset * secPerBeat;
         const durationSec = chord.beats * secPerBeat * 0.95;
@@ -263,7 +263,7 @@ export function playHarmonyPreview(
     let beatOffset = 0;
     for (let i = 0; i < chords.length; i++) {
       const chord = chords[i]!;
-      const midi: MidiNote | undefined = line[i];
+      const midi = getHarmonyLineNote(line, i);
       if (midi != null) {
         const noteStartTime = startTime + beatOffset * secPerBeat;
         const durationSec = chord.beats * secPerBeat * 0.95;

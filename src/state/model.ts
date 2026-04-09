@@ -33,7 +33,6 @@ import { DraftSessionController } from "./draftSessionController";
 import {
   acquireConfiguredMediaStream,
   getStreamAudioDeviceId,
-  streamMatchesAudioDeviceId,
 } from "../recording/mediaStream";
 
 type WaveformPeaks = number[];
@@ -85,17 +84,14 @@ export type AppScreen = "setup" | "calibration" | "recording" | "review";
 export type KeepTakeInput = {
   trackId: TrackId;
   blob: Blob;
-  trimOffsetSec: number;
+  alignmentOffsetSec: number;
 };
 
 export type RuntimeRecordingMediaIngestInput = {
   recordingId: RecordingId;
-  trackId: TrackId;
   mediaAssetId: MediaAssetId;
-  trimOffsetSec: number;
   ctx: AudioContext;
   videoEl: HTMLVideoElement;
-  maxDurationSec: number;
   waveformBuckets?: number;
   waveformBucketsPerSec?: number;
 };
@@ -105,8 +101,7 @@ export type RecordingSourceWindow = {
   durationSec: number;
 };
 
-export type TrackRuntimeWaveform = {
-  recordingId: RecordingId;
+export type RecordingRuntimeWaveform = {
   peaks: WaveformPeaks;
   sourceWindow: RecordingSourceWindow;
 } | null;
@@ -127,6 +122,31 @@ function createEmptyExportState(): ExportState {
   };
 }
 
+type ResolvedClipTiming = {
+  timelineStartSec: number;
+  sourceStartSec: number;
+  durationSec: number;
+};
+
+function resolveCommittedClipTiming(
+  alignmentOffsetSec: number,
+  baseDurationSec: number,
+): ResolvedClipTiming {
+  const safeAlignmentOffsetSec = Number.isFinite(alignmentOffsetSec)
+    ? alignmentOffsetSec
+    : 0;
+  const safeBaseDurationSec = Math.max(0, baseDurationSec);
+  const timelineStartSec = Math.max(0, -safeAlignmentOffsetSec);
+  const sourceStartSec = Math.max(0, safeAlignmentOffsetSec);
+  const durationSec = Math.max(0, safeBaseDurationSec - timelineStartSec);
+
+  return {
+    timelineStartSec,
+    sourceStartSec,
+    durationSec,
+  };
+}
+
 class AppModel {
   private mediaBlobsByAssetId = new Map<MediaAssetId, Blob>();
   private objectUrlsByAssetId = new Map<MediaAssetId, string>();
@@ -142,9 +162,6 @@ class AppModel {
       document: this.getHumDocument(),
       currentPartIndex: this.currentPartIndex.get(),
       appScreen: this.appScreen.get(),
-      latencyCorrectionSec: this.latencyCorrectionSec.get(),
-      isCalibrated: this.isCalibrated.get(),
-      selectedMicId: this.selectedMicId.get(),
     }),
     applyRestoredDraft: (input) => {
       this.arrangementDocument.set(input.document.arrangement);
@@ -152,9 +169,6 @@ class AppModel {
       this.exportPreferences.set(input.document.exportPreferences);
       this.currentPartIndex.set(input.currentPartIndex);
       this.returnToReviewAfterRecording.set(false);
-      this.latencyCorrectionSec.set(input.latencyCorrectionSec);
-      this.isCalibrated.set(input.isCalibrated);
-      this.selectedMicId.set(input.selectedMicId);
       this.hasRestoredDraft.set(true);
       for (const mediaAsset of input.mediaAssets) {
         this.registerMediaAsset(mediaAsset.mediaAssetId, mediaAsset.blob);
@@ -259,15 +273,6 @@ class AppModel {
     this.appScreen.onAfterChange(() => {
       this.draftSession.handleStateChanged();
     });
-    this.latencyCorrectionSec.onAfterChange(() => {
-      this.draftSession.handleStateChanged();
-    });
-    this.isCalibrated.onAfterChange(() => {
-      this.draftSession.handleStateChanged();
-    });
-    this.selectedMicId.onAfterChange(() => {
-      this.draftSession.handleStateChanged();
-    });
 
     if (typeof window !== "undefined" && "AudioContext" in window) {
       this.audioContext.set(new AudioContext());
@@ -312,7 +317,7 @@ class AppModel {
   }
 
   keepRecordedTake(input: KeepTakeInput): void {
-    const { trackId, blob, trimOffsetSec } = input;
+    const { trackId, blob, alignmentOffsetSec } = input;
     const recordingId = this.makeRecordingId();
     const mediaAssetId = this.makeMediaAssetId();
 
@@ -323,15 +328,19 @@ class AppModel {
       id: recordingId,
       trackId,
       mediaAssetId,
-      trimOffsetSec,
     };
 
     const arrangement = this.derivedArrangementInfo.get();
+    const clipTiming = resolveCommittedClipTiming(
+      alignmentOffsetSec,
+      arrangement.progressionDurationSec,
+    );
     const { removedRecordings, clipId } = this.tracksDocument.stageCommittedRecording({
       trackId,
       recording,
-      sourceStartSec: Math.max(0, trimOffsetSec),
-      durationSec: Math.max(0, arrangement.progressionDurationSec),
+      timelineStartSec: clipTiming.timelineStartSec,
+      sourceStartSec: clipTiming.sourceStartSec,
+      durationSec: clipTiming.durationSec,
     });
 
     if (clipId != null) {
@@ -355,12 +364,9 @@ class AppModel {
   ): Promise<boolean> {
     const {
       recordingId,
-      trackId,
       mediaAssetId,
-      trimOffsetSec,
       ctx,
       videoEl,
-      maxDurationSec,
       waveformBuckets,
       waveformBucketsPerSec = 72,
     } = input;
@@ -374,23 +380,12 @@ class AppModel {
     const decoded = await ctx.decodeAudioData(raw);
 
     const recording = this.tracksDocument.getRecording(recordingId);
-    if (recording == null || recording.trackId !== trackId) {
-      return false;
-    }
-
-    const sourceStartSec = Math.min(
-      Math.max(0, trimOffsetSec),
-      decoded.duration,
-    );
-    const rawDuration = Math.max(0, decoded.duration - sourceStartSec);
-    const durationSec = Math.max(
-      0,
-      Math.min(rawDuration, Math.max(0, maxDurationSec)),
-    );
+    if (recording == null || recording.mediaAssetId !== mediaAssetId) return false;
+    const durationSec = Math.max(0, decoded.duration);
 
     this.audioBuffersByRecordingId.set(recordingId, decoded);
     this.recordingSourceWindowByRecordingId.set(recordingId, {
-      sourceStartSec,
+      sourceStartSec: 0,
       durationSec,
     });
 
@@ -405,7 +400,7 @@ class AppModel {
       );
     this.waveformPeaksByRecordingId.set(
       recordingId,
-      buildWaveformPeaks(decoded, sourceStartSec, durationSec, computedBuckets),
+      buildWaveformPeaks(decoded, 0, durationSec, computedBuckets),
     );
 
     return true;
@@ -439,16 +434,14 @@ class AppModel {
     return this.videoElByRecordingId.get(recordingId) ?? null;
   }
 
-  getTrackRuntimeWaveform(trackId: TrackId): TrackRuntimeWaveform {
-    const recordingId = this.tracksDocument.getPrimaryRecordingIdForTrack(trackId);
-    if (recordingId == null) return null;
-
+  getRecordingRuntimeWaveform(
+    recordingId: RecordingId,
+  ): RecordingRuntimeWaveform {
     const peaks = this.getRecordingWaveform(recordingId);
     const sourceWindow = this.getRecordingSourceWindow(recordingId);
     if (peaks == null || sourceWindow == null) return null;
 
     return {
-      recordingId,
       peaks,
       sourceWindow,
     };
@@ -773,31 +766,12 @@ class AppModel {
 
     if (restored.appScreen === "recording" || restored.appScreen === "calibration") {
       try {
-        const expectedMicId = restored.selectedMicId;
-        let stream: MediaStream | null = null;
-        try {
-          stream = await this.acquireMediaStream(expectedMicId);
-        } catch (error) {
-          if (expectedMicId != null) {
-            stream = await this.acquireMediaStream(null);
-          } else {
-            throw error;
-          }
-        }
+        const stream = await this.acquireMediaStream(null);
         if (stream != null) {
           this.mediaStream.set(stream);
-          const activeMicId = getStreamAudioDeviceId(stream);
-          this.setSelectedMicId(activeMicId ?? expectedMicId ?? null);
-
-          const canReuseCalibration =
-            restored.isCalibrated &&
-            streamMatchesAudioDeviceId(stream, expectedMicId);
-          if (!canReuseCalibration) {
-            this.clearCalibration();
-            if (restored.appScreen === "recording") {
-              this.appScreen.set("calibration");
-            }
-          }
+          this.setSelectedMicId(getStreamAudioDeviceId(stream));
+          this.clearCalibration();
+          this.appScreen.set("calibration");
         } else {
           this.appScreen.set("setup");
         }

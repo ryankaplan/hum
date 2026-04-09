@@ -12,10 +12,10 @@ import type { MonitorPlayer } from "../audio/monitorPlayer";
 export type RecordingResult = {
   blob: Blob;
   url: string;
-  // Seconds of leading silence before beat-1 of the recording. Callers use
-  // this as the `trimOffsetSec` for the track so that subsequent takes can
-  // align to it via AudioBufferSourceNode.start(when, trimOffsetSec).
-  trimOffsetSec: number;
+  // Offset between the raw recording source and the musical timeline. Positive
+  // values mean the clip should skip into the source at timeline zero; negative
+  // values mean the committed clip should start later on the timeline.
+  alignmentOffsetSec: number;
 };
 
 export type RecordingCallbacks = {
@@ -129,7 +129,9 @@ export function startRecordTake(opts: RecordingOpts): RecordingSession {
       }
     };
 
-    const recordingDone = new Promise<Omit<RecordingResult, "trimOffsetSec">>(
+    const recordingDone = new Promise<
+      Omit<RecordingResult, "alignmentOffsetSec">
+    >(
       (resolve) => {
         recorder.onstop = () => {
           const blob = new Blob(chunks, { type: mimeType });
@@ -144,7 +146,7 @@ export function startRecordTake(opts: RecordingOpts): RecordingSession {
     const recorderStartCtxTime = ctx.currentTime;
     callbacks?.onRecordingStart?.();
     const baseTrimOffsetSec = recordingStartTime - recorderStartCtxTime;
-    const trimOffsetSec = baseTrimOffsetSec + latencyCorrectionSec;
+    const alignmentOffsetSec = baseTrimOffsetSec + latencyCorrectionSec;
 
     // 4. Start playback aligned with count-in.
     playback = startRecordingPlayback({
@@ -174,7 +176,7 @@ export function startRecordTake(opts: RecordingOpts): RecordingSession {
       URL.revokeObjectURL(url);
       throw new RecordingCancelledError();
     }
-    return { blob, url, trimOffsetSec };
+    return { blob, url, alignmentOffsetSec };
   })().finally(() => {
     playback?.stop();
     playback = null;

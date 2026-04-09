@@ -1,30 +1,26 @@
-// Sample-accurate prior-take monitoring via AudioBufferSourceNodes.
-//
-// Each kept take is pre-decoded into an AudioBuffer. When start(when) is
-// called, a fresh AudioBufferSourceNode is created for each buffer and
-// scheduled to begin at the exact AudioContext.currentTime value `when`.
-// Because AudioBufferSourceNode.start(when) and Tone's Transport.start(when)
-// both use the same AudioContext clock, all audio is aligned to the sample.
-//
-// trimOffsetSec: each recording has a small amount of leading silence before
-// the music began (the gap between MediaRecorder.start() and the transport
-// start). This offset is stored with each take and applied as a negative
-// offset to the buffer start so that beat-1 of every take aligns to `when`.
-
 import { AUDIO_SCHEDULE_LEAD_SEC } from "../transport/core";
 
-export type MonitorTrack = {
+export type EncodedMonitorSegment = {
+  recordingId: string;
+  blob: Blob;
+  timelineStartSec: number;
+  sourceStartSec: number;
+  durationSec: number;
+};
+
+export type MonitorSegment = {
   buffer: AudioBuffer;
-  // How many seconds into the buffer the music actually starts
-  trimOffsetSec: number;
+  timelineStartSec: number;
+  sourceStartSec: number;
+  durationSec: number;
+};
+
+export type MonitorLane = {
+  segments: MonitorSegment[];
 };
 
 export type MonitorPlayer = {
-  // Schedule all tracks to start at AudioContext time `when`.
-  // Safe to call multiple times; stops any previously running sources first.
   start(when: number): void;
-  // Start all tracks looping from their trim offset for idle preview.
-  // Uses the same gain nodes as start(), so mute state is respected.
   startLooping(): void;
   stop(): void;
   setMuted(trackIndex: number, muted: boolean): void;
@@ -32,114 +28,195 @@ export type MonitorPlayer = {
   dispose(): void;
 };
 
-// Decodes an array of blobs into MonitorTracks. Returns null entries for
-// blobs that fail to decode (so caller indices stay stable).
-export async function decodeMonitorTracks(
+export async function decodeMonitorLanes(
   ctx: AudioContext,
-  blobs: Blob[],
-  trimOffsets: number[],
-): Promise<(MonitorTrack | null)[]> {
-  const results: (MonitorTrack | null)[] = [];
-  for (let i = 0; i < blobs.length; i++) {
-    const blob = blobs[i];
-    const trimOffsetSec = trimOffsets[i] ?? 0;
-    if (blob == null) {
-      results.push(null);
-      continue;
-    }
-    try {
-      const arrayBuffer = await blob.arrayBuffer();
-      const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
-      results.push({ buffer: audioBuffer, trimOffsetSec });
-    } catch {
-      results.push(null);
-    }
-  }
-  return results;
+  lanes: Array<{ segments: EncodedMonitorSegment[] }>,
+): Promise<MonitorLane[]> {
+  const decodeCache = new Map<string, Promise<AudioBuffer | null>>();
+
+  const decodeRecording = (recordingId: string, blob: Blob): Promise<AudioBuffer | null> => {
+    const cached = decodeCache.get(recordingId);
+    if (cached != null) return cached;
+
+    const task = (async () => {
+      try {
+        const arrayBuffer = await blob.arrayBuffer();
+        return await ctx.decodeAudioData(arrayBuffer);
+      } catch {
+        return null;
+      }
+    })();
+    decodeCache.set(recordingId, task);
+    return task;
+  };
+
+  return await Promise.all(
+    lanes.map(async (lane) => {
+      const segments: MonitorSegment[] = [];
+
+      for (const segment of lane.segments) {
+        const buffer = await decodeRecording(segment.recordingId, segment.blob);
+        if (buffer == null) continue;
+
+        segments.push({
+          buffer,
+          timelineStartSec: Math.max(0, segment.timelineStartSec),
+          sourceStartSec: Math.max(0, segment.sourceStartSec),
+          durationSec: Math.max(0, segment.durationSec),
+        });
+      }
+
+      return { segments };
+    }),
+  );
 }
 
 export function createMonitorPlayer(
   ctx: AudioContext,
-  tracks: (MonitorTrack | null)[],
+  lanes: MonitorLane[],
+  loopDurationSec: number,
 ): MonitorPlayer {
   const BASE_TRACK_GAIN = 0.6;
-  // Per-track gain nodes (persistent; control mute state)
-  const gainNodes: (GainNode | null)[] = tracks.map((track) => {
-    if (track == null) return null;
-    const g = ctx.createGain();
-    g.gain.value = BASE_TRACK_GAIN;
-    g.connect(ctx.destination);
-    return g;
+  const gainNodes: GainNode[] = lanes.map(() => {
+    const gain = ctx.createGain();
+    gain.gain.value = BASE_TRACK_GAIN;
+    gain.connect(ctx.destination);
+    return gain;
   });
 
-  const muted: boolean[] = tracks.map(() => false);
+  const muted: boolean[] = lanes.map(() => false);
   let level = 1;
+  let activeSources = new Set<AudioBufferSourceNode>();
+  let loopTimer: number | null = null;
+  let loopGeneration = 0;
 
-  // Active source nodes — created fresh each time start() is called
-  let activeSources: (AudioBufferSourceNode | null)[] = [];
-
-  function stopActiveSources() {
-    for (const source of activeSources) {
-      try {
-        source?.stop();
-      } catch {
-        // stop() throws if node was never started or already stopped; safe to ignore
-      }
+  function clearLoopTimer(): void {
+    if (loopTimer != null) {
+      window.clearTimeout(loopTimer);
+      loopTimer = null;
     }
-    activeSources = [];
   }
 
-  function applyTrackGain(trackIndex: number) {
+  function stopActiveSources(): void {
+    for (const source of activeSources) {
+      try {
+        source.stop();
+      } catch {
+        // Safe to ignore if the source has already ended.
+      }
+    }
+    activeSources = new Set<AudioBufferSourceNode>();
+  }
+
+  function stopScheduling(): void {
+    loopGeneration += 1;
+    clearLoopTimer();
+  }
+
+  function registerSource(source: AudioBufferSourceNode): void {
+    activeSources.add(source);
+    source.onended = () => {
+      activeSources.delete(source);
+    };
+  }
+
+  function applyTrackGain(trackIndex: number): void {
     const gain = gainNodes[trackIndex];
     if (gain == null) return;
     gain.gain.value = muted[trackIndex] ? 0 : BASE_TRACK_GAIN * level;
   }
 
+  function scheduleSegment(
+    source: MonitorSegment,
+    gain: GainNode,
+    cycleStartCtxTime: number,
+    maxDurationSec: number,
+  ): void {
+    const availableDurationSec = Math.max(
+      0,
+      source.buffer.duration - source.sourceStartSec,
+    );
+    const playDurationSec = Math.min(
+      Math.max(0, source.durationSec),
+      availableDurationSec,
+      maxDurationSec,
+    );
+    if (playDurationSec <= 0) return;
+
+    const node = ctx.createBufferSource();
+    node.buffer = source.buffer;
+    node.connect(gain);
+    node.start(
+      cycleStartCtxTime + source.timelineStartSec,
+      source.sourceStartSec,
+      playDurationSec,
+    );
+    registerSource(node);
+  }
+
+  function scheduleAllSegments(startCtxTime: number): void {
+    for (let laneIndex = 0; laneIndex < lanes.length; laneIndex++) {
+      const lane = lanes[laneIndex];
+      const gain = gainNodes[laneIndex];
+      if (lane == null || gain == null) continue;
+
+      for (const segment of lane.segments) {
+        scheduleSegment(segment, gain, startCtxTime, Number.POSITIVE_INFINITY);
+      }
+    }
+  }
+
+  function scheduleLoopCycle(startCtxTime: number, generation: number): void {
+    if (generation !== loopGeneration) return;
+    const safeLoopDurationSec = Math.max(0, loopDurationSec);
+    if (safeLoopDurationSec <= 0) return;
+
+    for (let laneIndex = 0; laneIndex < lanes.length; laneIndex++) {
+      const lane = lanes[laneIndex];
+      const gain = gainNodes[laneIndex];
+      if (lane == null || gain == null) continue;
+
+      for (const segment of lane.segments) {
+        if (segment.timelineStartSec >= safeLoopDurationSec) continue;
+
+        scheduleSegment(
+          segment,
+          gain,
+          startCtxTime,
+          safeLoopDurationSec - segment.timelineStartSec,
+        );
+      }
+    }
+
+    const nextStartCtxTime = startCtxTime + safeLoopDurationSec;
+    const scheduleDelayMs = Math.max(
+      0,
+      (nextStartCtxTime - ctx.currentTime - AUDIO_SCHEDULE_LEAD_SEC) * 1000,
+    );
+    loopTimer = window.setTimeout(() => {
+      scheduleLoopCycle(nextStartCtxTime, generation);
+    }, scheduleDelayMs);
+  }
+
   return {
     start(when: number) {
+      stopScheduling();
       stopActiveSources();
-      for (let i = 0; i < tracks.length; i++) {
-        const track = tracks[i];
-        const gain = gainNodes[i];
-        if (track == null || gain == null) {
-          activeSources.push(null);
-          continue;
-        }
-        const source = ctx.createBufferSource();
-        source.buffer = track.buffer;
-        source.connect(gain);
-        // Offset into the buffer where the music begins, so beat-1 aligns
-        // to `when` regardless of how much leading silence the blob has.
-        const startOffset = Math.max(0, track.trimOffsetSec);
-        source.start(when, startOffset);
-        activeSources.push(source);
-      }
+      scheduleAllSegments(when);
     },
 
     startLooping() {
+      stopScheduling();
       stopActiveSources();
-      for (let i = 0; i < tracks.length; i++) {
-        const track = tracks[i];
-        const gain = gainNodes[i];
-        if (track == null || gain == null) {
-          activeSources.push(null);
-          continue;
-        }
-        const source = ctx.createBufferSource();
-        source.buffer = track.buffer;
-        source.loop = true;
-        source.loopStart = Math.max(0, track.trimOffsetSec);
-        source.loopEnd = track.buffer.duration;
-        source.connect(gain);
-        source.start(
-          ctx.currentTime + AUDIO_SCHEDULE_LEAD_SEC,
-          Math.max(0, track.trimOffsetSec),
-        );
-        activeSources.push(source);
-      }
+
+      const startCtxTime = ctx.currentTime + AUDIO_SCHEDULE_LEAD_SEC;
+      const generation = loopGeneration + 1;
+      loopGeneration = generation;
+      scheduleLoopCycle(startCtxTime, generation);
     },
 
     stop() {
+      stopScheduling();
       stopActiveSources();
     },
 
@@ -150,15 +227,16 @@ export function createMonitorPlayer(
 
     setLevel(nextLevel: number) {
       level = Math.max(0, Math.min(1, nextLevel));
-      for (let i = 0; i < tracks.length; i++) {
+      for (let i = 0; i < lanes.length; i++) {
         applyTrackGain(i);
       }
     },
 
     dispose() {
+      stopScheduling();
       stopActiveSources();
       for (const gain of gainNodes) {
-        gain?.disconnect();
+        gain.disconnect();
       }
     },
   };

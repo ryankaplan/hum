@@ -3,8 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useObservable } from "../observable";
 import {
   model,
+  type RecordingRuntimeWaveform,
   type TrackClip,
-  type TrackRuntimeWaveform,
 } from "../state/model";
 import { getPartLabel } from "../music/types";
 import { progressionDurationSec } from "../music/playback";
@@ -328,12 +328,9 @@ export function FinalReview() {
       void model
         .ingestRecordingRuntimeMedia({
           recordingId,
-          trackId,
           mediaAssetId: recording.mediaAssetId,
-          trimOffsetSec: Math.max(0, recording.trimOffsetSec),
           ctx,
           videoEl,
-          maxDurationSec: baseDurationSec,
           waveformBucketsPerSec: FINAL_REVIEW_WAVEFORM_BUCKETS_PER_SEC,
         })
         .then((ingested) => {
@@ -645,7 +642,6 @@ export function FinalReview() {
   const tracksEditorView = useMemo<TracksEditorStaticView>(() => {
     const activeClipIds = new Set<string>();
     const lanes = orderedTracks.map((track, displayIndex) => {
-      const laneRuntime = model.getTrackRuntimeWaveform(track.id);
       const segments = (timelines[displayIndex] ?? []).map((segment) => {
         activeClipIds.add(segment.id);
         return {
@@ -653,7 +649,9 @@ export function FinalReview() {
           renderAsset: getCachedSegmentRenderAsset({
             cache: segmentRenderCacheRef.current,
             clip: segment,
-            laneRuntime,
+            recordingRuntime: model.getRecordingRuntimeWaveform(
+              segment.recordingId,
+            ),
             waveformVersion,
           }),
         };
@@ -905,10 +903,10 @@ function getCachedSegmentRenderAsset(input: {
     { cacheKey: string; asset: TracksEditorSegmentRenderAsset }
   >;
   clip: TrackClip;
-  laneRuntime: TrackRuntimeWaveform;
+  recordingRuntime: RecordingRuntimeWaveform;
   waveformVersion: number;
 }): TracksEditorSegmentRenderAsset {
-  const { cache, clip, laneRuntime, waveformVersion } = input;
+  const { cache, clip, recordingRuntime, waveformVersion } = input;
   const widthPx = Math.max(8, clip.durationSec * TIMELINE_PX_PER_SEC);
   const waveformWidthPx = Math.max(
     0,
@@ -922,9 +920,9 @@ function getCachedSegmentRenderAsset(input: {
     ),
   );
   const waveformKey =
-    laneRuntime == null
+    recordingRuntime == null
       ? "none"
-      : `${laneRuntime.recordingId}:${laneRuntime.sourceWindow.sourceStartSec}:${laneRuntime.sourceWindow.durationSec}:${waveformVersion}`;
+      : `${clip.recordingId}:${recordingRuntime.sourceWindow.sourceStartSec}:${recordingRuntime.sourceWindow.durationSec}:${waveformVersion}`;
   const cacheKey = [
     clip.timelineStartSec,
     clip.sourceStartSec,
@@ -939,14 +937,14 @@ function getCachedSegmentRenderAsset(input: {
   }
 
   const waveformBarHeights =
-    laneRuntime == null
+    recordingRuntime == null
       ? []
       : samplePeaksForSegment(
-          laneRuntime.peaks,
-          laneRuntime.sourceWindow.durationSec,
+          recordingRuntime.peaks,
+          recordingRuntime.sourceWindow.durationSec,
           Math.max(
             0,
-            clip.sourceStartSec - laneRuntime.sourceWindow.sourceStartSec,
+            clip.sourceStartSec - recordingRuntime.sourceWindow.sourceStartSec,
           ),
           clip.durationSec,
           waveformBarCount,

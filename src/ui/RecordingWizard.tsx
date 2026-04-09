@@ -42,6 +42,8 @@ import {
 } from "./designSystem";
 import { PlayIcon, StopIcon, VolumeOffIcon, VolumeOnIcon } from "./icons";
 import { NoteDisplay } from "./NoteDisplay";
+import { RecordingBeatIndicator } from "./RecordingBeatIndicator";
+import { RecordingMonitorPanel } from "./RecordingMonitorPanel";
 import {
   buildReferenceWaveform,
   type ReferenceWaveform,
@@ -818,250 +820,42 @@ export function RecordingWizard() {
           />
 
           {phase !== "review" && (
-            <Box bg={dsColors.surfaceRaised} borderRadius="xl" px={4} py={3}>
-              <details>
-                <summary style={{ cursor: "pointer" }}>
-                  <Flex align="center" justify="space-between">
-                    <Text
-                      color={dsColors.textMuted}
-                      fontSize="xs"
-                      fontWeight="semibold"
-                    >
-                      MONITORING
-                    </Text>
-                    <Text
-                      color={dsColors.textSubtle}
-                      fontSize="xs"
-                      fontWeight="semibold"
-                    >
-                      Expand
-                    </Text>
-                  </Flex>
-                </summary>
-
-                <Stack gap={3} mt={3}>
-                  {!isMelodyPart && (
-                    <Box>
-                      <Flex justify="space-between" align="center" mb={1.5}>
-                        <Text
-                          color={dsColors.textMuted}
-                          fontSize="xs"
-                          fontWeight="semibold"
-                        >
-                          GUIDE TONES VOLUME
-                        </Text>
-                        <Text
-                          color={dsColors.text}
-                          fontSize="xs"
-                          fontWeight="semibold"
-                        >
-                          {Math.round(effectiveGuideToneLevel * 100)}%
-                        </Text>
-                      </Flex>
-                      <input
-                        type="range"
-                        min={0}
-                        max={100}
-                        step={1}
-                        value={Math.round(guideToneVolume * 100)}
-                        onChange={(e) => {
-                          const next = Number.parseInt(e.currentTarget.value, 10);
-                          if (Number.isNaN(next)) return;
-                          model.setRecordingMonitorPreferences({
-                            guideToneVolume: Math.max(0, Math.min(1, next / 100)),
-                          });
-                          if (next > 0 && !guideToneEnabled) {
-                            setGuideToneEnabled(true);
-                          }
-                        }}
-                        style={{
-                          width: "100%",
-                          accentColor:
-                            "var(--chakra-colors-appAccent, var(--chakra-colors-app-accent))",
-                        }}
-                      />
-                    </Box>
-                  )}
-
-                  <Box>
-                    <Flex justify="space-between" align="center" mb={1.5}>
-                      <Text
-                        color={dsColors.textMuted}
-                        fontSize="xs"
-                        fontWeight="semibold"
-                      >
-                        BEAT VOLUME
-                      </Text>
-                      <Text
-                        color={dsColors.text}
-                        fontSize="xs"
-                        fontWeight="semibold"
-                      >
-                        {Math.round(beatVolume * 100)}%
-                      </Text>
-                    </Flex>
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      step={1}
-                      value={Math.round(beatVolume * 100)}
-                      onChange={(e) => {
-                        const next = Number.parseInt(e.currentTarget.value, 10);
-                        if (Number.isNaN(next)) return;
-                        model.setRecordingMonitorPreferences({
-                          beatVolume: Math.max(0, Math.min(1, next / 100)),
-                        });
-                      }}
-                      style={{
-                        width: "100%",
-                        accentColor:
-                          "var(--chakra-colors-appAccent, var(--chakra-colors-app-accent))",
-                      }}
-                    />
-                  </Box>
-
-                  {hasPriorHarmonyMonitorControl && (
-                    <Box>
-                      <Flex justify="space-between" align="center" mb={1.5}>
-                        <Text
-                          color={dsColors.textMuted}
-                          fontSize="xs"
-                          fontWeight="semibold"
-                        >
-                          PREV HARMONIES VOLUME
-                        </Text>
-                        <Text
-                          color={dsColors.text}
-                          fontSize="xs"
-                          fontWeight="semibold"
-                        >
-                          {Math.round(priorHarmonyLevel * 100)}%
-                        </Text>
-                      </Flex>
-                      <input
-                        type="range"
-                        min={0}
-                        max={100}
-                        step={1}
-                        value={Math.round(priorHarmonyLevel * 100)}
-                        onChange={(e) => {
-                          const next = Number.parseInt(e.currentTarget.value, 10);
-                          if (Number.isNaN(next)) return;
-                          model.setRecordingMonitorPreferences({
-                            priorHarmonyVolume: Math.max(0, Math.min(1, next / 100)),
-                          });
-                        }}
-                        style={{
-                          width: "100%",
-                          accentColor:
-                            "var(--chakra-colors-appAccent, var(--chakra-colors-app-accent))",
-                        }}
-                      />
-                    </Box>
-                  )}
-                </Stack>
-              </details>
-            </Box>
+            <RecordingMonitorPanel
+              isMelodyPart={isMelodyPart}
+              hasPriorHarmonyMonitorControl={hasPriorHarmonyMonitorControl}
+              guideToneEnabled={guideToneEnabled}
+              guideToneVolume={guideToneVolume}
+              effectiveGuideToneLevel={effectiveGuideToneLevel}
+              beatVolume={beatVolume}
+              priorHarmonyLevel={priorHarmonyLevel}
+              onGuideToneVolumeChange={(next) => {
+                model.setRecordingMonitorPreferences({ guideToneVolume: next });
+                if (next > 0 && !guideToneEnabled) {
+                  setGuideToneEnabled(true);
+                }
+              }}
+              onBeatVolumeChange={(next) => {
+                model.setRecordingMonitorPreferences({ beatVolume: next });
+              }}
+              onPriorHarmonyVolumeChange={(next) => {
+                model.setRecordingMonitorPreferences({
+                  priorHarmonyVolume: next,
+                });
+              }}
+            />
           )}
 
           {/* Beat indicator — shown during count-in, listening, and recording */}
           {(phase === "counting-in" ||
             phase === "listening" ||
             phase === "recording") && (
-            <Box bg={dsColors.surfaceRaised} borderRadius="xl" px={4} py={3}>
-              <Flex align="center" justify="space-between" mb={2}>
-                {phase === "counting-in" && (
-                  <Text
-                    color={dsColors.textMuted}
-                    fontSize="xs"
-                    fontWeight="semibold"
-                  >
-                    COUNT-IN
-                  </Text>
-                )}
-                {phase === "listening" && (
-                  <Text
-                    color={dsColors.accent}
-                    fontSize="xs"
-                    fontWeight="semibold"
-                  >
-                    LISTENING
-                  </Text>
-                )}
-                {phase === "recording" && (
-                  <>
-                    <Flex align="center" gap={2}>
-                      <Box
-                        w={2}
-                        h={2}
-                        borderRadius="full"
-                        bg={dsColors.errorBorder}
-                        animation="recPulse 1s ease-in-out infinite"
-                      />
-                      <Text
-                        color={dsColors.errorText}
-                        fontSize="xs"
-                        fontWeight="semibold"
-                      >
-                        RECORDING
-                      </Text>
-                    </Flex>
-                    <Button
-                      variant="ghost"
-                      size="xs"
-                      minW="28px"
-                      h="28px"
-                      p={0}
-                      borderRadius="full"
-                      color={dsColors.errorText}
-                      border="1px solid"
-                      borderColor={dsColors.errorBorder}
-                      onClick={handleStopRecording}
-                      aria-label="Stop recording"
-                      title="Stop recording"
-                      lineHeight={0}
-                    >
-                      <StopIcon size={16} strokeWidth={2.1} />
-                    </Button>
-                  </>
-                )}
-              </Flex>
-              <Flex align="center" justify="space-between">
-                <Flex align="center" gap={2}>
-                  <Box
-                    key={`beat-pulse-${phase}-${activeBeatInBar}`}
-                    w={beatIsDownbeat ? 2.5 : 2}
-                    h={beatIsDownbeat ? 2.5 : 2}
-                    borderRadius="full"
-                    bg={beatIsDownbeat ? dsColors.accent : dsColors.accentHover}
-                    opacity={activeBeatInBar >= 0 ? 1 : 0.45}
-                    animation={
-                      activeBeatInBar >= 0
-                        ? "beatPulse 260ms ease-out 1"
-                        : undefined
-                    }
-                    style={
-                      beatIsDownbeat
-                        ? {
-                            boxShadow:
-                              "0 0 6px color-mix(in srgb, var(--app-accent) 42%, transparent)",
-                          }
-                        : undefined
-                    }
-                  />
-                  <Text
-                    color={
-                      beatIsDownbeat ? dsColors.accent : dsColors.textMuted
-                    }
-                    fontSize="xs"
-                    fontWeight="semibold"
-                  >
-                    {beatLabel}
-                  </Text>
-                </Flex>
-              </Flex>
-            </Box>
+            <RecordingBeatIndicator
+              phase={phase}
+              activeBeatInBar={activeBeatInBar}
+              beatIsDownbeat={beatIsDownbeat}
+              beatLabel={beatLabel}
+              onStopRecording={handleStopRecording}
+            />
           )}
 
           {/* Action buttons */}

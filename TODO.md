@@ -1,7 +1,8 @@
 To fix asap:
 
-- Sound sometimes bad / garbled??
-- Re-take puts me through flow again
+- [ ] Way to record melody first as template / waveform for timing
+- [x] Sound sometimes bad / garbled??
+- [x] Re-take puts me through flow again
 
 Chordus
 Chorum

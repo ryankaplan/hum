@@ -108,7 +108,7 @@ export function CustomHarmonyEditor({
   const scrollViewportRef = useRef<HTMLDivElement | null>(null);
   const beatsPerBar = Math.max(1, arrangement.input.meter[0]);
   const defaultMeasureWidthPx = beatsPerBar * DEFAULT_BEAT_WIDTH_PX;
-  const minMeasureWidthPx = beatsPerBar * 40;
+  const minMeasureWidthPx = beatsPerBar * 10;
   const maxMeasureWidthPx = beatsPerBar * 96;
   const measureWidthStepPx = beatsPerBar * 4;
   const [measureWidthPx, setMeasureWidthPx] = useState(defaultMeasureWidthPx);
@@ -196,7 +196,10 @@ export function CustomHarmonyEditor({
   const selectedMidi =
     selection == null
       ? null
-      : getHarmonyLineNote(localLines[selection.voiceIndex], selection.chordIndex);
+      : getHarmonyLineNote(
+          localLines[selection.voiceIndex],
+          selection.chordIndex,
+        );
   const selectedChord =
     selection == null
       ? null
@@ -351,21 +354,43 @@ export function CustomHarmonyEditor({
         {...dsPanel}
       >
         <Stack gap={5}>
-          <Flex justify="space-between" align={{ base: "flex-start", md: "center" }} gap={3} flexWrap="wrap">
+          <Flex
+            justify="space-between"
+            align={{ base: "flex-start", md: "center" }}
+            gap={3}
+            flexWrap="wrap"
+          >
             <Box>
-              <Text color={dsColors.textMuted} fontSize="xs" fontWeight="semibold" mb={1}>
+              <Text
+                color={dsColors.textMuted}
+                fontSize="xs"
+                fontWeight="semibold"
+                mb={1}
+              >
                 HARMONY EDITOR
               </Text>
               <Heading size="lg" color={dsColors.text}>
                 Customize harmony
               </Heading>
               <Text color={dsColors.textMuted} fontSize="sm" mt={1}>
-                Select a colored note, then click any pitch row to move it. Use the Rest footer to make the selected part stay silent for a chord.
+                Select a colored note, then click any pitch row to move it. Use
+                the Rest footer to make the selected part stay silent for a
+                chord.
               </Text>
             </Box>
-            <Flex gap={3} align={{ base: "stretch", md: "center" }} flexWrap="wrap" justify="flex-end">
+            <Flex
+              gap={3}
+              align={{ base: "stretch", md: "center" }}
+              flexWrap="wrap"
+              justify="flex-end"
+            >
               <Box minW={{ base: "100%", sm: "240px" }}>
-                <Text color={dsColors.textMuted} fontSize="xs" fontWeight="semibold" mb={1}>
+                <Text
+                  color={dsColors.textMuted}
+                  fontSize="xs"
+                  fontWeight="semibold"
+                  mb={1}
+                >
                   MEASURE WIDTH
                 </Text>
                 <Flex align="center" gap={3}>
@@ -422,15 +447,27 @@ export function CustomHarmonyEditor({
             border="1px solid"
             borderColor={dsColors.border}
           >
-            <Flex justify="space-between" align={{ base: "flex-start", md: "center" }} gap={3} flexWrap="wrap">
+            <Flex
+              justify="space-between"
+              align={{ base: "flex-start", md: "center" }}
+              gap={3}
+              flexWrap="wrap"
+            >
               <Box>
-                <Text color={dsColors.textMuted} fontSize="xs" fontWeight="semibold">
+                <Text
+                  color={dsColors.textMuted}
+                  fontSize="xs"
+                  fontWeight="semibold"
+                >
                   SELECTED CHORD
                 </Text>
                 <Text color={dsColors.text} fontSize="lg" fontWeight="semibold">
                   {selection == null
                     ? "Pick a note to edit"
-                    : formatSelectedChordLabel(arrangement, selection.chordIndex)}
+                    : formatSelectedChordLabel(
+                        arrangement,
+                        selection.chordIndex,
+                      )}
                 </Text>
                 <Text color={dsColors.textMuted} fontSize="sm">
                   {selection == null
@@ -440,12 +477,22 @@ export function CustomHarmonyEditor({
               </Box>
               {selection != null && (
                 <Box minW={{ md: "220px" }}>
-                  <Text color={dsColors.textMuted} fontSize="xs" fontWeight="semibold">
+                  <Text
+                    color={dsColors.textMuted}
+                    fontSize="xs"
+                    fontWeight="semibold"
+                  >
                     SELECTED NOTE
                   </Text>
-                  <Text color={dsColors.text} fontSize="sm" fontWeight="semibold">
+                  <Text
+                    color={dsColors.text}
+                    fontSize="sm"
+                    fontWeight="semibold"
+                  >
                     {getPartLabel(selection.voiceIndex, harmonyPartCount + 1)}:{" "}
-                    {selectedMidi != null ? midiToNoteName(selectedMidi) : "Rest"}
+                    {selectedMidi != null
+                      ? midiToNoteName(selectedMidi)
+                      : "Rest"}
                     {selectedMidi != null && selectedChord != null
                       ? ` • ${labelHarmonyNoteForChord(selectedChord, selectedMidi)}`
                       : ""}
@@ -480,341 +527,384 @@ export function CustomHarmonyEditor({
                 minW="100%"
                 h={`${scrollContentHeightPx}px`}
               >
-              <Box
-                position="sticky"
-                left={0}
-                top={0}
-                zIndex={2}
-                flexShrink={0}
-                w={`${NOTE_NAME_COL_WIDTH_PX}px`}
-                borderRight="1px solid"
-                borderColor={dsColors.border}
-                bg={dsColors.surfaceRaised}
-              >
                 <Box
-                  h={`${CHORD_HEADER_HEIGHT_PX}px`}
-                  borderBottom="1px solid"
+                  position="sticky"
+                  left={0}
+                  top={0}
+                  zIndex={2}
+                  flexShrink={0}
+                  w={`${NOTE_NAME_COL_WIDTH_PX}px`}
+                  borderRight="1px solid"
                   borderColor={dsColors.border}
                   bg={dsColors.surfaceRaised}
-                />
-                {pitchRows.map((midi) => (
+                >
+                  <Box
+                    h={`${CHORD_HEADER_HEIGHT_PX}px`}
+                    borderBottom="1px solid"
+                    borderColor={dsColors.border}
+                    bg={dsColors.surfaceRaised}
+                  />
+                  {pitchRows.map((midi) => (
+                    <Flex
+                      key={`pitch-${midi}`}
+                      h={`${NOTE_ROW_HEIGHT_PX}px`}
+                      px={3}
+                      align="center"
+                      justify="flex-end"
+                      borderBottom="1px solid"
+                      borderColor="color-mix(in srgb, var(--app-border-muted) 20%, transparent)"
+                    >
+                      <Text
+                        color={dsColors.textMuted}
+                        fontSize="xs"
+                        fontWeight="medium"
+                      >
+                        {midiToNoteName(midi)}
+                      </Text>
+                    </Flex>
+                  ))}
                   <Flex
-                    key={`pitch-${midi}`}
-                    h={`${NOTE_ROW_HEIGHT_PX}px`}
+                    h={`${LYRIC_LANE_HEIGHT_PX}px`}
                     px={3}
                     align="center"
                     justify="flex-end"
-                    borderBottom="1px solid"
-                    borderColor="color-mix(in srgb, var(--app-border-muted) 20%, transparent)"
+                    borderTop="1px solid"
+                    borderColor={dsColors.border}
                   >
-                    <Text color={dsColors.textMuted} fontSize="xs" fontWeight="medium">
-                      {midiToNoteName(midi)}
+                    <Text
+                      color={dsColors.textMuted}
+                      fontSize="xs"
+                      fontWeight="semibold"
+                    >
+                      Lyrics
                     </Text>
                   </Flex>
-                ))}
-                <Flex
-                  h={`${LYRIC_LANE_HEIGHT_PX}px`}
-                  px={3}
-                  align="center"
-                  justify="flex-end"
-                  borderTop="1px solid"
-                  borderColor={dsColors.border}
-                >
-                  <Text color={dsColors.textMuted} fontSize="xs" fontWeight="semibold">
-                    Lyrics
-                  </Text>
-                </Flex>
-                <Flex
-                  position="sticky"
-                  bottom={0}
-                  zIndex={3}
-                  h={`${REST_ROW_HEIGHT_PX}px`}
-                  px={3}
-                  align="center"
-                  justify="flex-end"
-                  borderTop="1px solid"
-                  borderColor={dsColors.border}
-                  bg={dsColors.surfaceRaised}
-                >
-                  <Text color={dsColors.textMuted} fontSize="xs" fontWeight="semibold">
-                    Rest
-                  </Text>
-                </Flex>
-              </Box>
+                  <Flex
+                    position="sticky"
+                    bottom={0}
+                    zIndex={3}
+                    h={`${REST_ROW_HEIGHT_PX}px`}
+                    px={3}
+                    align="center"
+                    justify="flex-end"
+                    borderTop="1px solid"
+                    borderColor={dsColors.border}
+                    bg={dsColors.surfaceRaised}
+                  >
+                    <Text
+                      color={dsColors.textMuted}
+                      fontSize="xs"
+                      fontWeight="semibold"
+                    >
+                      Rest
+                    </Text>
+                  </Flex>
+                </Box>
 
-              <Box
-                flex="1"
-                className="record-note-timeline"
-              >
-                <Box position="relative" w={`${gridWidthPx}px`} h={`${totalHeightPx}px`}>
-                  {arrangement.parsedChords.map((chord, chordIndex) => {
-                    const x = NOTE_GRID_PAD_X_PX + chordStarts[chordIndex]! * beatWidthPx;
-                    const width = Math.max(44, chord.beats * beatWidthPx);
-                    const isSelectedChord = selection?.chordIndex === chordIndex;
-                    const previewItem = chordPreviewItems[chordIndex];
-
-                    return (
-                      <Box
-                        key={`chord-col-${chordIndex}`}
-                        position="absolute"
-                        top={0}
-                        left={`${x}px`}
-                        w={`${width}px`}
-                        h={`${totalHeightPx}px`}
-                        bg={
-                          isSelectedChord
-                            ? "color-mix(in srgb, var(--app-accent) 10%, transparent)"
-                            : "transparent"
-                        }
-                      >
-                        <Box
-                          h={`${CHORD_HEADER_HEIGHT_PX}px`}
-                          px={2}
-                          py={1.5}
-                          borderBottom="1px solid"
-                          borderColor={dsColors.border}
-                        >
-                          <Text
-                            color={dsColors.text}
-                            fontSize="sm"
-                            fontWeight="semibold"
-                            whiteSpace="normal"
-                            lineHeight="1.15"
-                            overflow="hidden"
-                          >
-                            {previewItem?.chordText ?? formatChordSymbol(chord)}
-                          </Text>
-                          <Text
-                            color={dsColors.textMuted}
-                            fontSize="10px"
-                            mt={0.5}
-                            whiteSpace="normal"
-                            lineHeight="1.15"
-                            overflow="hidden"
-                          >
-                            {chordSummaries[chordIndex]?.formula}
-                          </Text>
-                        </Box>
-                      </Box>
-                    );
-                  })}
-
-                  {pitchRows.map((midi, rowIndex) => {
-                    const y = CHORD_HEADER_HEIGHT_PX + rowIndex * NOTE_ROW_HEIGHT_PX;
-                    return (
-                      <Box
-                        key={`pitch-line-${midi}`}
-                        position="absolute"
-                        left={0}
-                        right={0}
-                        top={`${y}px`}
-                        h={`${NOTE_ROW_HEIGHT_PX}px`}
-                        borderBottom="1px solid"
-                        borderColor="color-mix(in srgb, var(--app-border-muted) 20%, transparent)"
-                      />
-                    );
-                  })}
-
-                  {Array.from({ length: Math.ceil(totalBeats) + 1 }).map((_, beat) => (
-                    <Box
-                      key={`beat-guide-${beat}`}
-                      position="absolute"
-                      top={0}
-                      bottom={0}
-                      left={`${NOTE_GRID_PAD_X_PX + beat * beatWidthPx}px`}
-                      w="1px"
-                      bg="color-mix(in srgb, var(--app-border-muted) 16%, transparent)"
-                    />
-                  ))}
-
-                  {arrangement.parsedChords.map((chord, chordIndex) => {
-                    const x = NOTE_GRID_PAD_X_PX + chordStarts[chordIndex]! * beatWidthPx;
-                    const width = Math.max(44, chord.beats * beatWidthPx);
-                    return pitchRows.map((midi, rowIndex) => {
-                      const y = CHORD_HEADER_HEIGHT_PX + rowIndex * NOTE_ROW_HEIGHT_PX;
-                      const isCandidate =
-                        selection?.chordIndex === chordIndex &&
-                        selectedCandidates.has(midi);
-                      const degreeLabel =
-                        selection?.chordIndex === chordIndex
-                          ? labelHarmonyNoteForChord(chord, midi)
-                          : null;
+                <Box flex="1" className="record-note-timeline">
+                  <Box
+                    position="relative"
+                    w={`${gridWidthPx}px`}
+                    h={`${totalHeightPx}px`}
+                  >
+                    {arrangement.parsedChords.map((chord, chordIndex) => {
+                      const x =
+                        NOTE_GRID_PAD_X_PX +
+                        chordStarts[chordIndex]! * beatWidthPx;
+                      const width = Math.max(44, chord.beats * beatWidthPx);
+                      const isSelectedChord =
+                        selection?.chordIndex === chordIndex;
+                      const previewItem = chordPreviewItems[chordIndex];
 
                       return (
                         <Box
-                          key={`cell-${chordIndex}-${midi}`}
-                          as="button"
+                          key={`chord-col-${chordIndex}`}
                           position="absolute"
-                          top={`${y}px`}
+                          top={0}
                           left={`${x}px`}
                           w={`${width}px`}
-                          h={`${NOTE_ROW_HEIGHT_PX}px`}
-                          px={2}
+                          h={`${totalHeightPx}px`}
                           bg={
-                            isCandidate
+                            isSelectedChord
                               ? "color-mix(in srgb, var(--app-accent) 10%, transparent)"
                               : "transparent"
                           }
-                          onClick={() => handleMoveSelectedNote(midi)}
-                          cursor={isCandidate ? "pointer" : "default"}
-                          pointerEvents={isCandidate ? "auto" : "none"}
-                          style={{ border: "none" }}
                         >
-                          {degreeLabel != null && (
+                          <Box
+                            h={`${CHORD_HEADER_HEIGHT_PX}px`}
+                            px={2}
+                            py={1.5}
+                            borderBottom="1px solid"
+                            borderColor={dsColors.border}
+                          >
                             <Text
-                              color={
-                                isCandidate
-                                  ? dsColors.accent
-                                  : dsColors.textSubtle
-                              }
-                              fontSize="10px"
-                              fontWeight="bold"
-                              position="absolute"
-                              right="6px"
-                              top="50%"
-                              transform="translateY(-50%)"
+                              color={dsColors.text}
+                              fontSize="sm"
+                              fontWeight="semibold"
+                              whiteSpace="normal"
+                              lineHeight="1.15"
+                              overflow="hidden"
                             >
-                              {degreeLabel}
+                              {previewItem?.chordText ??
+                                formatChordSymbol(chord)}
                             </Text>
+                            <Text
+                              color={dsColors.textMuted}
+                              fontSize="10px"
+                              mt={0.5}
+                              whiteSpace="normal"
+                              lineHeight="1.15"
+                              overflow="hidden"
+                            >
+                              {chordSummaries[chordIndex]?.formula}
+                            </Text>
+                          </Box>
+                        </Box>
+                      );
+                    })}
+
+                    {pitchRows.map((midi, rowIndex) => {
+                      const y =
+                        CHORD_HEADER_HEIGHT_PX + rowIndex * NOTE_ROW_HEIGHT_PX;
+                      return (
+                        <Box
+                          key={`pitch-line-${midi}`}
+                          position="absolute"
+                          left={0}
+                          right={0}
+                          top={`${y}px`}
+                          h={`${NOTE_ROW_HEIGHT_PX}px`}
+                          borderBottom="1px solid"
+                          borderColor="color-mix(in srgb, var(--app-border-muted) 20%, transparent)"
+                        />
+                      );
+                    })}
+
+                    {Array.from({ length: Math.ceil(totalBeats) + 1 }).map(
+                      (_, beat) => (
+                        <Box
+                          key={`beat-guide-${beat}`}
+                          position="absolute"
+                          top={0}
+                          bottom={0}
+                          left={`${NOTE_GRID_PAD_X_PX + beat * beatWidthPx}px`}
+                          w="1px"
+                          bg="color-mix(in srgb, var(--app-border-muted) 16%, transparent)"
+                        />
+                      ),
+                    )}
+
+                    {arrangement.parsedChords.map((chord, chordIndex) => {
+                      const x =
+                        NOTE_GRID_PAD_X_PX +
+                        chordStarts[chordIndex]! * beatWidthPx;
+                      const width = Math.max(44, chord.beats * beatWidthPx);
+                      return pitchRows.map((midi, rowIndex) => {
+                        const y =
+                          CHORD_HEADER_HEIGHT_PX +
+                          rowIndex * NOTE_ROW_HEIGHT_PX;
+                        const isCandidate =
+                          selection?.chordIndex === chordIndex &&
+                          selectedCandidates.has(midi);
+                        const degreeLabel =
+                          selection?.chordIndex === chordIndex
+                            ? labelHarmonyNoteForChord(chord, midi)
+                            : null;
+
+                        return (
+                          <Box
+                            key={`cell-${chordIndex}-${midi}`}
+                            as="button"
+                            position="absolute"
+                            top={`${y}px`}
+                            left={`${x}px`}
+                            w={`${width}px`}
+                            h={`${NOTE_ROW_HEIGHT_PX}px`}
+                            px={2}
+                            bg={
+                              isCandidate
+                                ? "color-mix(in srgb, var(--app-accent) 10%, transparent)"
+                                : "transparent"
+                            }
+                            onClick={() => handleMoveSelectedNote(midi)}
+                            cursor={isCandidate ? "pointer" : "default"}
+                            pointerEvents={isCandidate ? "auto" : "none"}
+                            style={{ border: "none" }}
+                          >
+                            {degreeLabel != null && (
+                              <Text
+                                color={
+                                  isCandidate
+                                    ? dsColors.accent
+                                    : dsColors.textSubtle
+                                }
+                                fontSize="10px"
+                                fontWeight="bold"
+                                position="absolute"
+                                right="6px"
+                                top="50%"
+                                transform="translateY(-50%)"
+                              >
+                                {degreeLabel}
+                              </Text>
+                            )}
+                          </Box>
+                        );
+                      });
+                    })}
+
+                    {noteClusters.map((cluster: NoteCluster) => {
+                      const chord =
+                        arrangement.parsedChords[cluster.chordIndex];
+                      if (chord == null) return null;
+                      const x =
+                        NOTE_GRID_PAD_X_PX +
+                        chordStarts[cluster.chordIndex]! * beatWidthPx +
+                        6;
+                      const width = Math.max(
+                        30,
+                        chord.beats * beatWidthPx - 12,
+                      );
+                      const rowIndex = highMidi - cluster.midi;
+                      const baseY =
+                        CHORD_HEADER_HEIGHT_PX +
+                        rowIndex * NOTE_ROW_HEIGHT_PX +
+                        Math.max(
+                          3,
+                          (NOTE_ROW_HEIGHT_PX - NOTE_PILL_HEIGHT_PX) / 2,
+                        );
+
+                      return (
+                        <Box
+                          key={`note-cluster-${cluster.chordIndex}-${cluster.midi}`}
+                          position="absolute"
+                          left={`${x}px`}
+                          top={`${baseY}px`}
+                          w={`${width}px`}
+                          h={`${NOTE_PILL_HEIGHT_PX + Math.max(0, cluster.members.length - 1) * 7}px`}
+                          pointerEvents="none"
+                        >
+                          {cluster.members.map(
+                            (
+                              member: NoteCluster["members"][number],
+                              memberIndex: number,
+                            ) => {
+                              const isSelected =
+                                selection?.voiceIndex === member.voiceIndex &&
+                                selection?.chordIndex === cluster.chordIndex;
+                              return (
+                                <Box
+                                  as="button"
+                                  key={`${cluster.chordIndex}-${cluster.midi}-${member.voiceIndex}`}
+                                  position="absolute"
+                                  left={`${memberIndex * 6}px`}
+                                  top={`${memberIndex * 7}px`}
+                                  minW={`${Math.max(28, width - memberIndex * 6)}px`}
+                                  h={`${NOTE_PILL_HEIGHT_PX}px`}
+                                  px={2}
+                                  borderRadius="md"
+                                  bg={member.color}
+                                  border="1px solid"
+                                  borderColor={
+                                    isSelected
+                                      ? dsColors.accentForeground
+                                      : "rgba(255,255,255,0.35)"
+                                  }
+                                  color="white"
+                                  fontSize="11px"
+                                  fontWeight="bold"
+                                  display="flex"
+                                  alignItems="center"
+                                  justifyContent="space-between"
+                                  gap={2}
+                                  cursor="pointer"
+                                  pointerEvents="auto"
+                                  boxShadow={
+                                    isSelected
+                                      ? "0 0 0 2px color-mix(in srgb, var(--app-accent) 28%, transparent)"
+                                      : "0 1px 3px rgba(0, 0, 0, 0.12)"
+                                  }
+                                  onClick={() => {
+                                    setSelection({
+                                      chordIndex: cluster.chordIndex,
+                                      voiceIndex: member.voiceIndex,
+                                    });
+                                    focusViewport();
+                                    if (ctx != null) {
+                                      playNotePreview(ctx, cluster.midi, 0.8);
+                                    }
+                                  }}
+                                >
+                                  <Text fontSize="10px" fontWeight="bold">
+                                    {member.label}
+                                  </Text>
+                                  <Text fontSize="10px" fontWeight="bold">
+                                    {cluster.noteLabel}
+                                  </Text>
+                                </Box>
+                              );
+                            },
                           )}
                         </Box>
                       );
-                    });
-                  })}
+                    })}
 
-                  {noteClusters.map((cluster: NoteCluster) => {
-                    const chord = arrangement.parsedChords[cluster.chordIndex];
-                    if (chord == null) return null;
-                    const x =
-                      NOTE_GRID_PAD_X_PX +
-                      chordStarts[cluster.chordIndex]! * beatWidthPx +
-                      6;
-                    const width = Math.max(30, chord.beats * beatWidthPx - 12);
-                    const rowIndex = highMidi - cluster.midi;
-                    const baseY =
-                      CHORD_HEADER_HEIGHT_PX +
-                      rowIndex * NOTE_ROW_HEIGHT_PX +
-                      Math.max(3, (NOTE_ROW_HEIGHT_PX - NOTE_PILL_HEIGHT_PX) / 2);
-
-                    return (
-                      <Box
-                        key={`note-cluster-${cluster.chordIndex}-${cluster.midi}`}
-                        position="absolute"
-                        left={`${x}px`}
-                        top={`${baseY}px`}
-                        w={`${width}px`}
-                        h={`${NOTE_PILL_HEIGHT_PX + Math.max(0, cluster.members.length - 1) * 7}px`}
-                        pointerEvents="none"
-                      >
-                        {cluster.members.map(
-                          (
-                            member: NoteCluster["members"][number],
-                            memberIndex: number,
-                          ) => {
-                          const isSelected =
-                            selection?.voiceIndex === member.voiceIndex &&
-                            selection?.chordIndex === cluster.chordIndex;
-                          return (
-                            <Box
-                              as="button"
-                              key={`${cluster.chordIndex}-${cluster.midi}-${member.voiceIndex}`}
-                              position="absolute"
-                              left={`${memberIndex * 6}px`}
-                              top={`${memberIndex * 7}px`}
-                              minW={`${Math.max(28, width - memberIndex * 6)}px`}
-                              h={`${NOTE_PILL_HEIGHT_PX}px`}
-                              px={2}
-                              borderRadius="md"
-                              bg={member.color}
-                              border="1px solid"
-                              borderColor={
-                                isSelected ? dsColors.accentForeground : "rgba(255,255,255,0.35)"
-                              }
-                              color="white"
-                              fontSize="11px"
-                              fontWeight="bold"
-                              display="flex"
-                              alignItems="center"
-                              justifyContent="space-between"
-                              gap={2}
-                              cursor="pointer"
-                              pointerEvents="auto"
-                              boxShadow={
-                                isSelected
-                                  ? "0 0 0 2px color-mix(in srgb, var(--app-accent) 28%, transparent)"
-                                  : "0 1px 3px rgba(0, 0, 0, 0.12)"
-                              }
-                              onClick={() => {
-                                setSelection({
-                                  chordIndex: cluster.chordIndex,
-                                  voiceIndex: member.voiceIndex,
-                                });
-                                focusViewport();
-                                if (ctx != null) {
-                                  playNotePreview(ctx, cluster.midi, 0.8);
-                                }
-                              }}
-                            >
-                              <Text fontSize="10px" fontWeight="bold">
-                                {member.label}
-                              </Text>
-                              <Text fontSize="10px" fontWeight="bold">
-                                {cluster.noteLabel}
-                              </Text>
-                            </Box>
-                          );
-                          },
-                        )}
-                      </Box>
-                    );
-                  })}
-
-                  {arrangement.parsedChords.map((chord, chordIndex) => {
-                    const previewItem = chordPreviewItems[chordIndex];
-                    const lyric = previewItem?.lyrics?.trim() ?? "";
-                    const x = NOTE_GRID_PAD_X_PX + chordStarts[chordIndex]! * beatWidthPx;
-                    const width = Math.max(44, chord.beats * beatWidthPx);
-                    const y = CHORD_HEADER_HEIGHT_PX + noteAreaHeightPx;
-                    return (
-                      <Box
-                        key={`lyric-${chordIndex}`}
-                        position="absolute"
-                        left={`${x}px`}
-                        top={`${y}px`}
-                        w={`${width}px`}
-                        h={`${LYRIC_LANE_HEIGHT_PX}px`}
-                        px={2}
-                        py={2}
-                        borderTop="1px solid"
-                        borderColor={dsColors.border}
-                        bg={
-                          selection?.chordIndex === chordIndex
-                            ? "color-mix(in srgb, var(--app-accent) 8%, transparent)"
-                            : "transparent"
-                        }
-                      >
-                        <Text color={lyric ? dsColors.textMuted : dsColors.textSubtle} fontSize="xs" whiteSpace="nowrap" overflow="hidden" textOverflow="ellipsis">
-                          {lyric || " "}
-                        </Text>
-                      </Box>
+                    {arrangement.parsedChords.map((chord, chordIndex) => {
+                      const previewItem = chordPreviewItems[chordIndex];
+                      const lyric = previewItem?.lyrics?.trim() ?? "";
+                      const x =
+                        NOTE_GRID_PAD_X_PX +
+                        chordStarts[chordIndex]! * beatWidthPx;
+                      const width = Math.max(44, chord.beats * beatWidthPx);
+                      const y = CHORD_HEADER_HEIGHT_PX + noteAreaHeightPx;
+                      return (
+                        <Box
+                          key={`lyric-${chordIndex}`}
+                          position="absolute"
+                          left={`${x}px`}
+                          top={`${y}px`}
+                          w={`${width}px`}
+                          h={`${LYRIC_LANE_HEIGHT_PX}px`}
+                          px={2}
+                          py={2}
+                          borderTop="1px solid"
+                          borderColor={dsColors.border}
+                          bg={
+                            selection?.chordIndex === chordIndex
+                              ? "color-mix(in srgb, var(--app-accent) 8%, transparent)"
+                              : "transparent"
+                          }
+                        >
+                          <Text
+                            color={
+                              lyric ? dsColors.textMuted : dsColors.textSubtle
+                            }
+                            fontSize="xs"
+                            whiteSpace="nowrap"
+                            overflow="hidden"
+                            textOverflow="ellipsis"
+                          >
+                            {lyric || " "}
+                          </Text>
+                        </Box>
                       );
-                  })}
-                </Box>
+                    })}
+                  </Box>
 
-                <RestFooter
-                  chords={arrangement.parsedChords}
-                  chordStarts={chordStarts}
-                  beatWidthPx={beatWidthPx}
-                  gridWidthPx={gridWidthPx}
-                  restClusters={restClusters}
-                  selection={selection}
-                  onRestSelectedChord={handleRestSelectedNote}
-                  onSelectRest={(voiceIndex, chordIndex) => {
-                    setSelection({ voiceIndex, chordIndex });
-                    focusViewport();
-                  }}
-                />
-              </Box>
+                  <RestFooter
+                    chords={arrangement.parsedChords}
+                    chordStarts={chordStarts}
+                    beatWidthPx={beatWidthPx}
+                    gridWidthPx={gridWidthPx}
+                    restClusters={restClusters}
+                    selection={selection}
+                    onRestSelectedChord={handleRestSelectedNote}
+                    onSelectRest={(voiceIndex, chordIndex) => {
+                      setSelection({ voiceIndex, chordIndex });
+                      focusViewport();
+                    }}
+                  />
+                </Box>
               </Flex>
             </Box>
           </Box>
@@ -856,11 +946,13 @@ function RestFooter({
       borderColor={dsColors.border}
       bg={dsColors.surfaceRaised}
     >
-      <Box position="relative" w={`${gridWidthPx}px`} h={`${REST_ROW_HEIGHT_PX}px`}>
+      <Box
+        position="relative"
+        w={`${gridWidthPx}px`}
+        h={`${REST_ROW_HEIGHT_PX}px`}
+      >
         {chords.map((chord, chordIndex) => {
-          const x =
-            NOTE_GRID_PAD_X_PX +
-            chordStarts[chordIndex]! * beatWidthPx;
+          const x = NOTE_GRID_PAD_X_PX + chordStarts[chordIndex]! * beatWidthPx;
           const width = Math.max(44, chord.beats * beatWidthPx);
           const isSelectedChord = selection?.chordIndex === chordIndex;
 
@@ -888,7 +980,11 @@ function RestFooter({
               }}
               cursor={isSelectedChord ? "pointer" : "default"}
               pointerEvents={isSelectedChord ? "auto" : "none"}
-              style={{ borderBottom: "none", borderLeft: "none", borderTop: "none" }}
+              style={{
+                borderBottom: "none",
+                borderLeft: "none",
+                borderTop: "none",
+              }}
             />
           );
         })}
@@ -1010,7 +1106,10 @@ function getEditableMidis(
   for (let midi = rangeLow; midi <= rangeHigh; midi++) {
     candidates.push(midi);
   }
-  if (currentMidi != null && (currentMidi < rangeLow || currentMidi > rangeHigh)) {
+  if (
+    currentMidi != null &&
+    (currentMidi < rangeLow || currentMidi > rangeHigh)
+  ) {
     candidates.push(currentMidi);
   }
   return candidates;
@@ -1108,7 +1207,9 @@ function formatSelectedChordLabel(
   arrangement: ArrangementInfo,
   chordIndex: number,
 ): string {
-  const previewItem = arrangement.measures.flatMap((measure) => measure.chords)[chordIndex];
+  const previewItem = arrangement.measures.flatMap((measure) => measure.chords)[
+    chordIndex
+  ];
   const chord = arrangement.parsedChords[chordIndex];
   if (previewItem != null) return previewItem.chordText;
   return chord != null ? formatChordSymbol(chord) : "Selected chord";

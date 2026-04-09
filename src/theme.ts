@@ -140,7 +140,7 @@ const config = defineConfig({
       zIndex: "1",
     },
     ".segment-bar": {
-      width: "1.5px",
+      width: "1px",
       borderRadius: "999px",
       background:
         "color-mix(in srgb, var(--app-text-muted) 45%, transparent)",

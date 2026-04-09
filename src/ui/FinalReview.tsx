@@ -28,6 +28,12 @@ import {
   getTimelineEndSec,
   samplePeaksForSegment,
 } from "./timeline";
+import {
+  FINAL_REVIEW_WAVEFORM_BARS_MAX,
+  FINAL_REVIEW_WAVEFORM_BARS_MIN,
+  FINAL_REVIEW_WAVEFORM_BUCKETS_PER_SEC,
+  computeFinalReviewWaveformBarCount,
+} from "./waveformRendering";
 import type { EditorSelection } from "./timeline";
 import {
   dsPanel,
@@ -42,11 +48,7 @@ import {
   type TracksEditorStaticView,
 } from "./finalReview/tracksEditor";
 
-const WAVEFORM_BUCKETS_PER_SEC = 72;
 const TIMELINE_PX_PER_SEC = 110;
-const WAVEFORM_BAR_STEP_PX = 4;
-const WAVEFORM_BARS_MIN = 16;
-const WAVEFORM_BARS_MAX = 960;
 const SEGMENT_WAVEFORM_HORIZONTAL_PADDING_PX = 8;
 const PREVIEW_CELL_POSITIONS = [
   { left: "0%", top: "0%" },
@@ -332,7 +334,7 @@ export function FinalReview() {
           ctx,
           videoEl,
           maxDurationSec: baseDurationSec,
-          waveformBucketsPerSec: WAVEFORM_BUCKETS_PER_SEC,
+          waveformBucketsPerSec: FINAL_REVIEW_WAVEFORM_BUCKETS_PER_SEC,
         })
         .then((ingested) => {
           if (cancelled || !ingested) return;
@@ -913,10 +915,10 @@ function getCachedSegmentRenderAsset(input: {
     widthPx - SEGMENT_WAVEFORM_HORIZONTAL_PADDING_PX,
   );
   const waveformBarCount = Math.max(
-    WAVEFORM_BARS_MIN,
+    FINAL_REVIEW_WAVEFORM_BARS_MIN,
     Math.min(
-      WAVEFORM_BARS_MAX,
-      Math.round(waveformWidthPx / WAVEFORM_BAR_STEP_PX),
+      FINAL_REVIEW_WAVEFORM_BARS_MAX,
+      computeFinalReviewWaveformBarCount(waveformWidthPx),
     ),
   );
   const waveformKey =

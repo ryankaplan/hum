@@ -4,12 +4,17 @@ import { midiToNoteName } from "../music/types";
 import type { Chord, HarmonyLine, MidiNote } from "../music/types";
 import { playNotePreview } from "../music/playback";
 import { dsColors, dsPanel } from "./designSystem";
+import {
+  sampleReferenceWaveformBars,
+  type ReferenceWaveform,
+} from "./waveformRendering";
 
 type Props = {
   ctx: AudioContext;
   chords: Chord[];
   lyricsByChord: string[];
   harmonyLine: HarmonyLine | null; // null for melody part
+  referenceWaveform?: ReferenceWaveform | null;
   activeChordIndex: number;
   currentAbsoluteBeat: number;
   beatsPerBar: number;
@@ -24,6 +29,11 @@ const NOTE_TRACK_PAD_X_PX = 6;
 const MEASURE_WIDTH_PX = 80;
 const NOTE_PITCH_PADDING = 2;
 const LYRIC_LANE_HEIGHT_PX = 34;
+const REFERENCE_WAVEFORM_STRIP_HEIGHT_PX = 28;
+const LYRIC_CUE_TOP_OFFSET_PX = 6;
+const WAVEFORM_STRIP_BOTTOM_OFFSET_PX = 6;
+const WAVEFORM_BAR_WIDTH_PX = 1;
+const WAVEFORM_BAR_GAP_PX = 1;
 
 type NoteSegment = {
   chordIndex: number;
@@ -38,6 +48,7 @@ export function NoteDisplay({
   chords,
   lyricsByChord,
   harmonyLine,
+  referenceWaveform = null,
   activeChordIndex,
   currentAbsoluteBeat,
   beatsPerBar,
@@ -61,6 +72,7 @@ export function NoteDisplay({
           <LyricLane
             chords={chords}
             lyricSegments={lyricSegments}
+            referenceWaveform={referenceWaveform}
             activeChordIndex={activeChordIndex}
             currentAbsoluteBeat={currentAbsoluteBeat}
             beatsPerBar={beatsPerBar}
@@ -119,11 +131,6 @@ export function NoteDisplay({
   const lowMidi = Math.floor(minMidi) - NOTE_PITCH_PADDING;
   const highMidi = Math.ceil(maxMidi) + NOTE_PITCH_PADDING;
   const pitchRows = Math.max(1, highMidi - lowMidi + 1);
-  const trackHeightPx =
-    NOTE_TRACK_PAD_TOP_PX +
-    NOTE_TRACK_PAD_BOTTOM_PX +
-    pitchRows * NOTE_ROW_HEIGHT_PX +
-    (hasLyrics ? LYRIC_LANE_HEIGHT_PX : 0);
   const trackWidthPx = Math.max(
     280,
     Math.ceil(
@@ -131,6 +138,22 @@ export function NoteDisplay({
         NOTE_TRACK_PAD_X_PX * 2,
     ),
   );
+  const referenceWaveformBarHeights = sampleReferenceWaveformBars({
+    waveform: referenceWaveform,
+    widthPx: Math.max(0, trackWidthPx - NOTE_TRACK_PAD_X_PX * 2),
+  });
+  const referenceWaveformLaneHeightPx =
+    referenceWaveformBarHeights.length > 0
+      ? REFERENCE_WAVEFORM_STRIP_HEIGHT_PX + WAVEFORM_STRIP_BOTTOM_OFFSET_PX
+      : 0;
+  const lyricCueLaneHeightPx = hasLyrics ? LYRIC_LANE_HEIGHT_PX : 0;
+  const noteGridTopPx = lyricCueLaneHeightPx;
+  const trackHeightPx =
+    lyricCueLaneHeightPx +
+    NOTE_TRACK_PAD_TOP_PX +
+    NOTE_TRACK_PAD_BOTTOM_PX +
+    pitchRows * NOTE_ROW_HEIGHT_PX +
+    referenceWaveformLaneHeightPx;
 
   const safeBeatsPerBar = Math.max(1, beatsPerBar);
   const notePxPerBeat = MEASURE_WIDTH_PX / safeBeatsPerBar;
@@ -240,7 +263,7 @@ export function NoteDisplay({
           h={`${trackHeightPx}px`}
         >
           {Array.from({ length: pitchRows }).map((_, row) => {
-            const y = NOTE_TRACK_PAD_TOP_PX + row * NOTE_ROW_HEIGHT_PX;
+            const y = noteGridTopPx + NOTE_TRACK_PAD_TOP_PX + row * NOTE_ROW_HEIGHT_PX;
             return (
               <Box
                 key={`pitch-row-${row}`}
@@ -249,6 +272,7 @@ export function NoteDisplay({
                 left={0}
                 right={0}
                 top={`${y}px`}
+                zIndex={0}
               />
             );
           })}
@@ -263,6 +287,7 @@ export function NoteDisplay({
                 top={0}
                 bottom={0}
                 left={`${x}px`}
+                zIndex={0}
               />
             );
           })}
@@ -280,7 +305,7 @@ export function NoteDisplay({
           {segments.map((segment) => {
             const rowFromTop = highMidi - segment.midi;
             const y =
-              NOTE_TRACK_PAD_TOP_PX + rowFromTop * NOTE_ROW_HEIGHT_PX + 2;
+              noteGridTopPx + NOTE_TRACK_PAD_TOP_PX + rowFromTop * NOTE_ROW_HEIGHT_PX + 2;
             const x =
               NOTE_TRACK_PAD_X_PX + segment.startBeat * notePxPerBeat + 2;
             const w = Math.max(26, segment.beats * notePxPerBeat - 4);
@@ -324,7 +349,14 @@ export function NoteDisplay({
               lyricSegments,
               activeChordIndex,
               notePxPerBeat,
+              topPx: LYRIC_CUE_TOP_OFFSET_PX,
             })}
+
+          <ReferenceWaveformStrip
+            barHeights={referenceWaveformBarHeights}
+            widthPx={trackWidthPx}
+            bottomPx={WAVEFORM_STRIP_BOTTOM_OFFSET_PX}
+          />
         </Box>
       </Box>
     </Box>
@@ -340,6 +372,7 @@ type LyricSegment = {
 type LyricLaneProps = {
   chords: Chord[];
   lyricSegments: LyricSegment[];
+  referenceWaveform: ReferenceWaveform | null;
   activeChordIndex: number;
   currentAbsoluteBeat: number;
   beatsPerBar: number;
@@ -350,6 +383,7 @@ type LyricLaneProps = {
 function LyricLane({
   chords,
   lyricSegments,
+  referenceWaveform,
   activeChordIndex,
   currentAbsoluteBeat,
   beatsPerBar,
@@ -367,12 +401,24 @@ function LyricLane({
   const notePxPerBeat = MEASURE_WIDTH_PX / Math.max(1, beatsPerBar);
   const beatGuideCount = Math.max(1, Math.ceil(totalBeats) + 1);
   const hasActiveBeat = currentAbsoluteBeat >= 0;
+  const referenceWaveformBarHeights = sampleReferenceWaveformBars({
+    waveform: referenceWaveform,
+    widthPx: Math.max(0, trackWidthPx - NOTE_TRACK_PAD_X_PX * 2),
+  });
+  const referenceWaveformLaneHeightPx =
+    referenceWaveformBarHeights.length > 0
+      ? REFERENCE_WAVEFORM_STRIP_HEIGHT_PX + WAVEFORM_STRIP_BOTTOM_OFFSET_PX
+      : 0;
+  const trackHeightPx =
+    LYRIC_LANE_HEIGHT_PX + referenceWaveformLaneHeightPx + 8;
   const playheadX = hasActiveBeat
     ? NOTE_TRACK_PAD_X_PX + Math.max(0, currentAbsoluteBeat) * notePxPerBeat
     : 0;
 
   return (
     <Box
+      w="100%"
+      className="record-note-timeline"
       borderRadius="xl"
       border="1px solid"
       borderColor={dsColors.border}
@@ -380,7 +426,7 @@ function LyricLane({
       overflowX="auto"
       overflowY="hidden"
     >
-      <Box position="relative" w={`${trackWidthPx}px`} h={`${LYRIC_LANE_HEIGHT_PX}px`}>
+      <Box position="relative" w={`${trackWidthPx}px`} h={`${trackHeightPx}px`}>
         {Array.from({ length: beatGuideCount }).map((_, beat) => {
           const x = NOTE_TRACK_PAD_X_PX + beat * notePxPerBeat;
           return (
@@ -391,6 +437,7 @@ function LyricLane({
               top={0}
               bottom={0}
               left={`${x}px`}
+              zIndex={0}
             />
           );
         })}
@@ -408,7 +455,13 @@ function LyricLane({
           lyricSegments,
           activeChordIndex,
           notePxPerBeat,
+          topPx: LYRIC_CUE_TOP_OFFSET_PX,
         })}
+        <ReferenceWaveformStrip
+          barHeights={referenceWaveformBarHeights}
+          widthPx={trackWidthPx}
+          bottomPx={WAVEFORM_STRIP_BOTTOM_OFFSET_PX}
+        />
       </Box>
     </Box>
   );
@@ -419,8 +472,9 @@ function renderLyricSegments(input: {
   lyricSegments: LyricSegment[];
   activeChordIndex: number;
   notePxPerBeat: number;
+  topPx: number;
 }) {
-  const { chords, lyricSegments, activeChordIndex, notePxPerBeat } = input;
+  const { chords, lyricSegments, activeChordIndex, notePxPerBeat, topPx } = input;
   let startBeat = 0;
   let activeStartBeat = 0;
   let activeBeats = 0;
@@ -452,7 +506,7 @@ function renderLyricSegments(input: {
       key={`lyric-cue-${activeChordIndex}`}
       position="absolute"
       left={`${x}px`}
-      bottom="6px"
+      top={`${topPx}px`}
       minW={`${minW}px`}
       maxW={`calc(100% - ${x + 12}px)`}
       px={3}
@@ -489,6 +543,47 @@ function renderLyricSegments(input: {
             {nextLyric}
           </Text>
         )}
+      </Box>
+    </Box>
+  );
+}
+
+function ReferenceWaveformStrip(input: {
+  barHeights: number[];
+  widthPx: number;
+  bottomPx: number;
+}) {
+  const innerWidthPx = Math.max(0, input.widthPx - NOTE_TRACK_PAD_X_PX * 2);
+  if (innerWidthPx <= 0 || input.barHeights.length === 0) return null;
+
+  return (
+    <Box
+      position="absolute"
+      left={`${NOTE_TRACK_PAD_X_PX}px`}
+      right={`${NOTE_TRACK_PAD_X_PX}px`}
+      bottom={`${input.bottomPx}px`}
+      h={`${REFERENCE_WAVEFORM_STRIP_HEIGHT_PX}px`}
+      overflow="hidden"
+      pointerEvents="none"
+    >
+      <Box
+        h="100%"
+        w={`${innerWidthPx}px`}
+        display="flex"
+        alignItems="flex-end"
+        gap={`${WAVEFORM_BAR_GAP_PX}px`}
+      >
+        {input.barHeights.map((height, index) => (
+          <Box
+            key={`reference-waveform-bar-${index}`}
+            w={`${WAVEFORM_BAR_WIDTH_PX}px`}
+            h={`${Math.max(0, height)}%`}
+            minH={height > 0 ? "3px" : undefined}
+            borderRadius="full"
+            bg="color-mix(in srgb, var(--app-text-muted) 52%, transparent)"
+            flexShrink={0}
+          />
+        ))}
       </Box>
     </Box>
   );

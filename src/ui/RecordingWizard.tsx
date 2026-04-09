@@ -17,7 +17,11 @@ import {
   startRecordTake,
   type RecordingSession,
 } from "../recording/recorder";
-import { startRecordingPlayback, stopAllPlayback } from "../music/playback";
+import {
+  progressionDurationSec,
+  startRecordingPlayback,
+  stopAllPlayback,
+} from "../music/playback";
 import type { PlaybackSession } from "../music/playback";
 import {
   createMonitorPlayer,
@@ -35,6 +39,10 @@ import {
 } from "./designSystem";
 import { PlayIcon, StopIcon, VolumeOffIcon, VolumeOnIcon } from "./icons";
 import { NoteDisplay } from "./NoteDisplay";
+import {
+  buildReferenceWaveform,
+  type ReferenceWaveform,
+} from "./waveformRendering";
 
 // "listening" = playing guide tones without recording (pre-roll practice)
 type RecordPhase =
@@ -253,6 +261,8 @@ export function RecordingWizard() {
   const [guideToneEnabled, setGuideToneEnabled] = useState(true);
   const [mutedParts, setMutedParts] = useState<boolean[]>([]);
   const [priorHarmonyLevel, setPriorHarmonyLevel] = useState(1);
+  const [referenceWaveform, setReferenceWaveform] =
+    useState<ReferenceWaveform | null>(null);
 
   const reviewVideoRef = useRef<HTMLVideoElement>(null);
   const monitorPlayerRef = useRef<MonitorPlayer | null>(null);
@@ -270,6 +280,7 @@ export function RecordingWizard() {
   const isMelodyPart = partIndex >= harmonyPartCount;
   const hasPriorHarmonyMonitorControl = partIndex > 0 && !isMelodyPart;
   const beatsPerBar = arrangement.meter[0];
+  const arrangementDurationSec = progressionDurationSec(chords, arrangement.tempo);
 
   const { harmonyLine, countInCueMidi } = resolveRecordingHarmonyGuidance(
     voicing,
@@ -292,6 +303,7 @@ export function RecordingWizard() {
   useEffect(() => {
     monitorPlayerRef.current?.dispose();
     monitorPlayerRef.current = null;
+    setReferenceWaveform(null);
 
     if (ctx == null || partIndex === 0) return;
 
@@ -300,6 +312,7 @@ export function RecordingWizard() {
     const blobs: Blob[] = [];
     const trimOffsets: number[] = [];
     const partIndices: number[] = [];
+    let referenceTrackAudioIndex: number | null = null;
 
     for (let i = 0; i < partIndex; i++) {
       const trackId = orderedTrackIds[i];
@@ -310,6 +323,9 @@ export function RecordingWizard() {
       const recording = model.tracksDocument.getRecording(recordingId);
       const blob = model.getRecordingBlob(recordingId);
       if (recording == null || blob == null) continue;
+      if (i === 0) {
+        referenceTrackAudioIndex = blobs.length;
+      }
       blobs.push(blob);
       trimOffsets.push(recording.trimOffsetSec);
       partIndices.push(i);
@@ -319,6 +335,19 @@ export function RecordingWizard() {
 
     void decodeMonitorTracks(ctx, blobs, trimOffsets).then((tracks) => {
       if (cancelled) return;
+      const referenceTrack =
+        referenceTrackAudioIndex == null
+          ? null
+          : tracks[referenceTrackAudioIndex] ?? null;
+      setReferenceWaveform(
+        referenceTrack == null
+          ? null
+          : buildReferenceWaveform({
+              buffer: referenceTrack.buffer,
+              trimOffsetSec: referenceTrack.trimOffsetSec,
+              maxDurationSec: arrangementDurationSec,
+            }),
+      );
       const player = createMonitorPlayer(ctx, tracks);
       // Apply current mute state
       for (let j = 0; j < partIndices.length; j++) {
@@ -335,7 +364,7 @@ export function RecordingWizard() {
     return () => {
       cancelled = true;
     };
-  }, [ctx, orderedTrackIds, partIndex, tracksDocument]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [arrangementDurationSec, ctx, orderedTrackIds, partIndex, tracksDocument]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync mute state onto the MonitorPlayer when mutedParts changes
   useEffect(() => {
@@ -677,6 +706,7 @@ export function RecordingWizard() {
               chords={chords}
               lyricsByChord={lyricsByChord}
               harmonyLine={harmonyLine}
+              referenceWaveform={referenceWaveform}
               activeChordIndex={activeChordIndex}
               currentAbsoluteBeat={currentAbsoluteBeat}
               beatsPerBar={beatsPerBar}

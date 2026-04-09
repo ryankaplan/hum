@@ -75,9 +75,9 @@ export function ChordInputField({
         }
         fontFamily="'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', monospace"
         lineHeight="1.45"
-        spellCheck={false}
         resize="vertical"
         {...controlStyles}
+        spellCheck={false}
       />
     </Box>
   );

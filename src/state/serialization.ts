@@ -3,6 +3,7 @@ import type {
   ArrangementDocState,
   ExportPreferences,
   HumDocument,
+  RecordingMonitorPreferences,
   TracksDocumentState,
 } from "./model";
 import {
@@ -13,6 +14,7 @@ import {
   type SavedClipVolumeEnvelope,
   type SavedExportPreferences,
   type SavedHumDocument,
+  type SavedRecordingMonitorPreferences,
   type SavedRecording,
   type SavedTrack,
   type SavedTracksDocument,
@@ -35,6 +37,9 @@ export function serializeHumDocument(input: DraftSnapshot): SavedHumDocument {
     exportPreferences: serializeExportPreferences(
       input.document.exportPreferences,
     ),
+    recordingMonitorPreferences: serializeRecordingMonitorPreferences(
+      input.document.recordingMonitorPreferences,
+    ),
   };
 }
 
@@ -46,6 +51,9 @@ export function deserializeHumDocument(
       arrangement: deserializeArrangementDocument(saved.arrangement),
       tracks: deserializeTracksDocument(saved.tracks),
       exportPreferences: deserializeExportPreferences(saved.exportPreferences),
+      recordingMonitorPreferences: deserializeRecordingMonitorPreferences(
+        saved.recordingMonitorPreferences,
+      ),
     },
   };
 }
@@ -105,6 +113,31 @@ function deserializeExportPreferences(
 ): ExportPreferences {
   return {
     preferredFormat: saved.preferredFormat,
+  };
+}
+
+function serializeRecordingMonitorPreferences(
+  recordingMonitorPreferences: RecordingMonitorPreferences | undefined,
+): SavedRecordingMonitorPreferences {
+  const safePreferences = {
+    guideToneVolume: recordingMonitorPreferences?.guideToneVolume ?? 1,
+    beatVolume: recordingMonitorPreferences?.beatVolume ?? 1,
+    priorHarmonyVolume: recordingMonitorPreferences?.priorHarmonyVolume ?? 1,
+  };
+  return {
+    guideToneVolume: safePreferences.guideToneVolume,
+    beatVolume: safePreferences.beatVolume,
+    priorHarmonyVolume: safePreferences.priorHarmonyVolume,
+  };
+}
+
+function deserializeRecordingMonitorPreferences(
+  saved: SavedRecordingMonitorPreferences,
+): RecordingMonitorPreferences {
+  return {
+    guideToneVolume: saved.guideToneVolume,
+    beatVolume: saved.beatVolume,
+    priorHarmonyVolume: saved.priorHarmonyVolume,
   };
 }
 

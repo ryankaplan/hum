@@ -255,6 +255,9 @@ export function RecordingWizard() {
   const lyricsByChord = flattenArrangementLyrics(arrangementInfo.measures);
   const voicing = useObservable(model.effectiveHarmonyVoicing);
   const alignmentCorrectionSec = useObservable(model.latencyCorrectionSec);
+  const recordingMonitorPreferences = useObservable(
+    model.recordingMonitorPreferences,
+  );
 
   const [phase, setPhase] = useState<RecordPhase>("pre-roll");
   const [activeChordIndex, setActiveChordIndex] = useState(0);
@@ -263,14 +266,13 @@ export function RecordingWizard() {
   const [reviewUrl, setReviewUrl] = useState<string | null>(null);
   const [guideToneEnabled, setGuideToneEnabled] = useState(true);
   const [mutedParts, setMutedParts] = useState<boolean[]>([]);
-  const [guideToneVolume, setGuideToneVolume] = useState(1);
-  const [beatVolume, setBeatVolume] = useState(1);
-  const [priorHarmonyLevel, setPriorHarmonyLevel] = useState(1);
   const [referenceWaveform, setReferenceWaveform] =
     useState<ReferenceWaveform | null>(null);
 
   const reviewVideoRef = useRef<HTMLVideoElement>(null);
   const monitorPlayerRef = useRef<MonitorPlayer | null>(null);
+  const beatGainRef = useRef<GainNode | null>(null);
+  const guideToneGainRef = useRef<GainNode | null>(null);
   const monitorLanePartIndicesRef = useRef<number[]>([]);
   const currentBlobRef = useRef<Blob | null>(null);
   const currentAlignmentOffsetRef = useRef<number>(0);
@@ -287,6 +289,9 @@ export function RecordingWizard() {
   const hasPriorHarmonyMonitorControl = partIndex > 0 && !isMelodyPart;
   const beatsPerBar = arrangement.meter[0];
   const arrangementDurationSec = progressionDurationSec(chords, arrangement.tempo);
+  const guideToneVolume = recordingMonitorPreferences.guideToneVolume;
+  const beatVolume = recordingMonitorPreferences.beatVolume;
+  const priorHarmonyLevel = recordingMonitorPreferences.priorHarmonyVolume;
   const effectiveGuideToneLevel = guideToneEnabled ? guideToneVolume : 0;
 
   const { harmonyLine, countInCueMidi } = resolveRecordingHarmonyGuidance(
@@ -304,6 +309,43 @@ export function RecordingWizard() {
       model.tracksDocument.getPrimaryRecordingIdForTrack(trackId);
     return recordingId != null ? model.getRecordingUrl(recordingId) : null;
   });
+
+  useEffect(() => {
+    beatGainRef.current?.disconnect();
+    guideToneGainRef.current?.disconnect();
+    beatGainRef.current = null;
+    guideToneGainRef.current = null;
+
+    if (ctx == null) return;
+
+    const beatGain = ctx.createGain();
+    beatGain.gain.value = beatVolume;
+    beatGain.connect(ctx.destination);
+    beatGainRef.current = beatGain;
+
+    const guideToneGain = ctx.createGain();
+    guideToneGain.gain.value = effectiveGuideToneLevel;
+    guideToneGain.connect(ctx.destination);
+    guideToneGainRef.current = guideToneGain;
+
+    return () => {
+      beatGain.disconnect();
+      guideToneGain.disconnect();
+    };
+  }, [ctx]);
+
+  useEffect(() => {
+    if (ctx == null) return;
+    beatGainRef.current?.gain.setValueAtTime(beatVolume, ctx.currentTime);
+  }, [beatVolume, ctx]);
+
+  useEffect(() => {
+    if (ctx == null) return;
+    guideToneGainRef.current?.gain.setValueAtTime(
+      effectiveGuideToneLevel,
+      ctx.currentTime,
+    );
+  }, [effectiveGuideToneLevel, ctx]);
 
   // Rebuild the MonitorPlayer whenever we advance to a new part.
   // Decoding is async; we use a cancelled flag to discard stale results.
@@ -477,8 +519,10 @@ export function RecordingWizard() {
       harmonyLine: guideToneEnabled ? harmonyLine : null,
       beatsPerBar,
       tempo: arrangement.tempo,
-      beatLevel: beatVolume,
-      guideToneLevel: effectiveGuideToneLevel,
+      beatLevel: 1,
+      guideToneLevel: 1,
+      beatDestination: beatGainRef.current,
+      guideToneDestination: guideToneGainRef.current,
       monitorPlayer: monitorPlayerRef.current,
       onBeat: (beat) => {
         setCurrentAbsoluteBeat(beat);
@@ -551,8 +595,10 @@ export function RecordingWizard() {
         tempo: arrangement.tempo,
         latencyCorrectionSec: alignmentCorrectionSec,
         monitorPlayer: monitorPlayerRef.current,
-        beatLevel: beatVolume,
-        guideToneLevel: effectiveGuideToneLevel,
+        beatLevel: 1,
+        guideToneLevel: 1,
+        beatDestination: beatGainRef.current,
+        guideToneDestination: guideToneGainRef.current,
         callbacks: {
           onCountInBeat: (beat) => setCountInBeat(beat + 1),
           onRecordingStart: () => {
@@ -741,31 +787,25 @@ export function RecordingWizard() {
 
           {phase !== "review" && (
             <Box bg={dsColors.surfaceRaised} borderRadius="xl" px={4} py={3}>
-              <Box
-                as="details"
-                color={dsColors.text}
-              >
-                <Flex
-                  as="summary"
-                  align="center"
-                  justify="space-between"
-                  style={{ cursor: "pointer" }}
-                >
-                  <Text
-                    color={dsColors.textMuted}
-                    fontSize="xs"
-                    fontWeight="semibold"
-                  >
-                    MONITORING
-                  </Text>
-                  <Text
-                    color={dsColors.textSubtle}
-                    fontSize="xs"
-                    fontWeight="semibold"
-                  >
-                    Expand
-                  </Text>
-                </Flex>
+              <details>
+                <summary style={{ cursor: "pointer" }}>
+                  <Flex align="center" justify="space-between">
+                    <Text
+                      color={dsColors.textMuted}
+                      fontSize="xs"
+                      fontWeight="semibold"
+                    >
+                      MONITORING
+                    </Text>
+                    <Text
+                      color={dsColors.textSubtle}
+                      fontSize="xs"
+                      fontWeight="semibold"
+                    >
+                      Expand
+                    </Text>
+                  </Flex>
+                </summary>
 
                 <Stack gap={3} mt={3}>
                   {!isMelodyPart && (
@@ -795,7 +835,9 @@ export function RecordingWizard() {
                         onChange={(e) => {
                           const next = Number.parseInt(e.currentTarget.value, 10);
                           if (Number.isNaN(next)) return;
-                          setGuideToneVolume(Math.max(0, Math.min(1, next / 100)));
+                          model.setRecordingMonitorPreferences({
+                            guideToneVolume: Math.max(0, Math.min(1, next / 100)),
+                          });
                           if (next > 0 && !guideToneEnabled) {
                             setGuideToneEnabled(true);
                           }
@@ -835,7 +877,9 @@ export function RecordingWizard() {
                       onChange={(e) => {
                         const next = Number.parseInt(e.currentTarget.value, 10);
                         if (Number.isNaN(next)) return;
-                        setBeatVolume(Math.max(0, Math.min(1, next / 100)));
+                        model.setRecordingMonitorPreferences({
+                          beatVolume: Math.max(0, Math.min(1, next / 100)),
+                        });
                       }}
                       style={{
                         width: "100%",
@@ -872,7 +916,9 @@ export function RecordingWizard() {
                         onChange={(e) => {
                           const next = Number.parseInt(e.currentTarget.value, 10);
                           if (Number.isNaN(next)) return;
-                          setPriorHarmonyLevel(Math.max(0, Math.min(1, next / 100)));
+                          model.setRecordingMonitorPreferences({
+                            priorHarmonyVolume: Math.max(0, Math.min(1, next / 100)),
+                          });
                         }}
                         style={{
                           width: "100%",
@@ -883,7 +929,7 @@ export function RecordingWizard() {
                     </Box>
                   )}
                 </Stack>
-              </Box>
+              </details>
             </Box>
           )}
 

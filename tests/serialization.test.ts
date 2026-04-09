@@ -33,6 +33,11 @@ function makeDraftSnapshot(
       exportPreferences: {
         preferredFormat: null,
       },
+      recordingMonitorPreferences: {
+        guideToneVolume: 0.4,
+        beatVolume: 0.7,
+        priorHarmonyVolume: 0.2,
+      },
     },
   };
 }
@@ -67,5 +72,16 @@ describe("serializeHumDocument / deserializeHumDocument", () => {
       [52, 53],
       [55, 57],
     ]);
+  });
+
+  it("round-trips recording monitor preferences", () => {
+    const serialized = serializeHumDocument(makeDraftSnapshot("dynamic"));
+    const restored = deserializeHumDocument(serialized);
+
+    expect(restored.document.recordingMonitorPreferences).toEqual({
+      guideToneVolume: 0.4,
+      beatVolume: 0.7,
+      priorHarmonyVolume: 0.2,
+    });
   });
 });

@@ -14,6 +14,9 @@ const AUTO_SHIFT_STEP_SEC = 0.005;
 const AUTO_BEAT_MATCH_THRESHOLD = 0.22;
 const AUTO_APPLY_CONFIDENCE_THRESHOLD = 0.72;
 const AUTO_APPLY_MAX_MEAN_ERROR_SEC = 0.11;
+const RIGHT_EDGE_WARNING_MIN_SHIFT_SEC = 0.12;
+const RIGHT_EDGE_WARNING_MIN_PEAK_VALUE = 0.5;
+const RIGHT_EDGE_WARNING_RELATIVE_PEAK_RATIO = 0.72;
 
 type ShiftScore = {
   shiftSec: number;
@@ -32,6 +35,10 @@ export type SpeechCalibrationCapture = {
   targetBeatIndices: number[];
   previewSpeechGain: number;
   previewClickGain: number;
+  onsetEnvelopeValues: number[];
+  onsetEnvelopeStartSec: number;
+  onsetEnvelopeStepSec: number;
+  onsetEnvelopeEnergyP95: number;
 };
 
 export type CaptureSpeechCalibrationOpts = {
@@ -167,6 +174,12 @@ export async function captureSpeechCalibration(
     secondMeasureStartSec,
     secondMeasureDurationSec,
   );
+  const onsetEnvelope = buildOnsetEnvelope(
+    mono,
+    decoded.sampleRate,
+    secondMeasureStartSec,
+    secondMeasureDurationSec,
+  );
 
   return {
     audioBuffer: decoded,
@@ -184,6 +197,10 @@ export async function captureSpeechCalibration(
     targetBeatIndices: [0, 1, 2, 3],
     previewSpeechGain,
     previewClickGain: PREVIEW_CLICK_GAIN,
+    onsetEnvelopeValues: onsetEnvelope.values,
+    onsetEnvelopeStartSec: onsetEnvelope.startSec,
+    onsetEnvelopeStepSec: onsetEnvelope.stepSec,
+    onsetEnvelopeEnergyP95: onsetEnvelope.energyP95,
   };
 }
 
@@ -322,6 +339,46 @@ export function manualShiftToCorrectionSec(manualShiftSec: number): number {
   return clamp(-manualShiftSec, CORRECTION_MIN_SEC, CORRECTION_MAX_SEC);
 }
 
+export function shouldWarnDraggedRightEdgeBeat(
+  capture: SpeechCalibrationCapture,
+  manualShiftSec: number,
+): boolean {
+  if (manualShiftSec < RIGHT_EDGE_WARNING_MIN_SHIFT_SEC) {
+    return false;
+  }
+
+  const envelope = onsetEnvelopeFromCapture(capture);
+  if (envelope.values.length === 0 || envelope.stepSec <= 0) {
+    return false;
+  }
+
+  const hiddenStartSec = capture.durationSec - manualShiftSec;
+  if (hiddenStartSec >= capture.durationSec) {
+    return false;
+  }
+
+  const hiddenPeak = findDominantLocalPeak(
+    envelope,
+    Math.max(0, hiddenStartSec),
+    capture.durationSec,
+  );
+  if (hiddenPeak == null) {
+    return false;
+  }
+
+  const visiblePeak =
+    findDominantLocalPeak(
+      envelope,
+      0,
+      Math.max(0, Math.min(hiddenStartSec, capture.durationSec)),
+    ) ?? hiddenPeak;
+
+  return (
+    hiddenPeak.value >= RIGHT_EDGE_WARNING_MIN_PEAK_VALUE &&
+    hiddenPeak.value >= visiblePeak.value * RIGHT_EDGE_WARNING_RELATIVE_PEAK_RATIO
+  );
+}
+
 function getSupportedCalibrationMimeType(): string {
   const candidates = [
     "video/webm;codecs=vp9,opus",
@@ -445,19 +502,13 @@ function buildWaveformPeaks(
   return peaks.map((v) => Math.pow(clamp(v / p95, 0, 1), 0.65));
 }
 
-function estimateAutoCalibration(
+export function estimateAutoCalibration(
   capture: SpeechCalibrationCapture,
 ): AutoCalibrationEstimate | null {
   const beatTimes = capture.beatTimesSec;
   if (beatTimes.length === 0) return null;
 
-  const mono = downmixToMono(capture.audioBuffer);
-  const envelope = buildOnsetEnvelope(
-    mono,
-    capture.audioBuffer.sampleRate,
-    capture.sourceStartSec,
-    capture.durationSec,
-  );
+  const envelope = onsetEnvelopeFromCapture(capture);
   if (envelope.values.length === 0 || envelope.energyP95 <= 1e-6) {
     return null;
   }
@@ -585,7 +636,7 @@ function buildOnsetEnvelope(
   };
 }
 
-function scoreShiftCandidate(
+export function scoreShiftCandidate(
   envelope: OnsetEnvelope,
   beatTimesSec: number[],
   shiftSec: number,
@@ -593,23 +644,30 @@ function scoreShiftCandidate(
 ): ShiftScore {
   let score = 0;
   let matchedBeatCount = 0;
-  let errorSumSec = 0;
+  let weightedErrorSumSec = 0;
+  let matchedWeightSum = 0;
 
-  for (const beatTimeSec of beatTimesSec) {
+  for (let i = 0; i < beatTimesSec.length; i++) {
+    const beatTimeSec = beatTimesSec[i] ?? 0;
+    const beatWeight = calibrationBeatWeight(i, beatTimesSec.length);
     const { value, peakTimeSec } = findWindowPeak(
       envelope,
       beatTimeSec - shiftSec,
       searchRadiusSec,
     );
-    score += value;
+    score += value * beatWeight;
     if (value >= AUTO_BEAT_MATCH_THRESHOLD) {
       matchedBeatCount += 1;
-      errorSumSec += Math.abs(peakTimeSec + shiftSec - beatTimeSec);
+      matchedWeightSum += beatWeight;
+      weightedErrorSumSec +=
+        Math.abs(peakTimeSec + shiftSec - beatTimeSec) * beatWeight;
     }
   }
 
   const meanAlignmentErrorSec =
-    matchedBeatCount > 0 ? errorSumSec / matchedBeatCount : searchRadiusSec;
+    matchedWeightSum > 0
+      ? weightedErrorSumSec / matchedWeightSum
+      : searchRadiusSec;
   // Gentle edge penalty so flat/noisy captures do not collapse to ±800ms.
   const edgePenalty = 0.05 * (Math.abs(shiftSec) / Math.max(0.001, MANUAL_SHIFT_MAX_SEC));
   return {
@@ -617,6 +675,78 @@ function scoreShiftCandidate(
     score: score - edgePenalty,
     matchedBeatCount,
     meanAlignmentErrorSec,
+  };
+}
+
+function onsetEnvelopeFromCapture(
+  capture: SpeechCalibrationCapture,
+): OnsetEnvelope {
+  return {
+    values: capture.onsetEnvelopeValues,
+    startSec: capture.onsetEnvelopeStartSec,
+    stepSec: capture.onsetEnvelopeStepSec,
+    energyP95: capture.onsetEnvelopeEnergyP95,
+  };
+}
+
+function calibrationBeatWeight(
+  beatIndex: number,
+  beatCount: number,
+): number {
+  if (beatCount <= 1) return 1;
+  const normalizedIndex = beatIndex / (beatCount - 1);
+  return 1 + normalizedIndex * 0.8;
+}
+
+function findDominantLocalPeak(
+  envelope: OnsetEnvelope,
+  fromSec: number,
+  toSec: number,
+): { value: number; peakTimeSec: number } | null {
+  const { values, startSec, stepSec } = envelope;
+  if (values.length === 0 || stepSec <= 0 || toSec <= fromSec) {
+    return null;
+  }
+
+  const minIndex = Math.max(0, Math.floor((fromSec - startSec) / stepSec));
+  const maxIndex = Math.min(
+    values.length - 1,
+    Math.ceil((toSec - startSec) / stepSec),
+  );
+  if (maxIndex < minIndex) {
+    return null;
+  }
+
+  let bestIndex = -1;
+  let bestValue = -Infinity;
+  for (let i = minIndex; i <= maxIndex; i++) {
+    const value = values[i] ?? 0;
+    const prev = values[i - 1] ?? Number.NEGATIVE_INFINITY;
+    const next = values[i + 1] ?? Number.NEGATIVE_INFINITY;
+    const isLocalPeak = value >= prev && value >= next;
+    if (isLocalPeak && value > bestValue) {
+      bestValue = value;
+      bestIndex = i;
+    }
+  }
+
+  if (bestIndex < 0) {
+    for (let i = minIndex; i <= maxIndex; i++) {
+      const value = values[i] ?? 0;
+      if (value > bestValue) {
+        bestValue = value;
+        bestIndex = i;
+      }
+    }
+  }
+
+  if (bestIndex < 0) {
+    return null;
+  }
+
+  return {
+    value: values[bestIndex] ?? 0,
+    peakTimeSec: startSec + bestIndex * stepSec,
   };
 }
 

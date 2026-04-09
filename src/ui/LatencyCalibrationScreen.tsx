@@ -14,6 +14,7 @@ import {
   MANUAL_SHIFT_MIN_SEC,
   manualShiftToCorrectionSec,
   runBestEffortAutoCalibration,
+  shouldWarnDraggedRightEdgeBeat,
   startCalibrationPreview,
   type CalibrationPreviewSession,
   type SpeechCalibrationCapture,
@@ -273,6 +274,10 @@ export function LatencyCalibrationScreen() {
   }, [micDevices, selectedMicId]);
 
   const correctionSec = manualShiftToCorrectionSec(manualShiftSec);
+  const rightEdgeWarning = useMemo(() => {
+    if (capture == null) return false;
+    return shouldWarnDraggedRightEdgeBeat(capture, manualShiftSec);
+  }, [capture, manualShiftSec]);
   const canContinue = capture != null && !busy;
 
   useEffect(() => {
@@ -593,6 +598,26 @@ export function LatencyCalibrationScreen() {
                   onShiftChange={setManualShiftSec}
                 />
               </Box>
+
+              {rightEdgeWarning && (
+                <Box
+                  mt={3}
+                  px={3}
+                  py={2.5}
+                  borderRadius="lg"
+                  bg={dsColors.surfaceSubtle}
+                  border="1px solid"
+                  borderColor={dsColors.warning}
+                >
+                  <Text color={dsColors.text} fontSize="sm" fontWeight="semibold">
+                    That drag may have pushed a clear beat past the right edge.
+                  </Text>
+                  <Text color={dsColors.textMuted} fontSize="xs" mt={1}>
+                    Try nudging the waveform back left so the last spoken beat
+                    stays inside the bar.
+                  </Text>
+                </Box>
+              )}
             </Box>
           )}
 

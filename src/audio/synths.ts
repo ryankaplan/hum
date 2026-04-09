@@ -19,9 +19,13 @@ export function playClick(
   ctx: AudioContext,
   time: number,
   isDownbeat: boolean,
+  level = 1,
+  destination: AudioNode = ctx.destination,
 ): void {
+  if (level <= 0) return;
+
   const gain = ctx.createGain();
-  gain.connect(ctx.destination);
+  gain.connect(destination);
 
   const osc = ctx.createOscillator();
   osc.type = "sine";
@@ -35,7 +39,7 @@ export function playClick(
 
   // Amplitude: instant attack, fast exponential decay
   gain.gain.setValueAtTime(0.001, time);
-  gain.gain.exponentialRampToValueAtTime(0.9, time + 0.002);
+  gain.gain.exponentialRampToValueAtTime(0.9 * level, time + 0.002);
   gain.gain.exponentialRampToValueAtTime(0.001, time + 0.1);
 
   osc.start(time);
@@ -65,10 +69,16 @@ export function playGuideTone(
   frequency: number,
   startTime: number,
   durationSec: number,
+  level = 1,
+  destination: AudioNode = ctx.destination,
 ): () => void {
+  if (level <= 0) {
+    return () => {};
+  }
+
   const gain = ctx.createGain();
   gain.gain.value = 0;
-  gain.connect(ctx.destination);
+  gain.connect(destination);
 
   const osc = ctx.createOscillator();
   osc.type = "triangle";
@@ -77,7 +87,7 @@ export function playGuideTone(
 
   // Keep guide tones present but below the prior-take monitor so overdubbing
   // timing cues come from the recorded part first.
-  const peak = 0.38;
+  const peak = 0.38 * level;
   const attack = 0.02;
   const decay = 0.1;
   const sustainLevel = peak * 0.8;
@@ -119,21 +129,23 @@ export function playCountInCueTone(
   frequency: number,
   startTime: number,
   endTime: number,
+  level = 1,
+  destination: AudioNode = ctx.destination,
 ): () => void {
-  if (endTime <= startTime) {
+  if (endTime <= startTime || level <= 0) {
     return () => {};
   }
 
   const gain = ctx.createGain();
   gain.gain.value = 0;
-  gain.connect(ctx.destination);
+  gain.connect(destination);
 
   const osc = ctx.createOscillator();
   osc.type = "triangle";
   osc.frequency.value = frequency;
   osc.connect(gain);
 
-  const peak = 0.42;
+  const peak = 0.42 * level;
   const attack = 0.02;
   const release = 0.08;
   const sustainLevel = peak * 0.82;

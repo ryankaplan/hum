@@ -263,6 +263,8 @@ export function RecordingWizard() {
   const [reviewUrl, setReviewUrl] = useState<string | null>(null);
   const [guideToneEnabled, setGuideToneEnabled] = useState(true);
   const [mutedParts, setMutedParts] = useState<boolean[]>([]);
+  const [guideToneVolume, setGuideToneVolume] = useState(1);
+  const [beatVolume, setBeatVolume] = useState(1);
   const [priorHarmonyLevel, setPriorHarmonyLevel] = useState(1);
   const [referenceWaveform, setReferenceWaveform] =
     useState<ReferenceWaveform | null>(null);
@@ -285,6 +287,7 @@ export function RecordingWizard() {
   const hasPriorHarmonyMonitorControl = partIndex > 0 && !isMelodyPart;
   const beatsPerBar = arrangement.meter[0];
   const arrangementDurationSec = progressionDurationSec(chords, arrangement.tempo);
+  const effectiveGuideToneLevel = guideToneEnabled ? guideToneVolume : 0;
 
   const { harmonyLine, countInCueMidi } = resolveRecordingHarmonyGuidance(
     voicing,
@@ -465,7 +468,7 @@ export function RecordingWizard() {
 
     setPhase("listening");
     setActiveChordIndex(0);
-    setCurrentAbsoluteBeat(0);
+    setCurrentAbsoluteBeat(-1);
 
     if (ctx == null) return;
     const session = startRecordingPlayback({
@@ -474,6 +477,8 @@ export function RecordingWizard() {
       harmonyLine: guideToneEnabled ? harmonyLine : null,
       beatsPerBar,
       tempo: arrangement.tempo,
+      beatLevel: beatVolume,
+      guideToneLevel: effectiveGuideToneLevel,
       monitorPlayer: monitorPlayerRef.current,
       onBeat: (beat) => {
         setCurrentAbsoluteBeat(beat);
@@ -506,6 +511,7 @@ export function RecordingWizard() {
         listenSessionRef.current = null;
         setPhase("pre-roll");
         setActiveChordIndex(0);
+        setCurrentAbsoluteBeat(-1);
       }
     }, durationMs);
   }
@@ -529,6 +535,7 @@ export function RecordingWizard() {
     setPhase("counting-in");
     setActiveChordIndex(0);
     setCountInBeat(0);
+    setCurrentAbsoluteBeat(-1);
 
     if (ctx == null) return;
 
@@ -544,12 +551,13 @@ export function RecordingWizard() {
         tempo: arrangement.tempo,
         latencyCorrectionSec: alignmentCorrectionSec,
         monitorPlayer: monitorPlayerRef.current,
+        beatLevel: beatVolume,
+        guideToneLevel: effectiveGuideToneLevel,
         callbacks: {
           onCountInBeat: (beat) => setCountInBeat(beat + 1),
           onRecordingStart: () => {
             setPhase("recording");
             setActiveChordIndex(0);
-            setCurrentAbsoluteBeat(0);
           },
           onBeat: (beat) => {
             setCurrentAbsoluteBeat(beat);
@@ -731,37 +739,151 @@ export function RecordingWizard() {
             hideCurrentKeptPreview={isRedoingCurrentPart}
           />
 
-          {phase !== "review" && hasPriorHarmonyMonitorControl && (
+          {phase !== "review" && (
             <Box bg={dsColors.surfaceRaised} borderRadius="xl" px={4} py={3}>
-              <Flex justify="space-between" align="center" mb={2}>
-                <Text
-                  color={dsColors.textMuted}
-                  fontSize="xs"
-                  fontWeight="semibold"
+              <Box
+                as="details"
+                color={dsColors.text}
+              >
+                <Flex
+                  as="summary"
+                  align="center"
+                  justify="space-between"
+                  style={{ cursor: "pointer" }}
                 >
-                  PREVIOUS HARMONIES VOLUME
-                </Text>
-                <Text color={dsColors.text} fontSize="xs" fontWeight="semibold">
-                  {Math.round(priorHarmonyLevel * 100)}%
-                </Text>
-              </Flex>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                step={1}
-                value={Math.round(priorHarmonyLevel * 100)}
-                onChange={(e) => {
-                  const next = Number.parseInt(e.currentTarget.value, 10);
-                  if (Number.isNaN(next)) return;
-                  setPriorHarmonyLevel(Math.max(0, Math.min(1, next / 100)));
-                }}
-                style={{
-                  width: "100%",
-                  accentColor:
-                    "var(--chakra-colors-appAccent, var(--chakra-colors-app-accent))",
-                }}
-              />
+                  <Text
+                    color={dsColors.textMuted}
+                    fontSize="xs"
+                    fontWeight="semibold"
+                  >
+                    MONITORING
+                  </Text>
+                  <Text
+                    color={dsColors.textSubtle}
+                    fontSize="xs"
+                    fontWeight="semibold"
+                  >
+                    Expand
+                  </Text>
+                </Flex>
+
+                <Stack gap={3} mt={3}>
+                  {!isMelodyPart && (
+                    <Box>
+                      <Flex justify="space-between" align="center" mb={1.5}>
+                        <Text
+                          color={dsColors.textMuted}
+                          fontSize="xs"
+                          fontWeight="semibold"
+                        >
+                          GUIDE TONES VOLUME
+                        </Text>
+                        <Text
+                          color={dsColors.text}
+                          fontSize="xs"
+                          fontWeight="semibold"
+                        >
+                          {Math.round(effectiveGuideToneLevel * 100)}%
+                        </Text>
+                      </Flex>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        step={1}
+                        value={Math.round(guideToneVolume * 100)}
+                        onChange={(e) => {
+                          const next = Number.parseInt(e.currentTarget.value, 10);
+                          if (Number.isNaN(next)) return;
+                          setGuideToneVolume(Math.max(0, Math.min(1, next / 100)));
+                          if (next > 0 && !guideToneEnabled) {
+                            setGuideToneEnabled(true);
+                          }
+                        }}
+                        style={{
+                          width: "100%",
+                          accentColor:
+                            "var(--chakra-colors-appAccent, var(--chakra-colors-app-accent))",
+                        }}
+                      />
+                    </Box>
+                  )}
+
+                  <Box>
+                    <Flex justify="space-between" align="center" mb={1.5}>
+                      <Text
+                        color={dsColors.textMuted}
+                        fontSize="xs"
+                        fontWeight="semibold"
+                      >
+                        BEAT VOLUME
+                      </Text>
+                      <Text
+                        color={dsColors.text}
+                        fontSize="xs"
+                        fontWeight="semibold"
+                      >
+                        {Math.round(beatVolume * 100)}%
+                      </Text>
+                    </Flex>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={1}
+                      value={Math.round(beatVolume * 100)}
+                      onChange={(e) => {
+                        const next = Number.parseInt(e.currentTarget.value, 10);
+                        if (Number.isNaN(next)) return;
+                        setBeatVolume(Math.max(0, Math.min(1, next / 100)));
+                      }}
+                      style={{
+                        width: "100%",
+                        accentColor:
+                          "var(--chakra-colors-appAccent, var(--chakra-colors-app-accent))",
+                      }}
+                    />
+                  </Box>
+
+                  {hasPriorHarmonyMonitorControl && (
+                    <Box>
+                      <Flex justify="space-between" align="center" mb={1.5}>
+                        <Text
+                          color={dsColors.textMuted}
+                          fontSize="xs"
+                          fontWeight="semibold"
+                        >
+                          PREV HARMONIES VOLUME
+                        </Text>
+                        <Text
+                          color={dsColors.text}
+                          fontSize="xs"
+                          fontWeight="semibold"
+                        >
+                          {Math.round(priorHarmonyLevel * 100)}%
+                        </Text>
+                      </Flex>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        step={1}
+                        value={Math.round(priorHarmonyLevel * 100)}
+                        onChange={(e) => {
+                          const next = Number.parseInt(e.currentTarget.value, 10);
+                          if (Number.isNaN(next)) return;
+                          setPriorHarmonyLevel(Math.max(0, Math.min(1, next / 100)));
+                        }}
+                        style={{
+                          width: "100%",
+                          accentColor:
+                            "var(--chakra-colors-appAccent, var(--chakra-colors-app-accent))",
+                        }}
+                      />
+                    </Box>
+                  )}
+                </Stack>
+              </Box>
             </Box>
           )}
 

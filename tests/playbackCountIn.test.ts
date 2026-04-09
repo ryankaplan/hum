@@ -25,9 +25,11 @@ describe("playCountIn", () => {
   });
 
   it("schedules the cue note through recording start when a count-in pitch is provided", () => {
+    const destination = {} as AudioNode;
     const ctx = {
       currentTime: 12,
       outputLatency: 0.2,
+      destination,
     } as AudioContext;
 
     const result = playCountIn(ctx, 4, 120, 64);
@@ -38,9 +40,12 @@ describe("playCountIn", () => {
       ctx,
       expect.any(Number),
       12.05,
-      result.recordingStartTime,
+      result.gridStartTime,
+      1,
+      destination,
     );
-    expect(result.recordingStartTime).toBeCloseTo(14.25);
+    expect(result.gridStartTime).toBeCloseTo(14.05);
+    expect(result.alignmentStartTime).toBeCloseTo(14.25);
   });
 
   it("keeps the count-in click-only when no cue pitch is provided", () => {

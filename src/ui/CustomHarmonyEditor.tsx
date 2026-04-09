@@ -1,4 +1,4 @@
-import { Box, Button, Flex, Heading, Stack, Text } from "@chakra-ui/react";
+import { Box, Button, Flex, Text } from "@chakra-ui/react";
 import {
   type ChangeEvent as ReactChangeEvent,
   useEffect,
@@ -37,6 +37,7 @@ import {
   dsPrimaryButton,
   dsScreenShell,
 } from "./designSystem";
+import { PlayIcon, StopIcon } from "./icons";
 
 type Props = {
   arrangement: ArrangementInfo;
@@ -47,10 +48,12 @@ type Props = {
   onSave: (lines: HarmonyLine[]) => void;
 };
 
-type Selection = {
+export type HarmonyEditorSelection = {
   chordIndex: number;
   voiceIndex: number;
 };
+
+type Selection = HarmonyEditorSelection;
 
 type ChordSummary = {
   formula: string;
@@ -77,16 +80,27 @@ type RestCluster = {
   }>;
 };
 
+type VisualSelectionItem = HarmonyEditorSelection & {
+  kind: "note" | "rest";
+  midi: MidiNote | null;
+};
+
+type TypedPitchBufferResult =
+  | { nextBuffer: string; commit: "none" }
+  | { nextBuffer: string; commit: "rest" }
+  | { nextBuffer: string; commit: "note"; midi: MidiNote };
+
 const CHORD_HEADER_HEIGHT_PX = 64;
 const NOTE_ROW_HEIGHT_PX = 26;
 const LYRIC_LANE_HEIGHT_PX = 40;
 const REST_ROW_HEIGHT_PX = 34;
 const NOTE_NAME_COL_WIDTH_PX = 84;
 const NOTE_GRID_PAD_X_PX = 8;
-const DEFAULT_BEAT_WIDTH_PX = 64;
+const DEFAULT_MEASURE_WIDTH_PX = 120;
 const NOTE_PILL_HEIGHT_PX = 18;
 const PITCH_PADDING = 1;
 const VOICE_COLORS = ["#4d44e3", "#1f9d79", "#d06a32"] as const;
+const TYPED_PITCH_BUFFER_TIMEOUT_MS = 1000;
 
 export function CustomHarmonyEditor({
   arrangement,
@@ -106,11 +120,16 @@ export function CustomHarmonyEditor({
   const [previewing, setPreviewing] = useState(false);
   const previewSessionRef = useRef<PlaybackSession | null>(null);
   const scrollViewportRef = useRef<HTMLDivElement | null>(null);
+  const typedPitchBufferRef = useRef("");
+  const typedPitchBufferTimeoutRef = useRef<number | null>(null);
   const beatsPerBar = Math.max(1, arrangement.input.meter[0]);
-  const defaultMeasureWidthPx = beatsPerBar * DEFAULT_BEAT_WIDTH_PX;
   const minMeasureWidthPx = beatsPerBar * 10;
   const maxMeasureWidthPx = beatsPerBar * 96;
   const measureWidthStepPx = beatsPerBar * 4;
+  const defaultMeasureWidthPx = Math.max(
+    minMeasureWidthPx,
+    DEFAULT_MEASURE_WIDTH_PX,
+  );
   const [measureWidthPx, setMeasureWidthPx] = useState(defaultMeasureWidthPx);
   const beatWidthPx = measureWidthPx / beatsPerBar;
 
@@ -127,6 +146,10 @@ export function CustomHarmonyEditor({
       stopAllPlayback();
       previewSessionRef.current?.stop();
       previewSessionRef.current = null;
+      if (typedPitchBufferTimeoutRef.current != null) {
+        window.clearTimeout(typedPitchBufferTimeoutRef.current);
+        typedPitchBufferTimeoutRef.current = null;
+      }
     };
   }, []);
 
@@ -215,8 +238,16 @@ export function CustomHarmonyEditor({
     () => groupNoteClusters(localLines, arrangement.parsedChords.length),
     [localLines, arrangement.parsedChords.length],
   );
+  const referenceNoteClusters = useMemo(
+    () => groupNoteClusters(draftLines, arrangement.parsedChords.length),
+    [draftLines, arrangement.parsedChords.length],
+  );
   const restClusters = useMemo(
     () => groupRestClusters(localLines, arrangement.parsedChords.length),
+    [localLines, arrangement.parsedChords.length],
+  );
+  const visualSelectionItems = useMemo(
+    () => getVisualSelectionItems(localLines, arrangement.parsedChords.length),
     [localLines, arrangement.parsedChords.length],
   );
 
@@ -240,66 +271,156 @@ export function CustomHarmonyEditor({
     el.scrollTop = 0;
   }, [highMidi, lowMidi, arrangement.parsedChords.length]);
 
+  const selectedChordLabel =
+    selection == null
+      ? "Pick a note to edit"
+      : formatSelectedChordLabel(arrangement, selection.chordIndex);
+  const selectedChordDetails =
+    selection == null
+      ? "Degree labels appear on the selected chord column."
+      : getChordSummaryText(selectedChordSummary);
+  const selectedNoteLabel =
+    selection == null
+      ? "No note selected"
+      : `${getPartLabel(selection.voiceIndex, harmonyPartCount + 1)}: ${
+          selectedMidi != null ? midiToNoteName(selectedMidi) : "Rest"
+        }${
+          selectedMidi != null && selectedChord != null
+            ? ` • ${labelHarmonyNoteForChord(selectedChord, selectedMidi)}`
+            : ""
+        }`;
+  const selectedLyric =
+    selection == null
+      ? "Select a note to inspect its lyric."
+      : (chordPreviewItems[selection.chordIndex]?.lyrics?.trim() ??
+          "No lyric on this chord") || "No lyric on this chord";
+
   function focusViewport() {
     scrollViewportRef.current?.focus();
   }
 
-  function handleMoveSelectedNote(nextMidi: MidiNote) {
+  function clearTypedPitchBuffer() {
+    typedPitchBufferRef.current = "";
+    if (typedPitchBufferTimeoutRef.current != null) {
+      window.clearTimeout(typedPitchBufferTimeoutRef.current);
+      typedPitchBufferTimeoutRef.current = null;
+    }
+  }
+
+  function restartTypedPitchBufferTimeout(nextBuffer: string) {
+    if (typedPitchBufferTimeoutRef.current != null) {
+      window.clearTimeout(typedPitchBufferTimeoutRef.current);
+      typedPitchBufferTimeoutRef.current = null;
+    }
+    if (nextBuffer.length === 0) return;
+    typedPitchBufferTimeoutRef.current = window.setTimeout(() => {
+      typedPitchBufferRef.current = "";
+      typedPitchBufferTimeoutRef.current = null;
+    }, TYPED_PITCH_BUFFER_TIMEOUT_MS);
+  }
+
+  function updateSelection(nextSelection: Selection) {
+    setSelection(nextSelection);
+    focusViewport();
+  }
+
+  function applySelectedValue(nextMidi: MidiNote | null) {
     if (selection == null) return;
-    if (!selectedCandidates.has(nextMidi)) return;
     const nextLines = localLines.map((line: HarmonyLine) => [...line]);
     nextLines[selection.voiceIndex]![selection.chordIndex] = nextMidi;
     setSelection({
       chordIndex: selection.chordIndex,
       voiceIndex: selection.voiceIndex,
     });
-    if (ctx != null) {
+    if (nextMidi != null && ctx != null) {
       playNotePreview(ctx, nextMidi, 0.8);
     }
     setLocalLines(nextLines);
     focusViewport();
   }
 
+  function handleMoveSelectedNote(nextMidi: MidiNote) {
+    if (selection == null) return;
+    if (!selectedCandidates.has(nextMidi)) return;
+    applySelectedValue(nextMidi);
+  }
+
   function handleRestSelectedNote() {
     if (selection == null) return;
-    const nextLines = localLines.map((line: HarmonyLine) => [...line]);
-    nextLines[selection.voiceIndex]![selection.chordIndex] = null;
-    setSelection({
-      chordIndex: selection.chordIndex,
-      voiceIndex: selection.voiceIndex,
-    });
-    setLocalLines(nextLines);
-    focusViewport();
+    applySelectedValue(null);
   }
 
   function handleViewportKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
-    if (
-      event.metaKey ||
-      event.ctrlKey ||
-      event.altKey ||
-      event.shiftKey ||
-      selection == null
-    ) {
+    if (event.metaKey || event.ctrlKey || event.altKey || selection == null) {
+      return;
+    }
+
+    if (event.key === "Escape") {
+      if (typedPitchBufferRef.current.length > 0) {
+        event.preventDefault();
+        clearTypedPitchBuffer();
+      }
+      return;
+    }
+
+    if (event.key === "Tab") {
+      const nextSelection = getNextSelectionInVisualOrder(
+        visualSelectionItems,
+        selection,
+        event.shiftKey ? -1 : 1,
+      );
+      event.preventDefault();
+      clearTypedPitchBuffer();
+      if (nextSelection != null) {
+        updateSelection(nextSelection);
+      }
       return;
     }
 
     const direction =
-      event.key === "ArrowUp" ? 1 : event.key === "ArrowDown" ? -1 : 0;
-    if (direction === 0) return;
-
-    const nextMidi = getNextMidiForArrowMove(
-      selectedMidi,
-      direction,
-      range.low,
-      range.high,
-    );
-    if (nextMidi == null || nextMidi === selectedMidi) {
+      !event.shiftKey && event.key === "ArrowUp"
+        ? 1
+        : !event.shiftKey && event.key === "ArrowDown"
+          ? -1
+          : 0;
+    if (direction !== 0) {
+      const nextMidi = getNextMidiForArrowMove(
+        selectedMidi,
+        direction,
+        range.low,
+        range.high,
+      );
       event.preventDefault();
+      clearTypedPitchBuffer();
+      if (nextMidi != null && nextMidi !== selectedMidi) {
+        handleMoveSelectedNote(nextMidi);
+      }
       return;
     }
 
+    const typedPitchResult = reduceTypedPitchBuffer(
+      typedPitchBufferRef.current,
+      event.key,
+      selectedCandidates,
+    );
+    if (typedPitchResult == null) {
+      return;
+    }
+
+    typedPitchBufferRef.current = typedPitchResult.nextBuffer;
+    if (typedPitchResult.commit === "rest") {
+      event.preventDefault();
+      clearTypedPitchBuffer();
+      handleRestSelectedNote();
+      return;
+    }
     event.preventDefault();
-    handleMoveSelectedNote(nextMidi);
+    if (typedPitchResult.commit === "note") {
+      clearTypedPitchBuffer();
+      handleMoveSelectedNote(typedPitchResult.midi);
+      return;
+    }
+    restartTypedPitchBufferTimeout(typedPitchResult.nextBuffer);
   }
 
   async function handlePreview() {
@@ -344,47 +465,156 @@ export function CustomHarmonyEditor({
   }
 
   return (
-    <Flex {...dsScreenShell} py={{ base: 4, md: 6 }} align="stretch">
+    <Flex
+      {...dsScreenShell}
+      h="100dvh"
+      minH="100dvh"
+      py={0}
+      px={0}
+      align="stretch"
+      justify="stretch"
+      overflow="hidden"
+    >
       <Box
         w="100%"
-        maxW="1360px"
-        p={{ base: 4, md: 6 }}
-        maxH="calc(100dvh - 2rem)"
+        h="100dvh"
+        p={0}
         overflow="hidden"
         {...dsPanel}
+        borderRadius="none"
+        borderLeftWidth="0"
+        borderRightWidth="0"
+        borderTopWidth="0"
+        boxShadow="none"
       >
-        <Stack gap={5}>
-          <Flex
-            justify="space-between"
-            align={{ base: "flex-start", md: "center" }}
-            gap={3}
-            flexWrap="wrap"
+        <Flex direction="column" h="100%" minH={0}>
+          <Box
+            px={{ base: 2.5, md: 3 }}
+            py={{ base: 2, md: 2.5 }}
+            borderBottom="1px solid"
+            borderColor={dsColors.border}
+            bg={dsColors.surface}
           >
-            <Box>
-              <Text
-                color={dsColors.textMuted}
-                fontSize="xs"
-                fontWeight="semibold"
-                mb={1}
-              >
-                HARMONY EDITOR
-              </Text>
-              <Heading size="lg" color={dsColors.text}>
-                Customize harmony
-              </Heading>
-              <Text color={dsColors.textMuted} fontSize="sm" mt={1}>
-                Select a colored note, then click any pitch row to move it. Use
-                the Rest footer to make the selected part stay silent for a
-                chord.
-              </Text>
-            </Box>
             <Flex
+              justify="space-between"
+              align={{ base: "flex-start", md: "center" }}
               gap={3}
-              align={{ base: "stretch", md: "center" }}
               flexWrap="wrap"
-              justify="flex-end"
             >
-              <Box minW={{ base: "100%", sm: "240px" }}>
+              <Flex
+                align={{ base: "flex-start", sm: "center" }}
+                gap={{ base: 2, sm: 3 }}
+                flexWrap="wrap"
+              >
+                <Text
+                  color={dsColors.text}
+                  fontSize="lg"
+                  fontWeight="semibold"
+                  lineHeight="1"
+                  letterSpacing="-0.01em"
+                >
+                  Hum
+                </Text>
+                <Box
+                  w="1px"
+                  h="20px"
+                  bg="color-mix(in srgb, var(--app-border-muted) 55%, transparent)"
+                  display={{ base: "none", sm: "block" }}
+                />
+                <Text
+                  color={dsColors.textMuted}
+                  fontSize="xs"
+                  fontWeight="semibold"
+                  letterSpacing="0.08em"
+                >
+                  HARMONY EDITOR
+                </Text>
+              </Flex>
+
+              <Flex
+                gap={2}
+                align={{ base: "stretch", sm: "center" }}
+                flexWrap="wrap"
+                justify="flex-end"
+              >
+                <Button
+                  {...dsOutlineButton}
+                  size="sm"
+                  minW="34px"
+                  w="34px"
+                  h="34px"
+                  p={0}
+                  onClick={handlePreview}
+                  aria-label={previewing ? "Stop preview" : "Play preview"}
+                  title={previewing ? "Stop preview" : "Play preview"}
+                >
+                  {previewing ? (
+                    <StopIcon size={15} />
+                  ) : (
+                    <PlayIcon size={15} />
+                  )}
+                </Button>
+                <Flex gap={2} flexWrap="wrap">
+                  <Button {...dsOutlineButton} size="sm" onClick={onCancel}>
+                    Cancel
+                  </Button>
+                  <Button
+                    {...dsPrimaryButton}
+                    size="sm"
+                    onClick={() =>
+                      onSave(localLines.map((line: HarmonyLine) => [...line]))
+                    }
+                  >
+                    Save
+                  </Button>
+                </Flex>
+              </Flex>
+            </Flex>
+
+            <Flex
+              mt={2.5}
+              pt={2.5}
+              gap={3}
+              flexWrap="wrap"
+              align={{ base: "stretch", xl: "center" }}
+              borderTop="1px solid"
+              borderColor="color-mix(in srgb, var(--app-border-muted) 28%, transparent)"
+            >
+              <Box minW={{ base: "100%", md: "220px" }} flex="1 1 220px">
+                <Text
+                  color={dsColors.textMuted}
+                  fontSize="xs"
+                  fontWeight="semibold"
+                  mb={1}
+                >
+                  SELECTED CHORD
+                </Text>
+                <Text color={dsColors.text} fontSize="sm" fontWeight="semibold">
+                  {selectedChordLabel}
+                </Text>
+                <Text color={dsColors.textMuted} fontSize="xs" mt={0.5}>
+                  {selectedChordDetails}
+                </Text>
+              </Box>
+
+              <Box minW={{ base: "100%", md: "220px" }} flex="1 1 220px">
+                <Text
+                  color={dsColors.textMuted}
+                  fontSize="xs"
+                  fontWeight="semibold"
+                  mb={1}
+                >
+                  SELECTED NOTE
+                </Text>
+                <Text color={dsColors.text} fontSize="sm" fontWeight="semibold">
+                  {selectedNoteLabel}
+                </Text>
+                <Text color={dsColors.textMuted} fontSize="xs" mt={0.5}>
+                  {selectedLyric}
+                </Text>
+              </Box>
+
+              <Box minW={{ base: "100%", lg: "320px" }} flex="1.15 1 320px">
                 <Text
                   color={dsColors.textMuted}
                   fontSize="xs"
@@ -420,104 +650,19 @@ export function CustomHarmonyEditor({
                   </Text>
                 </Flex>
               </Box>
-              <Flex gap={2} flexWrap="wrap">
-                <Button {...dsOutlineButton} onClick={handlePreview}>
-                  {previewing ? "Stop" : "Play"}
-                </Button>
-                <Button {...dsOutlineButton} onClick={onCancel}>
-                  Cancel
-                </Button>
-                <Button
-                  {...dsPrimaryButton}
-                  onClick={() =>
-                    onSave(localLines.map((line: HarmonyLine) => [...line]))
-                  }
-                >
-                  Save custom harmony
-                </Button>
-              </Flex>
-            </Flex>
-          </Flex>
-
-          <Box
-            bg={dsColors.surfaceRaised}
-            borderRadius="xl"
-            px={4}
-            py={3}
-            border="1px solid"
-            borderColor={dsColors.border}
-          >
-            <Flex
-              justify="space-between"
-              align={{ base: "flex-start", md: "center" }}
-              gap={3}
-              flexWrap="wrap"
-            >
-              <Box>
-                <Text
-                  color={dsColors.textMuted}
-                  fontSize="xs"
-                  fontWeight="semibold"
-                >
-                  SELECTED CHORD
-                </Text>
-                <Text color={dsColors.text} fontSize="lg" fontWeight="semibold">
-                  {selection == null
-                    ? "Pick a note to edit"
-                    : formatSelectedChordLabel(
-                        arrangement,
-                        selection.chordIndex,
-                      )}
-                </Text>
-                <Text color={dsColors.textMuted} fontSize="sm">
-                  {selection == null
-                    ? "Degree labels appear on the selected chord column."
-                    : getChordSummaryText(selectedChordSummary)}
-                </Text>
-              </Box>
-              {selection != null && (
-                <Box minW={{ md: "220px" }}>
-                  <Text
-                    color={dsColors.textMuted}
-                    fontSize="xs"
-                    fontWeight="semibold"
-                  >
-                    SELECTED NOTE
-                  </Text>
-                  <Text
-                    color={dsColors.text}
-                    fontSize="sm"
-                    fontWeight="semibold"
-                  >
-                    {getPartLabel(selection.voiceIndex, harmonyPartCount + 1)}:{" "}
-                    {selectedMidi != null
-                      ? midiToNoteName(selectedMidi)
-                      : "Rest"}
-                    {selectedMidi != null && selectedChord != null
-                      ? ` • ${labelHarmonyNoteForChord(selectedChord, selectedMidi)}`
-                      : ""}
-                  </Text>
-                  <Text color={dsColors.textMuted} fontSize="sm">
-                    {chordPreviewItems[selection.chordIndex]?.lyrics ||
-                      "No lyric on this chord"}
-                  </Text>
-                </Box>
-              )}
             </Flex>
           </Box>
 
           <Box
-            borderRadius="xl"
-            overflow="hidden"
-            border="1px solid"
-            borderColor={dsColors.border}
-            bg={dsColors.surfaceSubtle}
+            flex="1"
             minH={0}
+            overflow="hidden"
+            bg={dsColors.surfaceSubtle}
           >
             <Box
               ref={scrollViewportRef}
               overflow="auto"
-              maxH="calc(100dvh - 20rem)"
+              h="100%"
               tabIndex={0}
               onKeyDownCapture={handleViewportKeyDown}
             >
@@ -753,6 +898,77 @@ export function CustomHarmonyEditor({
                       });
                     })}
 
+                    {referenceNoteClusters.map((cluster: NoteCluster) => {
+                      const chord =
+                        arrangement.parsedChords[cluster.chordIndex];
+                      if (chord == null) return null;
+                      const x =
+                        NOTE_GRID_PAD_X_PX +
+                        chordStarts[cluster.chordIndex]! * beatWidthPx +
+                        6;
+                      const width = Math.max(
+                        30,
+                        chord.beats * beatWidthPx - 12,
+                      );
+                      const rowIndex = highMidi - cluster.midi;
+                      const baseY =
+                        CHORD_HEADER_HEIGHT_PX +
+                        rowIndex * NOTE_ROW_HEIGHT_PX +
+                        Math.max(
+                          3,
+                          (NOTE_ROW_HEIGHT_PX - NOTE_PILL_HEIGHT_PX) / 2,
+                        );
+
+                      return (
+                        <Box
+                          key={`reference-note-cluster-${cluster.chordIndex}-${cluster.midi}`}
+                          position="absolute"
+                          left={`${x}px`}
+                          top={`${baseY}px`}
+                          w={`${width}px`}
+                          h={`${NOTE_PILL_HEIGHT_PX + Math.max(0, cluster.members.length - 1) * 7}px`}
+                          pointerEvents="none"
+                          zIndex={1}
+                        >
+                          {cluster.members.map(
+                            (
+                              member: NoteCluster["members"][number],
+                              memberIndex: number,
+                            ) => (
+                              <Box
+                                key={`reference-${cluster.chordIndex}-${cluster.midi}-${member.voiceIndex}`}
+                                position="absolute"
+                                left={`${memberIndex * 6}px`}
+                                top={`${memberIndex * 7}px`}
+                                minW={`${Math.max(28, width - memberIndex * 6)}px`}
+                                h={`${NOTE_PILL_HEIGHT_PX}px`}
+                                px={2}
+                                borderRadius="md"
+                                border="1px dashed"
+                                borderColor="color-mix(in srgb, white 54%, transparent)"
+                                bg="color-mix(in srgb, var(--app-surface-raised) 12%, transparent)"
+                                color="color-mix(in srgb, var(--app-text-muted) 65%, transparent)"
+                                fontSize="10px"
+                                fontWeight="bold"
+                                display="flex"
+                                alignItems="center"
+                                justifyContent="space-between"
+                                gap={2}
+                                boxShadow="inset 0 0 0 1px color-mix(in srgb, var(--app-border-muted) 12%, transparent)"
+                              >
+                                <Text fontSize="10px" fontWeight="bold">
+                                  {member.label}
+                                </Text>
+                                <Text fontSize="10px" fontWeight="bold">
+                                  {cluster.noteLabel}
+                                </Text>
+                              </Box>
+                            ),
+                          )}
+                        </Box>
+                      );
+                    })}
+
                     {noteClusters.map((cluster: NoteCluster) => {
                       const chord =
                         arrangement.parsedChords[cluster.chordIndex];
@@ -783,6 +999,7 @@ export function CustomHarmonyEditor({
                           w={`${width}px`}
                           h={`${NOTE_PILL_HEIGHT_PX + Math.max(0, cluster.members.length - 1) * 7}px`}
                           pointerEvents="none"
+                          zIndex={2}
                         >
                           {cluster.members.map(
                             (
@@ -908,7 +1125,7 @@ export function CustomHarmonyEditor({
               </Flex>
             </Box>
           </Box>
-        </Stack>
+        </Flex>
       </Box>
     </Flex>
   );
@@ -1134,6 +1351,132 @@ export function getNextMidiForArrowMove(
     return null;
   }
   return nextMidi;
+}
+
+export function getVisualSelectionItems(
+  lines: HarmonyLine[],
+  chordCount: number,
+): VisualSelectionItem[] {
+  const items: VisualSelectionItem[] = [];
+
+  for (let chordIndex = 0; chordIndex < chordCount; chordIndex++) {
+    const noteMembers: Array<VisualSelectionItem & { midi: MidiNote }> = [];
+    const restMembers: VisualSelectionItem[] = [];
+
+    for (let voiceIndex = 0; voiceIndex < lines.length; voiceIndex++) {
+      const midi = getHarmonyLineNote(lines[voiceIndex], chordIndex);
+      if (midi == null) {
+        restMembers.push({
+          chordIndex,
+          voiceIndex,
+          kind: "rest",
+          midi: null,
+        });
+        continue;
+      }
+
+      noteMembers.push({
+        chordIndex,
+        voiceIndex,
+        kind: "note",
+        midi,
+      });
+    }
+
+    noteMembers.sort((left, right) => {
+      if (left.midi !== right.midi) return right.midi - left.midi;
+      return left.voiceIndex - right.voiceIndex;
+    });
+
+    items.push(...noteMembers, ...restMembers);
+  }
+
+  return items;
+}
+
+export function getNextSelectionInVisualOrder(
+  items: readonly VisualSelectionItem[],
+  selection: HarmonyEditorSelection | null,
+  direction: -1 | 1,
+): HarmonyEditorSelection | null {
+  if (selection == null) return null;
+  const currentIndex = items.findIndex(
+    (item) =>
+      item.chordIndex === selection.chordIndex &&
+      item.voiceIndex === selection.voiceIndex,
+  );
+  if (currentIndex === -1) return null;
+  const nextIndex = currentIndex + direction;
+  if (nextIndex < 0 || nextIndex >= items.length) return null;
+  const nextItem = items[nextIndex];
+  if (nextItem == null) return null;
+  return {
+    chordIndex: nextItem.chordIndex,
+    voiceIndex: nextItem.voiceIndex,
+  };
+}
+
+export function reduceTypedPitchBuffer(
+  currentBuffer: string,
+  key: string,
+  selectedCandidates: ReadonlySet<number>,
+): TypedPitchBufferResult | null {
+  if (key === "Backspace") {
+    return { nextBuffer: currentBuffer.slice(0, -1), commit: "none" };
+  }
+
+  if (key === "Escape") {
+    return { nextBuffer: "", commit: "none" };
+  }
+
+  const normalizedChar = normalizeTypedPitchChar(key, currentBuffer);
+  if (normalizedChar == null) return null;
+
+  const nextBuffer = currentBuffer + normalizedChar;
+  if (nextBuffer === "R") {
+    return { nextBuffer: "", commit: "rest" };
+  }
+
+  if (!isTypedPitchBufferPrefix(nextBuffer)) {
+    return { nextBuffer: currentBuffer, commit: "none" };
+  }
+
+  if (!isCompleteTypedPitchBuffer(nextBuffer)) {
+    return { nextBuffer, commit: "none" };
+  }
+
+  try {
+    const midi = noteNameToMidi(nextBuffer);
+    if (!selectedCandidates.has(midi)) {
+      return { nextBuffer: "", commit: "none" };
+    }
+    return { nextBuffer: "", commit: "note", midi };
+  } catch {
+    return { nextBuffer: "", commit: "none" };
+  }
+}
+
+function normalizeTypedPitchChar(
+  key: string,
+  currentBuffer: string,
+): string | null {
+  if (key.length !== 1) return null;
+  if ((key === "r" || key === "R") && currentBuffer.length === 0) return "R";
+  if (/^[0-9#-]$/.test(key)) return key;
+  if (key === "b") return "b";
+  if (/^[A-Ga-g]$/.test(key)) {
+    if (currentBuffer.length === 0) return key.toUpperCase();
+    return key === "b" ? "b" : key.toUpperCase();
+  }
+  return null;
+}
+
+function isTypedPitchBufferPrefix(value: string): boolean {
+  return /^(?:[A-G](?:[#b])?(?:-?\d*)?)$/.test(value);
+}
+
+function isCompleteTypedPitchBuffer(value: string): boolean {
+  return /^([A-G][#b]?)(-?\d+)$/.test(value);
 }
 
 function groupNoteClusters(

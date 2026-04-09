@@ -67,6 +67,10 @@ export function playCountIn(
   tempo: number,
   countInCueMidi?: MidiNote | null,
   onBeat?: (beat: number, totalBeats: number) => void,
+  beatLevel = 1,
+  cueLevel = 1,
+  beatDestination?: AudioNode | null,
+  cueDestination?: AudioNode | null,
 ): CountInResult {
   const secPerBeat = 60 / tempo;
   const startTime = ctx.currentTime + AUDIO_SCHEDULE_LEAD_SEC;
@@ -79,7 +83,13 @@ export function playCountIn(
 
   // Schedule all count-in clicks on the AudioContext clock
   for (let i = 0; i < beatsPerBar; i++) {
-    playClick(ctx, startTime + i * secPerBeat, i === 0);
+    playClick(
+      ctx,
+      startTime + i * secPerBeat,
+      i === 0,
+      beatLevel,
+      beatDestination ?? ctx.destination,
+    );
   }
 
   if (countInCueMidi != null) {
@@ -88,6 +98,8 @@ export function playCountIn(
       midiToFrequency(countInCueMidi),
       startTime,
       recordingStartTime,
+      cueLevel,
+      cueDestination ?? ctx.destination,
     );
   }
 
@@ -125,6 +137,10 @@ export type RecordingPlaybackOpts = {
   // If omitted, defaults to ctx.currentTime + AUDIO_SCHEDULE_LEAD_SEC.
   startTime?: number;
   monitorPlayer?: MonitorPlayer | null;
+  beatLevel?: number;
+  guideToneLevel?: number;
+  beatDestination?: AudioNode | null;
+  guideToneDestination?: AudioNode | null;
   onBeat?: (beatIndex: number) => void;
   onChordChange?: (chordIndex: number) => void;
 };
@@ -135,6 +151,10 @@ export function startRecordingPlayback(
   opts: RecordingPlaybackOpts,
 ): PlaybackSession {
   const { ctx } = opts;
+  const beatLevel = Math.max(0, Math.min(1, opts.beatLevel ?? 1));
+  const guideToneLevel = Math.max(0, Math.min(1, opts.guideToneLevel ?? 1));
+  const beatDestination = opts.beatDestination ?? ctx.destination;
+  const guideToneDestination = opts.guideToneDestination ?? ctx.destination;
   const secPerBeat = 60 / opts.tempo;
   const startTime =
     opts.startTime ?? ctx.currentTime + AUDIO_SCHEDULE_LEAD_SEC;
@@ -145,7 +165,13 @@ export function startRecordingPlayback(
   for (let beat = 0; beat < totalB; beat++) {
     const beatTime = startTime + beat * secPerBeat;
     beatTimes.push(beatTime);
-    playClick(ctx, beatTime, beat % opts.beatsPerBar === 0);
+    playClick(
+      ctx,
+      beatTime,
+      beat % opts.beatsPerBar === 0,
+      beatLevel,
+      beatDestination,
+    );
   }
 
   // Schedule guide tones
@@ -158,7 +184,16 @@ export function startRecordingPlayback(
       if (midi != null) {
         const noteStartTime = startTime + beatOffset * secPerBeat;
         const durationSec = chord.beats * secPerBeat * 0.95;
-        guideStops.push(playGuideTone(ctx, midiToFrequency(midi), noteStartTime, durationSec));
+        guideStops.push(
+          playGuideTone(
+            ctx,
+            midiToFrequency(midi),
+            noteStartTime,
+            durationSec,
+            guideToneLevel,
+            guideToneDestination,
+          ),
+        );
       }
       beatOffset += chord.beats;
     }

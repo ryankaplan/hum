@@ -31,6 +31,11 @@ function makeSavedHumDocument(
     exportPreferences: {
       preferredFormat: null,
     },
+    recordingMonitorPreferences: {
+      guideToneVolume: 1,
+      beatVolume: 1,
+      priorHarmonyVolume: 1,
+    },
   };
 }
 
@@ -102,5 +107,15 @@ describe("parseSavedHumDocument", () => {
     const parsed = parseSavedHumDocument(makeSavedHumDocument("lower two thirds"));
 
     expect(parsed?.tracks.reverbWet).toBe(0.2);
+  });
+
+  it("accepts persisted recording monitor preferences", () => {
+    const parsed = parseSavedHumDocument(makeSavedHumDocument("lower two thirds"));
+
+    expect(parsed?.recordingMonitorPreferences).toEqual({
+      guideToneVolume: 1,
+      beatVolume: 1,
+      priorHarmonyVolume: 1,
+    });
   });
 });

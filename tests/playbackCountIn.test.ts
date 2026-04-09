@@ -39,6 +39,8 @@ describe("playCountIn", () => {
       expect.any(Number),
       12.05,
       result.recordingStartTime,
+      1,
+      undefined,
     );
     expect(result.recordingStartTime).toBeCloseTo(14.25);
   });

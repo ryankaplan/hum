@@ -10,6 +10,7 @@ export type {
   HumDocument,
   KeepTakeInput,
   MediaAssetId,
+  RecordingMonitorPreferences,
   RecordingId,
   RecordingRecord,
   RecordingRuntimeWaveform,
@@ -42,6 +43,7 @@ export const effectiveHarmonyVoicing = model.effectiveHarmonyVoicing;
 export const harmonyVoicingDynamic = model.harmonyVoicingDynamic;
 export const selectedHarmonyVoicing = model.selectedHarmonyVoicing;
 export const exportPreferences = model.exportPreferences;
+export const recordingMonitorPreferences = model.recordingMonitorPreferences;
 
 export const tracksDocument = model.tracksDocument.document;
 export const tracksEditor = model.tracksEditor.editor;

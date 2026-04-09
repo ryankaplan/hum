@@ -49,7 +49,7 @@
  * - On parse failure or schema version mismatch, callers should clear the draft
  *   instead of trying to partially recover it.
  */
-export const SAVED_HUM_DOCUMENT_SCHEMA_VERSION = "8";
+export const SAVED_HUM_DOCUMENT_SCHEMA_VERSION = "9";
 
 export const SAVED_HUM_DOCUMENT_ID = "current";
 
@@ -57,6 +57,12 @@ export type SavedExportVideoFormat = "mp4" | "webm";
 
 export type SavedExportPreferences = {
   preferredFormat: SavedExportVideoFormat | null;
+};
+
+export type SavedRecordingMonitorPreferences = {
+  guideToneVolume: number;
+  beatVolume: number;
+  priorHarmonyVolume: number;
 };
 
 export type SavedArrangementDocument = {
@@ -119,6 +125,7 @@ export type SavedHumDocument = {
   arrangement: SavedArrangementDocument;
   tracks: SavedTracksDocument;
   exportPreferences: SavedExportPreferences;
+  recordingMonitorPreferences: SavedRecordingMonitorPreferences;
 };
 
 export type SavedMediaAsset = {
@@ -158,6 +165,24 @@ function parseSavedExportPreferences(
   }
   return {
     preferredFormat: preferredFormat as SavedExportVideoFormat | null,
+  };
+}
+
+function parseSavedRecordingMonitorPreferences(
+  raw: unknown,
+): SavedRecordingMonitorPreferences | null {
+  if (!isRecord(raw)) return null;
+  if (
+    isFiniteNumber(raw.guideToneVolume) === false ||
+    isFiniteNumber(raw.beatVolume) === false ||
+    isFiniteNumber(raw.priorHarmonyVolume) === false
+  ) {
+    return null;
+  }
+  return {
+    guideToneVolume: raw.guideToneVolume,
+    beatVolume: raw.beatVolume,
+    priorHarmonyVolume: raw.priorHarmonyVolume,
   };
 }
 
@@ -362,11 +387,15 @@ export function parseSavedHumDocument(raw: unknown): SavedHumDocument | null {
   const arrangement = parseSavedArrangementDocument(raw.arrangement);
   const tracks = parseSavedTracksDocument(raw.tracks);
   const exportPreferences = parseSavedExportPreferences(raw.exportPreferences);
+  const recordingMonitorPreferences = parseSavedRecordingMonitorPreferences(
+    raw.recordingMonitorPreferences,
+  );
   if (
     typeof raw.id !== "string" ||
     arrangement == null ||
     tracks == null ||
-    exportPreferences == null
+    exportPreferences == null ||
+    recordingMonitorPreferences == null
   ) {
     return null;
   }
@@ -377,5 +406,6 @@ export function parseSavedHumDocument(raw: unknown): SavedHumDocument | null {
     arrangement,
     tracks,
     exportPreferences,
+    recordingMonitorPreferences,
   };
 }

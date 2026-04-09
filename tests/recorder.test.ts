@@ -60,6 +60,10 @@ describe("startRecordTake", () => {
       120,
       67,
       undefined,
+      1,
+      1,
+      undefined,
+      undefined,
     );
     expect(monitorPlayer.stop.mock.invocationCallOrder[0]).toBeLessThan(
       playbackMocks.playCountIn.mock.invocationCallOrder[0] ??

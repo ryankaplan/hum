@@ -36,6 +36,10 @@ export type RecordingOpts = {
   tempo: number;
   latencyCorrectionSec?: number;
   monitorPlayer?: MonitorPlayer | null;
+  beatLevel?: number;
+  guideToneLevel?: number;
+  beatDestination?: AudioNode | null;
+  guideToneDestination?: AudioNode | null;
   callbacks?: RecordingCallbacks;
 };
 
@@ -74,6 +78,10 @@ export function startRecordTake(opts: RecordingOpts): RecordingSession {
     tempo,
     latencyCorrectionSec = 0,
     monitorPlayer,
+    beatLevel = 1,
+    guideToneLevel = 1,
+    beatDestination,
+    guideToneDestination,
     callbacks,
   } = opts;
 
@@ -107,6 +115,10 @@ export function startRecordTake(opts: RecordingOpts): RecordingSession {
       tempo,
       countInCueMidi,
       callbacks?.onCountInBeat,
+      beatLevel,
+      guideToneLevel,
+      beatDestination,
+      guideToneDestination,
     );
 
     await Promise.race([countInPromise, stopSignal]);
@@ -157,6 +169,10 @@ export function startRecordTake(opts: RecordingOpts): RecordingSession {
       tempo,
       startTime: recordingStartTime,
       monitorPlayer,
+      beatLevel,
+      guideToneLevel,
+      beatDestination,
+      guideToneDestination,
       onBeat: callbacks?.onBeat,
       onChordChange: callbacks?.onChordChange,
     });

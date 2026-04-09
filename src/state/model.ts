@@ -61,10 +61,17 @@ export type ExportPreferences = {
   preferredFormat: ExportVideoFormat | null;
 };
 
+export type RecordingMonitorPreferences = {
+  guideToneVolume: number;
+  beatVolume: number;
+  priorHarmonyVolume: number;
+};
+
 export type HumDocument = {
   arrangement: ArrangementDocState;
   tracks: TracksDocumentState;
   exportPreferences: ExportPreferences;
+  recordingMonitorPreferences: RecordingMonitorPreferences;
 };
 
 export type ExportState = {
@@ -105,6 +112,14 @@ export type RecordingRuntimeWaveform = {
 function createDefaultExportPreferences(): ExportPreferences {
   return {
     preferredFormat: null,
+  };
+}
+
+function createDefaultRecordingMonitorPreferences(): RecordingMonitorPreferences {
+  return {
+    guideToneVolume: 1,
+    beatVolume: 1,
+    priorHarmonyVolume: 1,
   };
 }
 
@@ -161,6 +176,9 @@ class AppModel {
       this.arrangementDocument.set(input.document.arrangement);
       this.tracksDocument.replaceDocument(input.document.tracks);
       this.exportPreferences.set(input.document.exportPreferences);
+      this.recordingMonitorPreferences.set(
+        input.document.recordingMonitorPreferences,
+      );
       this.returnToReviewAfterRecording.set(false);
       this.hasRestoredDraft.set(true);
       for (const mediaAsset of input.mediaAssets) {
@@ -183,6 +201,10 @@ class AppModel {
   readonly exportPreferences = new Observable<ExportPreferences>(
     createDefaultExportPreferences(),
   );
+  readonly recordingMonitorPreferences =
+    new Observable<RecordingMonitorPreferences>(
+      createDefaultRecordingMonitorPreferences(),
+    );
   readonly bootstrapped = new Observable<boolean>(false);
   readonly hasRestoredDraft = new Observable<boolean>(false);
 
@@ -257,6 +279,9 @@ class AppModel {
     this.exportPreferences.onAfterChange(() => {
       this.draftSession.handleStateChanged();
     });
+    this.recordingMonitorPreferences.onAfterChange(() => {
+      this.draftSession.handleStateChanged();
+    });
     this.tracksDocument.document.onAfterChange(() => {
       this.draftSession.handleStateChanged();
     });
@@ -286,11 +311,21 @@ class AppModel {
     });
   }
 
+  setRecordingMonitorPreferences(
+    patch: Partial<RecordingMonitorPreferences>,
+  ): void {
+    this.recordingMonitorPreferences.set({
+      ...this.recordingMonitorPreferences.get(),
+      ...patch,
+    });
+  }
+
   getHumDocument(): HumDocument {
     return {
       arrangement: this.arrangementDocument.get(),
       tracks: this.tracksDocument.document.get(),
       exportPreferences: this.exportPreferences.get(),
+      recordingMonitorPreferences: this.recordingMonitorPreferences.get(),
     };
   }
 

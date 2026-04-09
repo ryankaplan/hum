@@ -21,18 +21,12 @@ type DraftSnapshot = {
   document: HumDocument;
   currentPartIndex: number;
   appScreen: AppScreen;
-  latencyCorrectionSec: number;
-  isCalibrated: boolean;
-  selectedMicId: string | null;
 };
 
 type RestoreDraftInput = {
   document: HumDocument;
   currentPartIndex: PartIndex;
   appScreen: AppScreen;
-  latencyCorrectionSec: number;
-  isCalibrated: boolean;
-  selectedMicId: string | null;
   mediaAssets: Array<{ mediaAssetId: string; blob: Blob }>;
 };
 
@@ -87,9 +81,6 @@ export class DraftSessionController {
         document: restored.document,
         currentPartIndex,
         appScreen,
-        latencyCorrectionSec: restored.latencyCorrectionSec,
-        isCalibrated: restored.isCalibrated,
-        selectedMicId: restored.selectedMicId,
         mediaAssets: loaded.mediaAssets.map((asset) => ({
           mediaAssetId: asset.mediaAssetId,
           blob: asset.blob,

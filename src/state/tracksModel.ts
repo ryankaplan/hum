@@ -63,11 +63,6 @@ export type RecordingRecord = {
   // Reference to the original recorded media asset. In this app that asset is
   // the recorded video file, whose audio is later decoded for playback/editing.
   mediaAssetId: MediaAssetId;
-
-  // Seconds to skip from the beginning of the recorded media before the usable
-  // recording starts. This trims leading latency/silence so timeline playback
-  // aligns to the beat.
-  trimOffsetSec: number;
 };
 
 export type TracksEditorSelection = {
@@ -210,13 +205,20 @@ export class TracksDocumentModel {
   stageCommittedRecording(input: {
     trackId: TrackId;
     recording: RecordingRecord;
+    timelineStartSec: number;
     sourceStartSec: number;
     durationSec: number;
   }): {
     removedRecordings: RecordingRecord[];
     clipId: ClipId | null;
   } {
-    const { trackId, recording, sourceStartSec, durationSec } = input;
+    const {
+      trackId,
+      recording,
+      timelineStartSec,
+      sourceStartSec,
+      durationSec,
+    } = input;
     const clipId = this.makeClipId();
     let removedRecordings: RecordingRecord[] = [];
 
@@ -239,7 +241,7 @@ export class TracksDocumentModel {
         id: clipId,
         trackId,
         recordingId: recording.id,
-        timelineStartSec: 0,
+        timelineStartSec: Math.max(0, timelineStartSec),
         sourceStartSec: Math.max(0, sourceStartSec),
         durationSec: Math.max(0, durationSec),
         volumeEnvelope: createDefaultClipVolumeEnvelope(Math.max(0, durationSec)),

@@ -53,7 +53,6 @@ function makeDocument(
         id: `recording-${index + 1}`,
         trackId: "track-1",
         mediaAssetId,
-        trimOffsetSec: 0,
       },
     ]),
   );
@@ -115,9 +114,6 @@ function makeController(
       document: getDocument(),
       currentPartIndex: 0,
       appScreen: "setup" as AppScreen,
-      latencyCorrectionSec: 0,
-      isCalibrated: false,
-      selectedMicId: null,
     }),
     applyRestoredDraft: vi.fn(),
     onBootstrapped: vi.fn(),

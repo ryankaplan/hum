@@ -5,6 +5,13 @@ export type ReferenceWaveform = {
   durationSec: number;
 };
 
+export type ReferenceWaveformSegment = {
+  buffer: AudioBuffer;
+  timelineStartSec: number;
+  sourceStartSec: number;
+  durationSec: number;
+};
+
 export const REFERENCE_WAVEFORM_BUCKETS_PER_SEC = 120;
 export const REFERENCE_WAVEFORM_BUCKETS_MIN = 64;
 export const REFERENCE_WAVEFORM_BUCKETS_MAX = 4096;
@@ -33,16 +40,11 @@ export function computeWaveformBarCount(
 }
 
 export function buildReferenceWaveform(input: {
-  buffer: AudioBuffer;
-  trimOffsetSec: number;
+  segments: ReferenceWaveformSegment[];
   maxDurationSec: number;
 }): ReferenceWaveform | null {
-  const { buffer, trimOffsetSec, maxDurationSec } = input;
-  const sourceStartSec = clamp(trimOffsetSec, 0, buffer.duration);
-  const durationSec = Math.max(
-    0,
-    Math.min(Math.max(0, maxDurationSec), buffer.duration - sourceStartSec),
-  );
+  const { segments, maxDurationSec } = input;
+  const durationSec = Math.max(0, maxDurationSec);
   if (durationSec <= 0) return null;
 
   const bucketCount = Math.max(
@@ -52,8 +54,49 @@ export function buildReferenceWaveform(input: {
       Math.round(durationSec * REFERENCE_WAVEFORM_BUCKETS_PER_SEC),
     ),
   );
+  const peaks = new Array<number>(bucketCount).fill(0);
+
+  for (const segment of segments) {
+    const safeTimelineStartSec = clamp(segment.timelineStartSec, 0, durationSec);
+    const safeSourceStartSec = Math.max(0, segment.sourceStartSec);
+    const safeSegmentDurationSec = Math.max(
+      0,
+      Math.min(
+        segment.durationSec,
+        durationSec - safeTimelineStartSec,
+        segment.buffer.duration - safeSourceStartSec,
+      ),
+    );
+    if (safeSegmentDurationSec <= 0) continue;
+
+    const startIndex = Math.max(
+      0,
+      Math.floor((safeTimelineStartSec / durationSec) * bucketCount),
+    );
+    const endIndex = Math.min(
+      bucketCount,
+      Math.ceil(
+        ((safeTimelineStartSec + safeSegmentDurationSec) / durationSec) *
+          bucketCount,
+      ),
+    );
+    const segmentBucketCount = Math.max(1, endIndex - startIndex);
+    const segmentPeaks = buildWaveformPeaks(
+      segment.buffer,
+      safeSourceStartSec,
+      safeSegmentDurationSec,
+      segmentBucketCount,
+    );
+
+    for (let i = 0; i < segmentBucketCount; i++) {
+      const peakIndex = startIndex + i;
+      if (peakIndex >= peaks.length) break;
+      peaks[peakIndex] = Math.max(peaks[peakIndex] ?? 0, segmentPeaks[i] ?? 0);
+    }
+  }
+
   return {
-    peaks: buildWaveformPeaks(buffer, sourceStartSec, durationSec, bucketCount),
+    peaks,
     durationSec,
   };
 }

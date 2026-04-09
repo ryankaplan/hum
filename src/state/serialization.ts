@@ -25,18 +25,12 @@ export type DraftSnapshot = {
   document: HumDocument;
   currentPartIndex: number;
   appScreen: AppScreen;
-  latencyCorrectionSec: number;
-  isCalibrated: boolean;
-  selectedMicId: string | null;
 };
 
 export type DeserializedDraftSnapshot = {
   document: HumDocument;
   currentPartIndex: PartIndex;
   appScreen: AppScreen;
-  latencyCorrectionSec: number;
-  isCalibrated: boolean;
-  selectedMicId: string | null;
 };
 
 export function serializeHumDocument(input: DraftSnapshot): SavedHumDocument {
@@ -50,9 +44,6 @@ export function serializeHumDocument(input: DraftSnapshot): SavedHumDocument {
     ),
     currentPartIndex: Math.max(0, Math.floor(input.currentPartIndex)),
     appScreen: serializeAppScreen(input.appScreen),
-    latencyCorrectionSec: input.latencyCorrectionSec,
-    isCalibrated: input.isCalibrated,
-    selectedMicId: input.selectedMicId,
   };
 }
 
@@ -67,9 +58,6 @@ export function deserializeHumDocument(
     },
     currentPartIndex: clampPartIndex(saved.currentPartIndex),
     appScreen: deserializeAppScreen(saved.appScreen),
-    latencyCorrectionSec: saved.latencyCorrectionSec,
-    isCalibrated: saved.isCalibrated,
-    selectedMicId: saved.selectedMicId ?? null,
   };
 }
 
@@ -178,7 +166,6 @@ function serializeTracksDocument(
       id: recording.id,
       trackId: recording.trackId,
       mediaAssetId: recording.mediaAssetId,
-      trimOffsetSec: recording.trimOffsetSec,
     };
   }
 
@@ -230,7 +217,6 @@ function deserializeTracksDocument(
         id: recording.id,
         trackId: recording.trackId,
         mediaAssetId: recording.mediaAssetId,
-        trimOffsetSec: recording.trimOffsetSec,
       },
     ]),
   );

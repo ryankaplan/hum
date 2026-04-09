@@ -49,7 +49,7 @@
  * - On parse failure or schema version mismatch, callers should clear the draft
  *   instead of trying to partially recover it.
  */
-export const SAVED_HUM_DOCUMENT_SCHEMA_VERSION = "6";
+export const SAVED_HUM_DOCUMENT_SCHEMA_VERSION = "7";
 
 export const SAVED_HUM_DOCUMENT_ID = "current";
 
@@ -104,7 +104,6 @@ export type SavedRecording = {
   id: string;
   trackId: string;
   mediaAssetId: string;
-  trimOffsetSec: number;
 };
 
 export type SavedTracksDocument = {
@@ -123,9 +122,6 @@ export type SavedHumDocument = {
   exportPreferences: SavedExportPreferences;
   currentPartIndex: number;
   appScreen: SavedAppScreen;
-  latencyCorrectionSec: number;
-  isCalibrated: boolean;
-  selectedMicId?: string | null;
 };
 
 export type SavedMediaAsset = {
@@ -309,8 +305,7 @@ function parseSavedRecording(raw: unknown): SavedRecording | null {
   if (
     typeof raw.id !== "string" ||
     typeof raw.trackId !== "string" ||
-    typeof raw.mediaAssetId !== "string" ||
-    isFiniteNumber(raw.trimOffsetSec) === false
+    typeof raw.mediaAssetId !== "string"
   ) {
     return null;
   }
@@ -318,7 +313,6 @@ function parseSavedRecording(raw: unknown): SavedRecording | null {
     id: raw.id,
     trackId: raw.trackId,
     mediaAssetId: raw.mediaAssetId,
-    trimOffsetSec: raw.trimOffsetSec,
   };
 }
 
@@ -380,12 +374,7 @@ export function parseSavedHumDocument(raw: unknown): SavedHumDocument | null {
     (raw.appScreen !== "setup" &&
       raw.appScreen !== "calibration" &&
       raw.appScreen !== "recording" &&
-      raw.appScreen !== "review") ||
-    isFiniteNumber(raw.latencyCorrectionSec) === false ||
-    typeof raw.isCalibrated !== "boolean" ||
-    (raw.selectedMicId !== undefined &&
-      raw.selectedMicId !== null &&
-      typeof raw.selectedMicId !== "string")
+      raw.appScreen !== "review")
   ) {
     return null;
   }
@@ -398,8 +387,5 @@ export function parseSavedHumDocument(raw: unknown): SavedHumDocument | null {
     exportPreferences,
     currentPartIndex: raw.currentPartIndex,
     appScreen: raw.appScreen,
-    latencyCorrectionSec: raw.latencyCorrectionSec,
-    isCalibrated: raw.isCalibrated,
-    selectedMicId: raw.selectedMicId as string | null | undefined,
   };
 }

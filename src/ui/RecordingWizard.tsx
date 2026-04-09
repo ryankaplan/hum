@@ -25,9 +25,12 @@ import {
 import type { PlaybackSession } from "../music/playback";
 import {
   createMonitorPlayer,
-  decodeMonitorTracks,
+  decodeMonitorLanes,
 } from "../audio/monitorPlayer";
-import type { MonitorPlayer } from "../audio/monitorPlayer";
+import type {
+  EncodedMonitorSegment,
+  MonitorPlayer,
+} from "../audio/monitorPlayer";
 import { resolveRecordingHarmonyGuidance } from "../recording/harmonyGuidance";
 import { CameraPreview } from "./CameraPreview";
 import {
@@ -251,7 +254,7 @@ export function RecordingWizard() {
   const chords = arrangementInfo.parsedChords;
   const lyricsByChord = flattenArrangementLyrics(arrangementInfo.measures);
   const voicing = useObservable(model.effectiveHarmonyVoicing);
-  const latencyCorrectionSec = useObservable(model.latencyCorrectionSec);
+  const alignmentCorrectionSec = useObservable(model.latencyCorrectionSec);
 
   const [phase, setPhase] = useState<RecordPhase>("pre-roll");
   const [activeChordIndex, setActiveChordIndex] = useState(0);
@@ -266,8 +269,9 @@ export function RecordingWizard() {
 
   const reviewVideoRef = useRef<HTMLVideoElement>(null);
   const monitorPlayerRef = useRef<MonitorPlayer | null>(null);
+  const monitorLanePartIndicesRef = useRef<number[]>([]);
   const currentBlobRef = useRef<Blob | null>(null);
-  const currentTrimOffsetRef = useRef<number>(0);
+  const currentAlignmentOffsetRef = useRef<number>(0);
   const listenSessionRef = useRef<PlaybackSession | null>(null);
   const recordSessionRef = useRef<RecordingSession | null>(null);
   // Incremented each time a new MonitorPlayer finishes decoding so the looping
@@ -303,58 +307,61 @@ export function RecordingWizard() {
   useEffect(() => {
     monitorPlayerRef.current?.dispose();
     monitorPlayerRef.current = null;
+    monitorLanePartIndicesRef.current = [];
     setReferenceWaveform(null);
 
     if (ctx == null || partIndex === 0) return;
 
     let cancelled = false;
 
-    const blobs: Blob[] = [];
-    const trimOffsets: number[] = [];
-    const partIndices: number[] = [];
-    let referenceTrackAudioIndex: number | null = null;
+    const encodedLanes: Array<{
+      partIndex: number;
+      segments: EncodedMonitorSegment[];
+    }> = [];
 
     for (let i = 0; i < partIndex; i++) {
       const trackId = orderedTrackIds[i];
       if (trackId == null) continue;
-      const recordingId =
-        model.tracksDocument.getPrimaryRecordingIdForTrack(trackId);
-      if (recordingId == null) continue;
-      const recording = model.tracksDocument.getRecording(recordingId);
-      const blob = model.getRecordingBlob(recordingId);
-      if (recording == null || blob == null) continue;
-      if (i === 0) {
-        referenceTrackAudioIndex = blobs.length;
+      const clips = model.tracksDocument.getOrderedClipsForTrack(trackId);
+      const segments: EncodedMonitorSegment[] = [];
+
+      for (const clip of clips) {
+        const blob = model.getRecordingBlob(clip.recordingId);
+        if (blob == null) continue;
+        segments.push({
+          recordingId: clip.recordingId,
+          blob,
+          timelineStartSec: clip.timelineStartSec,
+          sourceStartSec: clip.sourceStartSec,
+          durationSec: clip.durationSec,
+        });
       }
-      blobs.push(blob);
-      trimOffsets.push(recording.trimOffsetSec);
-      partIndices.push(i);
+
+      if (segments.length === 0) continue;
+      encodedLanes.push({ partIndex: i, segments });
     }
 
-    if (blobs.length === 0) return;
+    if (encodedLanes.length === 0) return;
 
-    void decodeMonitorTracks(ctx, blobs, trimOffsets).then((tracks) => {
+    void decodeMonitorLanes(ctx, encodedLanes).then((lanes) => {
       if (cancelled) return;
-      const referenceTrack =
-        referenceTrackAudioIndex == null
-          ? null
-          : tracks[referenceTrackAudioIndex] ?? null;
+
+      monitorLanePartIndicesRef.current = encodedLanes.map((lane) => lane.partIndex);
+      const referenceLane = lanes.find((lane) => lane.segments.length > 0) ?? null;
       setReferenceWaveform(
-        referenceTrack == null
+        referenceLane == null
           ? null
           : buildReferenceWaveform({
-              buffer: referenceTrack.buffer,
-              trimOffsetSec: referenceTrack.trimOffsetSec,
+              segments: referenceLane.segments,
               maxDurationSec: arrangementDurationSec,
             }),
       );
-      const player = createMonitorPlayer(ctx, tracks);
+      const player = createMonitorPlayer(ctx, lanes, arrangementDurationSec);
       // Apply current mute state
-      for (let j = 0; j < partIndices.length; j++) {
-        const partI = partIndices[j];
-        if (partI != null) {
-          player.setMuted(j, mutedParts[partI] ?? false);
-        }
+      for (let laneIndex = 0; laneIndex < encodedLanes.length; laneIndex++) {
+        const lane = encodedLanes[laneIndex];
+        if (lane == null) continue;
+        player.setMuted(laneIndex, mutedParts[lane.partIndex] ?? false);
       }
       player.setLevel(priorHarmonyLevel);
       monitorPlayerRef.current = player;
@@ -370,18 +377,13 @@ export function RecordingWizard() {
   useEffect(() => {
     const player = monitorPlayerRef.current;
     if (player == null) return;
-    let audioIdx = 0;
-    for (let i = 0; i < partIndex; i++) {
-      const trackId = orderedTrackIds[i];
-      if (
-        trackId != null &&
-        model.tracksDocument.getPrimaryRecordingIdForTrack(trackId) != null
-      ) {
-        player.setMuted(audioIdx, mutedParts[i] ?? false);
-        audioIdx++;
-      }
+    const lanePartIndices = monitorLanePartIndicesRef.current;
+    for (let laneIndex = 0; laneIndex < lanePartIndices.length; laneIndex++) {
+      const partI = lanePartIndices[laneIndex];
+      if (partI == null) continue;
+      player.setMuted(laneIndex, mutedParts[partI] ?? false);
     }
-  }, [mutedParts, orderedTrackIds, partIndex, tracksDocument]);
+  }, [mutedParts]);
 
   useEffect(() => {
     const player = monitorPlayerRef.current;
@@ -432,7 +434,7 @@ export function RecordingWizard() {
     setCurrentAbsoluteBeat(-1);
     setCountInBeat(0);
     currentBlobRef.current = null;
-    currentTrimOffsetRef.current = 0;
+    currentAlignmentOffsetRef.current = 0;
   }, [partIndex]);
 
   // ─── Mute toggle ────────────────────────────────────────────────────────────
@@ -540,7 +542,7 @@ export function RecordingWizard() {
         countInCueMidi,
         beatsPerBar,
         tempo: arrangement.tempo,
-        latencyCorrectionSec,
+        latencyCorrectionSec: alignmentCorrectionSec,
         monitorPlayer: monitorPlayerRef.current,
         callbacks: {
           onCountInBeat: (beat) => setCountInBeat(beat + 1),
@@ -568,7 +570,7 @@ export function RecordingWizard() {
       const result = await session.promise;
 
       currentBlobRef.current = result.blob;
-      currentTrimOffsetRef.current = result.trimOffsetSec;
+      currentAlignmentOffsetRef.current = result.alignmentOffsetSec;
       setReviewUrl(result.url);
       setPhase("review");
     } catch (err) {
@@ -607,7 +609,7 @@ export function RecordingWizard() {
     model.keepRecordedTake({
       trackId,
       blob,
-      trimOffsetSec: currentTrimOffsetRef.current,
+      alignmentOffsetSec: currentAlignmentOffsetRef.current,
     });
 
     const nextIncompletePartIndex =

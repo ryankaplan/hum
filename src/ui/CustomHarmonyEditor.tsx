@@ -4,6 +4,7 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  type PointerEvent as ReactPointerEvent,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -78,6 +79,15 @@ type ChordSummary = {
   noteNames: string[];
 };
 
+type NoteDragState = {
+  pointerId: number;
+  selection: Selection;
+  startClientY: number;
+  originMidi: MidiNote;
+  lastMidi: MidiNote;
+  dragged: boolean;
+};
+
 const CHORD_HEADER_HEIGHT_PX = 64;
 const NOTE_ROW_HEIGHT_PX = 26;
 const LYRIC_LANE_HEIGHT_PX = 40;
@@ -102,6 +112,7 @@ export function CustomHarmonyEditor({
   const scrollViewportRef = useRef<HTMLDivElement | null>(null);
   const typedPitchBufferRef = useRef("");
   const typedPitchBufferTimeoutRef = useRef<number | null>(null);
+  const noteDragStateRef = useRef<NoteDragState | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [measureWidthPx, setMeasureWidthPx] = useState(DEFAULT_MEASURE_WIDTH_PX);
   const [selection, setSelection] = useState<Selection | null>(null);
@@ -311,12 +322,68 @@ export function CustomHarmonyEditor({
 
   function applySelectedValue(nextMidi: MidiNote | null) {
     if (selection == null || selectedEvent == null) return;
+    applyValueToSelection(selection, nextMidi, { preview: true });
+  }
+
+  function applyValueToSelection(
+    targetSelection: Selection,
+    nextMidi: MidiNote | null,
+    options?: { preview?: boolean },
+  ) {
     updateLocalArrangement((current) => ({
-      arrangement: updateSelectedEventMidi(current, selection, nextMidi),
-      selection,
+      arrangement: updateSelectedEventMidi(current, targetSelection, nextMidi),
+      selection: targetSelection,
     }));
-    if (nextMidi != null && ctx != null) {
+    if (options?.preview !== false && nextMidi != null && ctx != null) {
       playNotePreview(ctx, nextMidi, 0.8);
+    }
+  }
+
+  function handleNotePointerDown(
+    event: ReactPointerEvent<HTMLElement>,
+    voiceIndex: number,
+    eventId: string,
+    midi: MidiNote,
+  ) {
+    if (event.button !== 0) return;
+    const nextSelection = { voiceIndex, eventId };
+    noteDragStateRef.current = {
+      pointerId: event.pointerId,
+      selection: nextSelection,
+      startClientY: event.clientY,
+      originMidi: midi,
+      lastMidi: midi,
+      dragged: false,
+    };
+    setSelection(nextSelection);
+    focusViewport();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  }
+
+  function handleNotePointerMove(event: ReactPointerEvent<HTMLElement>) {
+    const dragState = noteDragStateRef.current;
+    if (dragState == null || dragState.pointerId !== event.pointerId) return;
+    const semitoneOffset = Math.round(
+      (dragState.startClientY - event.clientY) / NOTE_ROW_HEIGHT_PX,
+    );
+    const nextMidi = clampMidi(
+      dragState.originMidi + semitoneOffset,
+      range.low,
+      range.high,
+    );
+    if (nextMidi === dragState.lastMidi) return;
+    dragState.lastMidi = nextMidi;
+    dragState.dragged = true;
+    applyValueToSelection(dragState.selection, nextMidi, { preview: false });
+  }
+
+  function finishNoteDrag(pointerId: number) {
+    const dragState = noteDragStateRef.current;
+    if (dragState == null || dragState.pointerId !== pointerId) return;
+    noteDragStateRef.current = null;
+    if (dragState.dragged && ctx != null) {
+      playNotePreview(ctx, dragState.lastMidi, 0.8);
     }
   }
 
@@ -795,6 +862,10 @@ export function CustomHarmonyEditor({
                           playNotePreview(ctx, midi, 0.8);
                         }
                       },
+                      onPointerDown: handleNotePointerDown,
+                      onPointerMove: handleNotePointerMove,
+                      onPointerUp: (pointerId) => finishNoteDrag(pointerId),
+                      onPointerCancel: (pointerId) => finishNoteDrag(pointerId),
                       noteOpacity: 1,
                       noteBorderStyle: "solid",
                       zIndex: 2,
@@ -1051,6 +1122,10 @@ function renderArrangementEvents({
   highMidi,
   selection,
   onSelect,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+  onPointerCancel,
   noteOpacity,
   noteBorderStyle,
   zIndex,
@@ -1060,6 +1135,15 @@ function renderArrangementEvents({
   highMidi: number;
   selection: Selection | null;
   onSelect?: (voiceIndex: number, eventId: string, midi: MidiNote | null) => void;
+  onPointerDown?: (
+    event: ReactPointerEvent<HTMLElement>,
+    voiceIndex: number,
+    eventId: string,
+    midi: MidiNote,
+  ) => void;
+  onPointerMove?: (event: ReactPointerEvent<HTMLElement>) => void;
+  onPointerUp?: (pointerId: number) => void;
+  onPointerCancel?: (pointerId: number) => void;
   noteOpacity: number;
   noteBorderStyle: "solid" | "dashed";
   zIndex: number;
@@ -1119,8 +1203,17 @@ function renderArrangementEvents({
                 ? "0 0 0 2px color-mix(in srgb, var(--app-accent) 28%, transparent)"
                 : "0 1px 3px rgba(0, 0, 0, 0.12)"
             }
+            touchAction="none"
             zIndex={zIndex}
             onClick={() => onSelect?.(voiceIndex, event.id, event.midi)}
+            onPointerDown={(pointerEvent) =>
+              onPointerDown?.(pointerEvent, voiceIndex, event.id, midi)
+            }
+            onPointerMove={onPointerMove}
+            onPointerUp={(pointerEvent) => onPointerUp?.(pointerEvent.pointerId)}
+            onPointerCancel={(pointerEvent) =>
+              onPointerCancel?.(pointerEvent.pointerId)
+            }
           >
             <Text fontSize="10px" fontWeight="bold">
               {shortVoiceLabel(voiceIndex, arrangement.voices.length + 1)}
@@ -1241,6 +1334,10 @@ export function getNextMidiForArrowMove(
     return null;
   }
   return nextMidi;
+}
+
+function clampMidi(value: number, rangeLow: number, rangeHigh: number): MidiNote {
+  return Math.max(rangeLow, Math.min(rangeHigh, value)) as MidiNote;
 }
 
 export function getVisualSelectionItems(

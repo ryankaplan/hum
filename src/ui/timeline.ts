@@ -11,6 +11,7 @@ export type TrackTimeline = TimelineSegment[];
 export type EditorSelection = {
   trackId: string | null;
   clipId: string | null;
+  volumePointId: string | null;
 };
 
 export type WaveformPeaks = number[];

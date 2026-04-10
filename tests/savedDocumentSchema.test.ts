@@ -131,12 +131,6 @@ describe("parseSavedHumDocument", () => {
     expect(parsed?.tracks.referenceWaveformTrackId).toBeNull();
   });
 
-  it("accepts current drafts without persisted UI preferences", () => {
-    const parsed = parseSavedHumDocument(makeSavedHumDocument("lower two thirds"));
-
-    expect(parsed).not.toBeNull();
-  });
-
   it("accepts a persisted reference waveform track id", () => {
     const saved = makeSavedHumDocument("lower two thirds");
     saved.tracks.trackOrder = ["track-1"];

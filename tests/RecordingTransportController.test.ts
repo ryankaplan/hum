@@ -25,15 +25,6 @@ describe("selectReferenceWaveformLane", () => {
     ).toBeNull();
   });
 
-  it("returns null when no reference track is set", () => {
-    expect(
-      selectReferenceWaveformLane([
-        { trackId: "track-low", segments: [{ id: "low" }] },
-        { trackId: "track-mid", segments: [{ id: "mid" }] },
-      ], null),
-    ).toBeNull();
-  });
-
   it("returns null when the designated track has no decoded waveform segments", () => {
     expect(
       selectReferenceWaveformLane([

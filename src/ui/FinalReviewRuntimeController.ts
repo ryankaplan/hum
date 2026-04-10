@@ -122,6 +122,7 @@ export class FinalReviewRuntimeController {
     this.setStatus("priming-preview");
     this.updateSnapshot({ unavailableLanes: [] });
 
+    let previewStarted = false;
     try {
       const transport = this.reviewTransport;
       if (transport == null) {
@@ -167,11 +168,9 @@ export class FinalReviewRuntimeController {
 
       model.tracksEditor.setPlaybackPlayhead(startTimelineSec);
       this.setStatus("previewing");
+      previewStarted = true;
     } finally {
-      if (
-        this.requestToken === requestToken &&
-        this.snapshot.status === "priming-preview"
-      ) {
+      if (this.requestToken === requestToken && !previewStarted) {
         this.setStatus("idle");
       }
     }

@@ -30,14 +30,6 @@ function makeSavedHumDocument(
       referenceWaveformTrackId: null,
       reverbWet: 0.2,
     },
-    exportPreferences: {
-      preferredFormat: null,
-    },
-    recordingMonitorPreferences: {
-      guideToneVolume: 1,
-      beatVolume: 1,
-      priorHarmonyVolume: 1,
-    },
   };
 }
 
@@ -139,14 +131,10 @@ describe("parseSavedHumDocument", () => {
     expect(parsed?.tracks.referenceWaveformTrackId).toBeNull();
   });
 
-  it("accepts persisted recording monitor preferences", () => {
+  it("accepts current drafts without persisted UI preferences", () => {
     const parsed = parseSavedHumDocument(makeSavedHumDocument("lower two thirds"));
 
-    expect(parsed?.recordingMonitorPreferences).toEqual({
-      guideToneVolume: 1,
-      beatVolume: 1,
-      priorHarmonyVolume: 1,
-    });
+    expect(parsed).not.toBeNull();
   });
 
   it("accepts a persisted reference waveform track id", () => {

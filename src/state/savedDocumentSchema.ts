@@ -51,7 +51,7 @@ import { parseCustomArrangement } from "../music/arrangementScore";
  * - On parse failure or schema version mismatch, callers should clear the draft
  *   instead of trying to partially recover it.
  */
-export const SAVED_HUM_DOCUMENT_SCHEMA_VERSION = "11";
+export const SAVED_HUM_DOCUMENT_SCHEMA_VERSION = "12";
 
 export const SAVED_HUM_DOCUMENT_ID = "current";
 
@@ -137,8 +137,6 @@ export type SavedHumDocument = {
   id: string;
   arrangement: SavedArrangementDocument;
   tracks: SavedTracksDocument;
-  exportPreferences: SavedExportPreferences;
-  recordingMonitorPreferences: SavedRecordingMonitorPreferences;
 };
 
 export type SavedMediaAsset = {
@@ -404,16 +402,20 @@ export function parseSavedHumDocument(raw: unknown): SavedHumDocument | null {
 
   const arrangement = parseSavedArrangementDocument(raw.arrangement);
   const tracks = parseSavedTracksDocument(raw.tracks);
-  const exportPreferences = parseSavedExportPreferences(raw.exportPreferences);
-  const recordingMonitorPreferences = parseSavedRecordingMonitorPreferences(
-    raw.recordingMonitorPreferences,
-  );
+  const exportPreferences =
+    raw.exportPreferences === undefined
+      ? undefined
+      : parseSavedExportPreferences(raw.exportPreferences);
+  const recordingMonitorPreferences =
+    raw.recordingMonitorPreferences === undefined
+      ? undefined
+      : parseSavedRecordingMonitorPreferences(raw.recordingMonitorPreferences);
   if (
     typeof raw.id !== "string" ||
     arrangement == null ||
     tracks == null ||
-    exportPreferences == null ||
-    recordingMonitorPreferences == null
+    exportPreferences === null ||
+    recordingMonitorPreferences === null
   ) {
     return null;
   }
@@ -423,7 +425,5 @@ export function parseSavedHumDocument(raw: unknown): SavedHumDocument | null {
     id: raw.id,
     arrangement,
     tracks,
-    exportPreferences,
-    recordingMonitorPreferences,
   };
 }

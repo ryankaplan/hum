@@ -1,4 +1,4 @@
-import { Derived, Observable } from "../observable";
+import { Derived, Observable, PersistedObservable } from "../observable";
 import type { Chord, HarmonyVoicing } from "../music/types";
 import type { Mixer } from "../audio/mixer";
 import type { CompositorHandle } from "../video/compositor";
@@ -74,9 +74,11 @@ export type RecordingMonitorPreferences = {
 export type HumDocument = {
   arrangement: ArrangementDocState;
   tracks: TracksDocumentState;
-  exportPreferences: ExportPreferences;
-  recordingMonitorPreferences: RecordingMonitorPreferences;
 };
+
+const EXPORT_PREFERENCES_STORAGE_KEY = "hum.exportPreferences";
+const RECORDING_MONITOR_PREFERENCES_STORAGE_KEY =
+  "hum.recordingMonitorPreferences";
 
 export type ExportState = {
   exporting: boolean;
@@ -127,6 +129,47 @@ function createDefaultRecordingMonitorPreferences(): RecordingMonitorPreferences
   };
 }
 
+function parseExportPreferences(raw: unknown): ExportPreferences {
+  if (typeof raw !== "object" || raw == null) {
+    return createDefaultExportPreferences();
+  }
+  const preferredFormat = (raw as { preferredFormat?: unknown }).preferredFormat;
+  return {
+    preferredFormat:
+      preferredFormat === "mp4" || preferredFormat === "webm"
+        ? preferredFormat
+        : null,
+  };
+}
+
+function parseRecordingMonitorPreferences(
+  raw: unknown,
+): RecordingMonitorPreferences {
+  if (typeof raw !== "object" || raw == null) {
+    return createDefaultRecordingMonitorPreferences();
+  }
+  const candidate = raw as Partial<Record<keyof RecordingMonitorPreferences, unknown>>;
+  const readLevel = (value: unknown, fallback: number) =>
+    typeof value === "number" && Number.isFinite(value)
+      ? Math.max(0, Math.min(1, value))
+      : fallback;
+
+  return {
+    guideToneVolume: readLevel(
+      candidate.guideToneVolume,
+      createDefaultRecordingMonitorPreferences().guideToneVolume,
+    ),
+    beatVolume: readLevel(
+      candidate.beatVolume,
+      createDefaultRecordingMonitorPreferences().beatVolume,
+    ),
+    priorHarmonyVolume: readLevel(
+      candidate.priorHarmonyVolume,
+      createDefaultRecordingMonitorPreferences().priorHarmonyVolume,
+    ),
+  };
+}
+
 function createEmptyExportState(): ExportState {
   return {
     exporting: false,
@@ -174,15 +217,11 @@ class AppModel {
   >();
   private readonly draftSession = new DraftSessionController({
     getSnapshot: () => ({
-      document: this.getHumDocument(),
+      document: this.getDraftDocument(),
     }),
     applyRestoredDraft: (input) => {
       this.arrangementDocument.set(input.document.arrangement);
       this.tracksDocument.replaceDocument(input.document.tracks);
-      this.exportPreferences.set(input.document.exportPreferences);
-      this.recordingMonitorPreferences.set(
-        input.document.recordingMonitorPreferences,
-      );
       this.recordingTargetTrackId.set(null);
       this.hasRestoredDraft.set(true);
       for (const mediaAsset of input.mediaAssets) {
@@ -202,12 +241,16 @@ class AppModel {
     createDefaultArrangementDocState(),
   );
 
-  readonly exportPreferences = new Observable<ExportPreferences>(
+  readonly exportPreferences = new PersistedObservable<ExportPreferences>(
+    EXPORT_PREFERENCES_STORAGE_KEY,
     createDefaultExportPreferences(),
+    { schema: parseExportPreferences },
   );
   readonly recordingMonitorPreferences =
-    new Observable<RecordingMonitorPreferences>(
+    new PersistedObservable<RecordingMonitorPreferences>(
+      RECORDING_MONITOR_PREFERENCES_STORAGE_KEY,
       createDefaultRecordingMonitorPreferences(),
+      { schema: parseRecordingMonitorPreferences },
     );
   readonly bootstrapped = new Observable<boolean>(false);
   readonly hasRestoredDraft = new Observable<boolean>(false);
@@ -279,12 +322,6 @@ class AppModel {
     this.arrangementDocument.onAfterChange(() => {
       this.draftSession.handleStateChanged();
     });
-    this.exportPreferences.onAfterChange(() => {
-      this.draftSession.handleStateChanged();
-    });
-    this.recordingMonitorPreferences.onAfterChange(() => {
-      this.draftSession.handleStateChanged();
-    });
     this.tracksDocument.document.onAfterChange(() => {
       this.draftSession.handleStateChanged();
     });
@@ -323,12 +360,10 @@ class AppModel {
     });
   }
 
-  getHumDocument(): HumDocument {
+  getDraftDocument(): HumDocument {
     return {
       arrangement: this.arrangementDocument.get(),
       tracks: this.tracksDocument.document.get(),
-      exportPreferences: this.exportPreferences.get(),
-      recordingMonitorPreferences: this.recordingMonitorPreferences.get(),
     };
   }
 
@@ -656,7 +691,7 @@ class AppModel {
 
   cancelRecordingForPart(): void {
     this.clearRecordingTarget();
-    this.appScreen.set(resolveRestoredAppScreen(this.getHumDocument()));
+    this.appScreen.set(resolveRestoredAppScreen(this.getDraftDocument()));
   }
 
   setCalibrationOffset(correctionSec: number): void {

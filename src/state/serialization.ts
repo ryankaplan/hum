@@ -1,9 +1,7 @@
 import type { ClipVolumeEnvelope } from "./clipAutomation";
 import type {
   ArrangementDocState,
-  ExportPreferences,
   HumDocument,
-  RecordingMonitorPreferences,
   TracksDocumentState,
 } from "./model";
 import {
@@ -12,9 +10,7 @@ import {
   type SavedArrangementDocument,
   type SavedClip,
   type SavedClipVolumeEnvelope,
-  type SavedExportPreferences,
   type SavedHumDocument,
-  type SavedRecordingMonitorPreferences,
   type SavedRecording,
   type SavedTrack,
   type SavedTracksDocument,
@@ -34,12 +30,6 @@ export function serializeHumDocument(input: DraftSnapshot): SavedHumDocument {
     id: SAVED_HUM_DOCUMENT_ID,
     arrangement: serializeArrangementDocument(input.document.arrangement),
     tracks: serializeTracksDocument(input.document.tracks),
-    exportPreferences: serializeExportPreferences(
-      input.document.exportPreferences,
-    ),
-    recordingMonitorPreferences: serializeRecordingMonitorPreferences(
-      input.document.recordingMonitorPreferences,
-    ),
   };
 }
 
@@ -50,10 +40,6 @@ export function deserializeHumDocument(
     document: {
       arrangement: deserializeArrangementDocument(saved.arrangement),
       tracks: deserializeTracksDocument(saved.tracks),
-      exportPreferences: deserializeExportPreferences(saved.exportPreferences),
-      recordingMonitorPreferences: deserializeRecordingMonitorPreferences(
-        saved.recordingMonitorPreferences,
-      ),
     },
   };
 }
@@ -113,47 +99,6 @@ function deserializeArrangementDocument(
               })),
             })),
           },
-  };
-}
-
-function serializeExportPreferences(
-  exportPreferences: ExportPreferences,
-): SavedExportPreferences {
-  return {
-    preferredFormat: exportPreferences.preferredFormat,
-  };
-}
-
-function deserializeExportPreferences(
-  saved: SavedExportPreferences,
-): ExportPreferences {
-  return {
-    preferredFormat: saved.preferredFormat,
-  };
-}
-
-function serializeRecordingMonitorPreferences(
-  recordingMonitorPreferences: RecordingMonitorPreferences | undefined,
-): SavedRecordingMonitorPreferences {
-  const safePreferences = {
-    guideToneVolume: recordingMonitorPreferences?.guideToneVolume ?? 0.9,
-    beatVolume: recordingMonitorPreferences?.beatVolume ?? 0.9,
-    priorHarmonyVolume: recordingMonitorPreferences?.priorHarmonyVolume ?? 1,
-  };
-  return {
-    guideToneVolume: safePreferences.guideToneVolume,
-    beatVolume: safePreferences.beatVolume,
-    priorHarmonyVolume: safePreferences.priorHarmonyVolume,
-  };
-}
-
-function deserializeRecordingMonitorPreferences(
-  saved: SavedRecordingMonitorPreferences,
-): RecordingMonitorPreferences {
-  return {
-    guideToneVolume: saved.guideToneVolume,
-    beatVolume: saved.beatVolume,
-    priorHarmonyVolume: saved.priorHarmonyVolume,
   };
 }
 

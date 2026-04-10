@@ -264,11 +264,15 @@ export function RecordingWizard() {
   const totalParts = tracksDocument.trackOrder.length;
   const harmonyPartCount = Math.max(1, totalParts - 1);
   const isMelodyPart = resolvedPartIndex >= harmonyPartCount;
-  const hasPriorHarmonyMonitorControl = partIndex > 0 && !isMelodyPart;
+  const hasPriorHarmonyMonitorControl = partIndex > 0;
   const beatsPerBar = arrangement.meter[0];
   const guideToneVolume = recordingMonitorPreferences.guideToneVolume;
   const beatVolume = recordingMonitorPreferences.beatVolume;
   const priorHarmonyLevel = recordingMonitorPreferences.priorHarmonyVolume;
+  const guideMonitorLabel = isMelodyPart
+    ? "ARRANGEMENT GUIDE VOLUME"
+    : "GUIDE TONES VOLUME";
+  const guideToggleLabel = isMelodyPart ? "Arrangement guide" : "Guide tones";
 
   const { harmonyLine, arrangementVoice, countInCueMidi } =
     resolveRecordingHarmonyGuidance(
@@ -438,9 +442,8 @@ export function RecordingWizard() {
 
           {phase !== "review" && (
             <RecordingMonitorPanel
-              isMelodyPart={isMelodyPart}
+              guideLabel={guideMonitorLabel}
               hasPriorHarmonyMonitorControl={hasPriorHarmonyMonitorControl}
-              guideToneEnabled={guideToneEnabled}
               guideToneVolume={guideToneVolume}
               effectiveGuideToneLevel={effectiveGuideToneLevel}
               beatVolume={beatVolume}
@@ -518,18 +521,16 @@ export function RecordingWizard() {
               </Grid>
               {/* Per-source monitoring toggles */}
               <Flex gap={2} justify="center">
-                {!isMelodyPart && (
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    color={
-                      guideToneEnabled ? dsColors.accent : dsColors.textSubtle
-                    }
-                    onClick={controller.toggleGuideToneEnabled}
-                  >
-                    Guide tones: {guideToneEnabled ? "on" : "off"}
-                  </Button>
-                )}
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  color={
+                    guideToneEnabled ? dsColors.accent : dsColors.textSubtle
+                  }
+                  onClick={controller.toggleGuideToneEnabled}
+                >
+                  {guideToggleLabel}: {guideToneEnabled ? "on" : "off"}
+                </Button>
               </Flex>
             </Stack>
           )}

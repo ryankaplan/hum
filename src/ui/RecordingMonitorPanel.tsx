@@ -2,9 +2,8 @@ import { Box, Flex, Stack, Text } from "@chakra-ui/react";
 import { dsColors } from "./designSystem";
 
 type RecordingMonitorPanelProps = {
-  isMelodyPart: boolean;
+  guideLabel: string;
   hasPriorHarmonyMonitorControl: boolean;
-  guideToneEnabled: boolean;
   guideToneVolume: number;
   effectiveGuideToneLevel: number;
   beatVolume: number;
@@ -19,9 +18,8 @@ function clampVolume(nextPercent: number) {
 }
 
 export function RecordingMonitorPanel({
-  isMelodyPart,
+  guideLabel,
   hasPriorHarmonyMonitorControl,
-  guideToneEnabled,
   guideToneVolume,
   effectiveGuideToneLevel,
   beatVolume,
@@ -49,35 +47,33 @@ export function RecordingMonitorPanel({
         </summary>
 
         <Stack gap={3} mt={3}>
-          {!isMelodyPart && (
-            <Box>
-              <Flex justify="space-between" align="center" mb={1.5}>
-                <Text color={dsColors.textMuted} fontSize="xs" fontWeight="semibold">
-                  GUIDE TONES VOLUME
-                </Text>
-                <Text color={dsColors.text} fontSize="xs" fontWeight="semibold">
-                  {Math.round(effectiveGuideToneLevel * 100)}%
-                </Text>
-              </Flex>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                step={1}
-                value={Math.round(guideToneVolume * 100)}
-                onChange={(e) => {
-                  const next = Number.parseInt(e.currentTarget.value, 10);
-                  if (Number.isNaN(next)) return;
-                  onGuideToneVolumeChange(clampVolume(next));
-                }}
-                style={{
-                  width: "100%",
-                  accentColor:
-                    "var(--chakra-colors-appAccent, var(--chakra-colors-app-accent))",
-                }}
-              />
-            </Box>
-          )}
+          <Box>
+            <Flex justify="space-between" align="center" mb={1.5}>
+              <Text color={dsColors.textMuted} fontSize="xs" fontWeight="semibold">
+                {guideLabel}
+              </Text>
+              <Text color={dsColors.text} fontSize="xs" fontWeight="semibold">
+                {Math.round(effectiveGuideToneLevel * 100)}%
+              </Text>
+            </Flex>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              value={Math.round(guideToneVolume * 100)}
+              onChange={(e) => {
+                const next = Number.parseInt(e.currentTarget.value, 10);
+                if (Number.isNaN(next)) return;
+                onGuideToneVolumeChange(clampVolume(next));
+              }}
+              style={{
+                width: "100%",
+                accentColor:
+                  "var(--chakra-colors-appAccent, var(--chakra-colors-app-accent))",
+              }}
+            />
+          </Box>
 
           <Box>
             <Flex justify="space-between" align="center" mb={1.5}>

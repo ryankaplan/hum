@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { ARRANGEMENT_TICKS_PER_BEAT } from "../src/music/arrangementScore";
 import {
   parseSavedHumDocument,
   SAVED_HUM_DOCUMENT_SCHEMA_VERSION,
@@ -83,7 +82,6 @@ describe("parseSavedHumDocument", () => {
       arrangement: {
         ...makeSavedHumDocument("lower two thirds").arrangement,
         customArrangement: {
-          ticksPerBeat: ARRANGEMENT_TICKS_PER_BEAT,
           voices: [
             {
               id: "voice-0",
@@ -110,7 +108,6 @@ describe("parseSavedHumDocument", () => {
       arrangement: {
         ...makeSavedHumDocument("lower two thirds").arrangement,
         customArrangement: {
-          ticksPerBeat: ARRANGEMENT_TICKS_PER_BEAT,
           voices: [
             {
               id: "voice-0",

@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { ARRANGEMENT_TICKS_PER_BEAT } from "../src/music/arrangementScore";
 import {
   deserializeHumDocument,
   serializeHumDocument,
@@ -21,7 +20,6 @@ function makeDraftSnapshot(
         selectedHarmonyGenerator,
         totalParts: 4,
         customArrangement: {
-          ticksPerBeat: ARRANGEMENT_TICKS_PER_BEAT,
           voices: [
             {
               id: "voice-0",

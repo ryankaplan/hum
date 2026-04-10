@@ -21,27 +21,25 @@ export type ArrangementVoice = {
 };
 
 export type CustomArrangement = {
-  ticksPerBeat: number;
   voices: ArrangementVoice[];
 };
 
 export function createArrangementFromLines(
   lines: HarmonyLine[],
   chords: Chord[],
-  ticksPerBeat = ARRANGEMENT_TICKS_PER_BEAT,
 ): CustomArrangement {
   const chordTicks = chords.map((chord) =>
-    Math.max(1, Math.round(chord.beats * ticksPerBeat)),
+    Math.max(1, Math.round(chord.beats * ARRANGEMENT_TICKS_PER_BEAT)),
   );
 
   return {
-    ticksPerBeat,
     voices: lines.map((line, voiceIndex) => {
       let cursor = 0;
       const events: ArrangementEvent[] = [];
 
       for (let chordIndex = 0; chordIndex < chordTicks.length; chordIndex++) {
-        const durationTicks = chordTicks[chordIndex] ?? ticksPerBeat;
+        const durationTicks =
+          chordTicks[chordIndex] ?? ARRANGEMENT_TICKS_PER_BEAT;
         events.push({
           id: createArrangementEventId(voiceIndex, chordIndex, cursor),
           startTick: cursor,
@@ -108,16 +106,8 @@ export function validateCustomArrangement(
     typeof raw !== "object" ||
     raw == null ||
     Array.isArray(raw) ||
-    typeof (raw as { ticksPerBeat?: unknown }).ticksPerBeat !== "number" ||
     !Array.isArray((raw as { voices?: unknown }).voices)
   ) {
-    return null;
-  }
-
-  const ticksPerBeat = Math.round(
-    (raw as { ticksPerBeat: number }).ticksPerBeat,
-  );
-  if (ticksPerBeat !== ARRANGEMENT_TICKS_PER_BEAT) {
     return null;
   }
 
@@ -136,7 +126,6 @@ export function validateCustomArrangement(
   }
 
   return {
-    ticksPerBeat,
     voices,
   };
 }

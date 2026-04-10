@@ -1117,7 +1117,6 @@ function renderArrangementEvents({
 
 function cloneArrangement(arrangement: CustomArrangement): CustomArrangement {
   return {
-    ticksPerBeat: arrangement.ticksPerBeat,
     voices: arrangement.voices.map((voice) => ({
       id: voice.id,
       events: voice.events.map((event) => ({ ...event })),

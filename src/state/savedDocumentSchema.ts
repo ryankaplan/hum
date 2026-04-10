@@ -76,7 +76,6 @@ export type SavedArrangementDocument = {
   totalParts: 2 | 4;
   customArrangement:
     | {
-        ticksPerBeat: number;
         voices: Array<{
           id: string;
           events: Array<{
@@ -249,7 +248,6 @@ function parseSavedCustomArrangement(
   if (raw == null) return null;
   if (
     !isRecord(raw) ||
-    isFiniteNumber(raw.ticksPerBeat) === false ||
     !Array.isArray(raw.voices)
   ) {
     return null;
@@ -298,7 +296,6 @@ function parseSavedCustomArrangement(
   }
 
   return {
-    ticksPerBeat: raw.ticksPerBeat,
     voices: voices as NonNullable<SavedArrangementDocument["customArrangement"]>["voices"],
   };
 }

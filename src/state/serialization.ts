@@ -74,7 +74,6 @@ function serializeArrangementDocument(
       arrangement.customArrangement == null
         ? null
         : {
-            ticksPerBeat: arrangement.customArrangement.ticksPerBeat,
             voices: arrangement.customArrangement.voices.map((voice) => ({
               id: voice.id,
               events: voice.events.map((event) => ({
@@ -104,7 +103,6 @@ function deserializeArrangementDocument(
       saved.customArrangement == null
         ? null
         : {
-            ticksPerBeat: saved.customArrangement.ticksPerBeat,
             voices: saved.customArrangement.voices.map((voice) => ({
               id: voice.id,
               events: voice.events.map((event) => ({

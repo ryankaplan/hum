@@ -117,7 +117,6 @@ export function SetupScreen() {
     if (baseArrangement == null) return;
     handleStopPreview();
     setCustomArrangementDraft({
-      ticksPerBeat: baseArrangement.ticksPerBeat,
       voices: baseArrangement.voices.map((voice: CustomArrangement["voices"][number]) => ({
         id: voice.id,
         events: voice.events.map(

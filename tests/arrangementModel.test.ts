@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { ARRANGEMENT_TICKS_PER_BEAT } from "../src/music/arrangementScore";
 import {
   computeArrangementInfo,
   createDefaultArrangementDocState,
@@ -67,7 +66,6 @@ describe("computeArrangementInfo", () => {
     const info = computeArrangementInfo(
       makeArrangementDocState("Em", {
         customArrangement: {
-          ticksPerBeat: ARRANGEMENT_TICKS_PER_BEAT,
           voices: [
             {
               id: "voice-0",
@@ -99,7 +97,6 @@ describe("computeArrangementInfo", () => {
     const info = computeArrangementInfo(
       makeArrangementDocState("A E", {
         customArrangement: {
-          ticksPerBeat: ARRANGEMENT_TICKS_PER_BEAT,
           voices: [
             {
               id: "voice-0",

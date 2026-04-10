@@ -238,7 +238,6 @@ function parseLegacyCustomHarmonyOverride(
 
   const chordCount = lines[0]?.length ?? 0;
   return {
-    ticksPerBeat: ARRANGEMENT_TICKS_PER_BEAT,
     voices: lines.map((line, voiceIndex) => ({
       id: `voice-${voiceIndex}`,
       events: line.map((midi, chordIndex) => ({

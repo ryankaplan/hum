@@ -107,6 +107,10 @@ export function FinalReview() {
       ),
     [documentState.clipsById, documentState.trackOrder],
   );
+  const primaryRecordingIdsKey = useMemo(
+    () => primaryRecordingIds.map((recordingId) => recordingId ?? "").join("|"),
+    [primaryRecordingIds],
+  );
   const timelinesRef = useRef<TrackClip[][]>(timelines);
   const hasAnyTakes = primaryRecordingIds.some(
     (recordingId) => recordingId != null,
@@ -362,7 +366,7 @@ export function FinalReview() {
   }, [
     ctx,
     documentState.trackOrder,
-    primaryRecordingIds,
+    primaryRecordingIdsKey,
     stopPlaybackEngine,
     trackCount,
   ]);
@@ -395,6 +399,15 @@ export function FinalReview() {
     if (selected != null) return;
     model.ensureValidEditorSelection();
   }, [selection, timelines]);
+
+  useEffect(() => {
+    if (!isPlaying || selection.volumePointId == null) return;
+    model.tracksEditor.setSelection({
+      trackId: selection.trackId,
+      clipId: selection.clipId,
+      volumePointId: null,
+    });
+  }, [isPlaying, selection.clipId, selection.trackId, selection.volumePointId]);
 
   useEffect(() => {
     return () => {
@@ -461,7 +474,7 @@ export function FinalReview() {
     switch (command.type) {
       case "split_selected": {
         if (exporting || isSyncingFrames) return;
-        if (selection.trackId == null) return;
+        if (selection.trackId == null || selection.volumePointId != null) return;
         if (isPlaying) stopPlaybackEngine(true);
         model.splitSelectedClipAtPlayhead();
         return;
@@ -470,6 +483,29 @@ export function FinalReview() {
         if (exporting || isSyncingFrames) return;
         if (selection.trackId == null || selection.clipId == null) return;
         if (isPlaying) stopPlaybackEngine(true);
+        if (selection.volumePointId != null) {
+          const clip = documentState.clipsById[selection.clipId];
+          const pointIndex =
+            clip?.volumeEnvelope.points.findIndex(
+              (point) => point.id === selection.volumePointId,
+            ) ?? -1;
+          if (clip == null || pointIndex <= 0 || pointIndex >= clip.volumeEnvelope.points.length - 1) {
+            return;
+          }
+          const deleted = model.tracksDocument.deleteClipVolumePoint({
+            trackId: selection.trackId,
+            clipId: selection.clipId,
+            pointId: selection.volumePointId,
+          });
+          if (deleted) {
+            model.tracksEditor.setSelection({
+              trackId: selection.trackId,
+              clipId: selection.clipId,
+              volumePointId: null,
+            });
+          }
+          return;
+        }
         model.deleteSelectedClip();
         return;
       }
@@ -481,7 +517,8 @@ export function FinalReview() {
         }
         model.tracksEditor.setSelection({
           trackId: command.trackId,
-          clipId: selection.clipId,
+          clipId: selection.trackId === command.trackId ? selection.clipId : null,
+          volumePointId: null,
         });
         model.tracksEditor.setPlayhead(command.timelineSec);
         return;
@@ -495,6 +532,16 @@ export function FinalReview() {
         model.tracksEditor.setSelection({
           trackId: command.trackId,
           clipId: command.clipId,
+          volumePointId: null,
+        });
+        return;
+      }
+      case "select_volume_point": {
+        if (exporting || isSyncingFrames || isPlaying) return;
+        model.tracksEditor.setSelection({
+          trackId: command.trackId,
+          clipId: command.clipId,
+          volumePointId: command.pointId,
         });
         return;
       }
@@ -507,14 +554,30 @@ export function FinalReview() {
         );
         return;
       }
-      case "apply_volume_brush": {
+      case "create_volume_point": {
         if (exporting || isSyncingFrames || isPlaying) return;
-        model.tracksDocument.applyClipVolumeBrush({
+        model.tracksDocument.insertClipVolumePoint({
           trackId: command.trackId,
           clipId: command.clipId,
-          centerSec: command.centerSec,
-          deltaGainMultiplier: command.deltaGainMultiplier,
-          radiusSec: command.radiusSec,
+          pointId: command.pointId,
+          timeSec: command.timeSec,
+          gainMultiplier: command.gainMultiplier,
+        });
+        model.tracksEditor.setSelection({
+          trackId: command.trackId,
+          clipId: command.clipId,
+          volumePointId: command.pointId,
+        });
+        return;
+      }
+      case "move_volume_point": {
+        if (exporting || isSyncingFrames || isPlaying) return;
+        model.tracksDocument.moveClipVolumePoint({
+          trackId: command.trackId,
+          clipId: command.clipId,
+          pointId: command.pointId,
+          timeSec: command.timeSec,
+          gainMultiplier: command.gainMultiplier,
         });
         return;
       }
@@ -538,6 +601,39 @@ export function FinalReview() {
         return;
     }
   }
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Backspace" && event.key !== "Delete") return;
+
+      const target = event.target as HTMLElement | null;
+      if (
+        target != null &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      if (selection.trackId == null || selection.clipId == null) return;
+      if (exporting || isSyncingFrames || isPlaying) return;
+
+      event.preventDefault();
+      handleTracksCommand({ type: "delete_selected" });
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [
+    exporting,
+    isPlaying,
+    isSyncingFrames,
+    selection.clipId,
+    selection.trackId,
+    selection.volumePointId,
+  ]);
 
   function handleReverbChange(wet: number) {
     model.tracksDocument.setReverbWet(wet);
@@ -637,9 +733,19 @@ export function FinalReview() {
   }
 
   const selectedSegment = findSegmentBySelection(selection);
-  const canDelete = selectedSegment != null;
+  const selectedPointIndex =
+    selectedSegment?.volumeEnvelope.points.findIndex(
+      (point) => point.id === selection.volumePointId,
+    ) ?? -1;
+  const canDelete =
+    selection.volumePointId != null
+      ? selectedPointIndex > 0 &&
+        selectedSegment != null &&
+        selectedPointIndex < selectedSegment.volumeEnvelope.points.length - 1
+      : selectedSegment != null;
   const canSplit =
     selection.trackId != null &&
+    selection.volumePointId == null &&
     getActiveSegmentAtTime(
       timelines[documentState.trackOrder.indexOf(selection.trackId)] ?? [],
       committedPlayheadSec,
@@ -1099,6 +1205,7 @@ function getCachedSegmentRenderAsset(input: {
       clip.volumeEnvelope,
       clip.durationSec,
     ),
+    volumeHandles: buildVolumeHandleAssets(clip.volumeEnvelope, clip.durationSec),
   };
   cache.set(clip.id, { cacheKey, asset });
   return asset;
@@ -1119,6 +1226,29 @@ function buildVolumePolylinePoints(
       return `${x},${y}`;
     })
     .join(" ");
+}
+
+function buildVolumeHandleAssets(
+  volumeEnvelope: ClipVolumeEnvelope,
+  durationSec: number,
+): TracksEditorSegmentRenderAsset["volumeHandles"] {
+  if (durationSec <= 0) {
+    return volumeEnvelope.points.map((point, index) => ({
+      id: point.id,
+      leftPercent: 0,
+      topPercent: 50,
+      isBoundary:
+        index === 0 || index === Math.max(0, volumeEnvelope.points.length - 1),
+    }));
+  }
+
+  const sorted = [...volumeEnvelope.points].sort((a, b) => a.timeSec - b.timeSec);
+  return sorted.map((point, index) => ({
+    id: point.id,
+    leftPercent: clamp((point.timeSec / durationSec) * 100, 0, 100),
+    topPercent: clamp((1 - point.gainMultiplier / 2) * 100, 2, 98),
+    isBoundary: index === 0 || index === sorted.length - 1,
+  }));
 }
 
 function scheduleClipVolumeGain(input: {

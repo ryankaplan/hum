@@ -160,16 +160,42 @@ const config = defineConfig({
       strokeWidth: "2.25",
       strokeLinecap: "round",
       strokeLinejoin: "round",
+      vectorEffect: "non-scaling-stroke",
+      shapeRendering: "geometricPrecision",
       filter: "drop-shadow(0 0 2px color-mix(in srgb, var(--app-accent) 35%, transparent))",
     },
-    ".segment-volume-brush": {
+    ".segment-volume-handle-hit": {
       position: "absolute",
-      top: "0",
-      bottom: "0",
-      background:
-        "color-mix(in srgb, var(--app-accent) 18%, transparent)",
+      width: "20px",
+      height: "20px",
+      marginLeft: "-10px",
+      marginTop: "-10px",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
       pointerEvents: "none",
-      zIndex: "2",
+      zIndex: "4",
+    },
+    ".segment-volume-handle": {
+      width: "9px",
+      height: "9px",
+      transform: "rotate(45deg)",
+      borderRadius: "1px",
+      background: "color-mix(in srgb, var(--app-surface) 88%, white)",
+      border:
+        "1px solid color-mix(in srgb, var(--app-accent) 65%, var(--app-border))",
+      boxShadow:
+        "0 0 0 1px color-mix(in srgb, var(--app-text) 10%, transparent)",
+    },
+    ".segment-volume-handle.is-boundary": {
+      background:
+        "color-mix(in srgb, var(--app-surface-subtle) 92%, white)",
+    },
+    ".segment-volume-handle.is-selected, .segment-volume-handle-hit.is-selected .segment-volume-handle": {
+      background: "color-mix(in srgb, var(--app-accent) 82%, white)",
+      borderColor: "white",
+      boxShadow:
+        "0 0 0 1px color-mix(in srgb, var(--app-accent) 45%, transparent), 0 0 10px color-mix(in srgb, var(--app-accent) 28%, transparent)",
     },
     ".timeline-playhead": {
       position: "absolute",

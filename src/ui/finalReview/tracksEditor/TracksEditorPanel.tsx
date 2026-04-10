@@ -9,6 +9,7 @@ import {
 import type { ReadOnlyObservable } from "../../../observable";
 import { useObservable } from "../../../observable";
 import {
+  createVolumePointId,
   evaluateClipVolumeAtTime,
   type ClipVolumeEnvelope,
 } from "../../../state/clipAutomation";
@@ -25,16 +26,8 @@ const TIMELINE_PX_PER_SEC = 110;
 const TIMELINE_RIGHT_PAD_PX = 48;
 const LANE_HEIGHT_PX = 72;
 const TRACK_RAIL_WIDTH_PX = 200;
-const VOLUME_BRUSH_RADIUS_SEC = 2;
-const VOLUME_BRUSH_GAIN_PER_PX = 1 / 180;
 const VOLUME_LINE_HIT_RADIUS_PX = 11;
-
-type VolumeBrushPreview = {
-  trackId: string;
-  clipId: string;
-  startSec: number;
-  endSec: number;
-};
+const VOLUME_HANDLE_HIT_RADIUS_PX = 12;
 
 type TracksEditorPanelProps = {
   view: TracksEditorStaticView;
@@ -50,8 +43,6 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
 
   const timelineViewportRef = useRef<HTMLDivElement>(null);
   const [timelineViewportWidth, setTimelineViewportWidth] = useState(0);
-  const [volumeBrushPreview, setVolumeBrushPreview] =
-    useState<VolumeBrushPreview | null>(null);
 
   const timelineContentWidthPx = Math.max(
     timelineViewportWidth,
@@ -71,12 +62,6 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
-
-  useEffect(() => {
-    if (!view.isPlaying) {
-      setVolumeBrushPreview(null);
-    }
-  }, [view.isPlaying]);
 
   function handleLaneClick(
     e: ReactPointerEvent<HTMLDivElement>,
@@ -106,8 +91,6 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
     e.stopPropagation();
     if (view.exporting || view.isPlaying || view.isSyncingFrames) return;
 
-    onCommand({ type: "select_segment", trackId, clipId });
-
     const rect = e.currentTarget.getBoundingClientRect();
     const widthPx = Math.max(1, rect.width);
     const heightPx = Math.max(1, rect.height);
@@ -117,6 +100,11 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
       return ratio * segmentDurationSec;
     };
 
+    const toGainMultiplier = (clientY: number): number => {
+      const y = clamp(clientY - rect.top, 0, heightPx);
+      return clamp(2 - (y / heightPx) * 2, 0, 2);
+    };
+
     const pointerDownLocalSec = toLocalTimeSec(e.clientX);
     const pointerDownGainMultiplier = evaluateClipVolumeAtTime(
       segmentVolumeEnvelope,
@@ -124,59 +112,79 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
       segmentDurationSec,
     );
     const pointerDownY = e.clientY - rect.top;
+
+    const sortedPoints = [...segmentVolumeEnvelope.points].sort(
+      (a, b) => a.timeSec - b.timeSec,
+    );
+    const hitHandle = sortedPoints.find((point) => {
+      const pointX = (point.timeSec / Math.max(segmentDurationSec, 1e-6)) * widthPx;
+      const pointY = gainToLineYPx(point.gainMultiplier, heightPx);
+      const dx = pointX - (e.clientX - rect.left);
+      const dy = pointY - pointerDownY;
+      return Math.hypot(dx, dy) <= VOLUME_HANDLE_HIT_RADIUS_PX;
+    });
+
+    if (hitHandle != null) {
+      onCommand({ type: "select_volume_point", trackId, clipId, pointId: hitHandle.id });
+
+      const onMovePoint = (event: PointerEvent) => {
+        onCommand({
+          type: "move_volume_point",
+          trackId,
+          clipId,
+          pointId: hitHandle.id,
+          timeSec: toLocalTimeSec(event.clientX),
+          gainMultiplier: toGainMultiplier(event.clientY),
+        });
+      };
+
+      const onMovePointUp = () => {
+        window.removeEventListener("pointermove", onMovePoint);
+        window.removeEventListener("pointerup", onMovePointUp);
+      };
+
+      window.addEventListener("pointermove", onMovePoint);
+      window.addEventListener("pointerup", onMovePointUp);
+      return;
+    }
+
     const volumeLineY = gainToLineYPx(pointerDownGainMultiplier, heightPx);
     const isVolumeGesture =
       Math.abs(pointerDownY - volumeLineY) <= VOLUME_LINE_HIT_RADIUS_PX;
 
     if (isVolumeGesture) {
-      let lastClientY = e.clientY;
-
-      setVolumeBrushPreview({
+      const pointId = createVolumePointId();
+      onCommand({
+        type: "create_volume_point",
         trackId,
         clipId,
-        startSec: Math.max(0, pointerDownLocalSec - VOLUME_BRUSH_RADIUS_SEC),
-        endSec: Math.min(segmentDurationSec, pointerDownLocalSec + VOLUME_BRUSH_RADIUS_SEC),
+        pointId,
+        timeSec: pointerDownLocalSec,
+        gainMultiplier: pointerDownGainMultiplier,
       });
 
-      const onBrushMove = (event: PointerEvent) => {
-        const centerSec = toLocalTimeSec(event.clientX);
-        const deltaGainMultiplier =
-          (lastClientY - event.clientY) * VOLUME_BRUSH_GAIN_PER_PX;
-        lastClientY = event.clientY;
-
-        if (Math.abs(deltaGainMultiplier) > 1e-6) {
-          onCommand({
-            type: "apply_volume_brush",
-            trackId,
-            clipId,
-            centerSec,
-            deltaGainMultiplier,
-            radiusSec: VOLUME_BRUSH_RADIUS_SEC,
-          });
-        }
-
-        setVolumeBrushPreview({
+      const onMovePoint = (event: PointerEvent) => {
+        onCommand({
+          type: "move_volume_point",
           trackId,
           clipId,
-          startSec: Math.max(0, centerSec - VOLUME_BRUSH_RADIUS_SEC),
-          endSec: Math.min(segmentDurationSec, centerSec + VOLUME_BRUSH_RADIUS_SEC),
+          pointId,
+          timeSec: toLocalTimeSec(event.clientX),
+          gainMultiplier: toGainMultiplier(event.clientY),
         });
       };
 
-      const onBrushUp = () => {
-        window.removeEventListener("pointermove", onBrushMove);
-        window.removeEventListener("pointerup", onBrushUp);
-        setVolumeBrushPreview((prev) =>
-          prev != null && prev.clipId === clipId && prev.trackId === trackId
-            ? null
-            : prev,
-        );
+      const onMovePointUp = () => {
+        window.removeEventListener("pointermove", onMovePoint);
+        window.removeEventListener("pointerup", onMovePointUp);
       };
 
-      window.addEventListener("pointermove", onBrushMove);
-      window.addEventListener("pointerup", onBrushUp);
+      window.addEventListener("pointermove", onMovePoint);
+      window.addEventListener("pointerup", onMovePointUp);
       return;
     }
+
+    onCommand({ type: "select_segment", trackId, clipId });
 
     const startClientX = e.clientX;
 
@@ -369,7 +377,6 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
               lanes={view.lanes}
               selection={view.selection}
               beatLineTimes={view.beatLineTimes}
-              volumeBrushPreview={volumeBrushPreview}
               onLanePointerDown={handleLaneClick}
               onSegmentPointerDown={handleSegmentPointerDown}
             />
@@ -474,7 +481,6 @@ const TracksTimelineStatic = memo(function TracksTimelineStatic(input: {
   lanes: TracksEditorLaneView[];
   selection: TracksEditorStaticView["selection"];
   beatLineTimes: number[];
-  volumeBrushPreview: VolumeBrushPreview | null;
   onLanePointerDown: (
     e: ReactPointerEvent<HTMLDivElement>,
     trackId: string,
@@ -488,14 +494,8 @@ const TracksTimelineStatic = memo(function TracksTimelineStatic(input: {
     segmentVolumeEnvelope: ClipVolumeEnvelope,
   ) => void;
 }) {
-  const {
-    lanes,
-    selection,
-    beatLineTimes,
-    volumeBrushPreview,
-    onLanePointerDown,
-    onSegmentPointerDown,
-  } = input;
+  const { lanes, selection, beatLineTimes, onLanePointerDown, onSegmentPointerDown } =
+    input;
 
   return (
     <>
@@ -529,12 +529,8 @@ const TracksTimelineStatic = memo(function TracksTimelineStatic(input: {
                 laneTrackId={lane.trackId}
                 segment={segment}
                 isSelected={selection.clipId === segment.id}
-                activeBrush={
-                  volumeBrushPreview != null &&
-                  volumeBrushPreview.trackId === lane.trackId &&
-                  volumeBrushPreview.clipId === segment.id
-                    ? volumeBrushPreview
-                    : null
+                selectedVolumePointId={
+                  selection.clipId === segment.id ? selection.volumePointId : null
                 }
                 onPointerDown={onSegmentPointerDown}
               />
@@ -550,7 +546,7 @@ const TimelineSegmentBox = memo(function TimelineSegmentBox(input: {
   laneTrackId: string;
   segment: TracksEditorSegmentView;
   isSelected: boolean;
-  activeBrush: VolumeBrushPreview | null;
+  selectedVolumePointId: string | null;
   onPointerDown: (
     e: ReactPointerEvent<HTMLDivElement>,
     trackId: string,
@@ -560,15 +556,8 @@ const TimelineSegmentBox = memo(function TimelineSegmentBox(input: {
     segmentVolumeEnvelope: ClipVolumeEnvelope,
   ) => void;
 }) {
-  const { laneTrackId, segment, isSelected, activeBrush, onPointerDown } = input;
-  const brushLeftPercent =
-    activeBrush == null || segment.durationSec <= 0
-      ? 0
-      : (activeBrush.startSec / segment.durationSec) * 100;
-  const brushWidthPercent =
-    activeBrush == null || segment.durationSec <= 0
-      ? 0
-      : ((activeBrush.endSec - activeBrush.startSec) / segment.durationSec) * 100;
+  const { laneTrackId, segment, isSelected, selectedVolumePointId, onPointerDown } =
+    input;
 
   return (
     <Box
@@ -595,13 +584,6 @@ const TimelineSegmentBox = memo(function TimelineSegmentBox(input: {
           />
         ))}
       </Box>
-      {activeBrush != null && (
-        <Box
-          className="segment-volume-brush"
-          left={`${brushLeftPercent}%`}
-          w={`${Math.max(0, brushWidthPercent)}%`}
-        />
-      )}
       <svg
         className="segment-volume-svg"
         viewBox="0 0 100 100"
@@ -610,8 +592,25 @@ const TimelineSegmentBox = memo(function TimelineSegmentBox(input: {
         <polyline
           className="segment-volume-line"
           points={segment.renderAsset.volumeLinePoints}
+          vectorEffect="non-scaling-stroke"
         />
       </svg>
+      {segment.renderAsset.volumeHandles.map((handle) => (
+        <Box
+          key={handle.id}
+          className={`segment-volume-handle-hit ${
+            selectedVolumePointId === handle.id ? "is-selected" : ""
+          }`}
+          left={`${handle.leftPercent}%`}
+          top={`${handle.topPercent}%`}
+        >
+          <Box
+            className={`segment-volume-handle ${
+              handle.isBoundary ? "is-boundary" : "is-interior"
+            } ${selectedVolumePointId === handle.id ? "is-selected" : ""}`}
+          />
+        </Box>
+      ))}
     </Box>
   );
 });

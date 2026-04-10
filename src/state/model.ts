@@ -17,9 +17,11 @@ import type {
 import {
   TracksDocumentModel,
   TracksEditorModel,
-  type ApplyClipVolumeBrushInput,
   type ClipId,
+  type DeleteClipVolumePointInput,
+  type InsertClipVolumePointInput,
   type MediaAssetId,
+  type MoveClipVolumePointInput,
   type RecordingId,
   type RecordingRecord,
   type TrackClip,
@@ -34,9 +36,11 @@ import { DraftSessionController } from "./draftSessionController";
 type WaveformPeaks = number[];
 
 export type {
-  ApplyClipVolumeBrushInput,
   ClipId,
+  DeleteClipVolumePointInput,
+  InsertClipVolumePointInput,
   MediaAssetId,
+  MoveClipVolumePointInput,
   RecordingId,
   RecordingRecord,
   TrackClip,
@@ -368,6 +372,7 @@ class AppModel {
       this.tracksEditor.setSelection({
         trackId,
         clipId,
+        volumePointId: null,
       });
     }
 
@@ -490,6 +495,7 @@ class AppModel {
       this.tracksEditor.setSelection({
         trackId,
         clipId: result.rightClipId,
+        volumePointId: null,
       });
     }
   }
@@ -520,6 +526,7 @@ class AppModel {
       this.tracksEditor.setSelection({
         trackId,
         clipId: nextSelectionClipId,
+        volumePointId: null,
       });
       return;
     }
@@ -531,14 +538,31 @@ class AppModel {
     const document = this.tracksDocument.document.get();
     const selection = this.tracksEditor.editor.get().selection;
 
-    if (this.findClipBySelection(document, selection) != null) {
+    const selectedClip = this.findClipBySelection(document, selection);
+    if (selectedClip != null) {
+      if (
+        selection.volumePointId != null &&
+        selectedClip.volumeEnvelope.points.some(
+          (point) => point.id === selection.volumePointId,
+        ) === false
+      ) {
+        this.tracksEditor.setSelection({
+          trackId: selection.trackId,
+          clipId: selection.clipId,
+          volumePointId: null,
+        });
+      }
       return;
     }
 
     for (const trackId of document.trackOrder) {
       const firstClip = this.tracksDocument.getOrderedClipsForTrack(trackId)[0] ?? null;
       if (firstClip != null) {
-        this.tracksEditor.setSelection({ trackId, clipId: firstClip.id });
+        this.tracksEditor.setSelection({
+          trackId,
+          clipId: firstClip.id,
+          volumePointId: null,
+        });
         return;
       }
     }

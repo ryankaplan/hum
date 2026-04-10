@@ -1032,7 +1032,11 @@ export function FinalReview() {
                         model.tracksDocument.getOrderedClipsForTrack(trackId)[0]
                           ?.id ?? null;
                       model.currentPartIndex.set(index);
-                      model.tracksEditor.setSelection({ trackId, clipId });
+                      model.tracksEditor.setSelection({
+                        trackId,
+                        clipId,
+                        volumePointId: null,
+                      });
                     }}
                     onRecordPart={handleRedoPart}
                     disabled={exporting || isSyncingFrames}

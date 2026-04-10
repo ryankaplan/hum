@@ -1,6 +1,7 @@
 import { Box, Button, Flex, Progress, Text } from "@chakra-ui/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useObservable } from "../observable";
+import { acquirePermissionsAndStart } from "../recording/permissions";
 import {
   model,
   type RecordingRuntimeWaveform,
@@ -475,10 +476,6 @@ export function FinalReview() {
       }
       case "select_lane": {
         if (exporting || isSyncingFrames || isPlaying) return;
-        const trackIndex = documentState.trackOrder.indexOf(command.trackId);
-        if (trackIndex >= 0) {
-          model.currentPartIndex.set(trackIndex);
-        }
         model.tracksEditor.setSelection({
           trackId: command.trackId,
           clipId: selection.clipId,
@@ -488,10 +485,6 @@ export function FinalReview() {
       }
       case "select_segment": {
         if (exporting || isSyncingFrames || isPlaying) return;
-        const trackIndex = documentState.trackOrder.indexOf(command.trackId);
-        if (trackIndex >= 0) {
-          model.currentPartIndex.set(trackIndex);
-        }
         model.tracksEditor.setSelection({
           trackId: command.trackId,
           clipId: command.clipId,
@@ -543,10 +536,18 @@ export function FinalReview() {
     model.tracksDocument.setReverbWet(wet);
   }
 
-  function handleRedoPart(index: number) {
+  async function handleRedoPart(index: number) {
     if (isSyncingFrames) return;
+    const trackId = documentState.trackOrder[index] ?? null;
+    if (trackId == null) return;
     stopPlaybackEngine(false);
-    model.openRecordingForPart(index);
+    if (model.mediaStream.get() != null && model.isCalibrated.get()) {
+      model.openRecordingForTrack(trackId);
+      return;
+    }
+
+    model.setRecordingTargetTrackId(trackId);
+    await acquirePermissionsAndStart();
   }
 
   async function handleExport() {
@@ -925,10 +926,11 @@ export function FinalReview() {
                       const clipId =
                         model.tracksDocument.getOrderedClipsForTrack(trackId)[0]
                           ?.id ?? null;
-                      model.currentPartIndex.set(index);
                       model.tracksEditor.setSelection({ trackId, clipId });
                     }}
-                    onRecordPart={handleRedoPart}
+                    onRecordPart={(index) => {
+                      void handleRedoPart(index);
+                    }}
                     disabled={exporting || isSyncingFrames}
                   />
                 </Box>

@@ -21,6 +21,16 @@ export type TracksEditorCommand =
       timeSec: number;
       gainMultiplier: number;
     }
+  | {
+      type: "reshape_volume_span";
+      trackId: string;
+      clipId: string;
+      leftPointId: string;
+      rightPointId: string;
+      leftInnerPointId: string;
+      rightInnerPointId: string;
+      gainMultiplier: number;
+    }
   | { type: "seek"; valueSec: number }
   | { type: "set_lane_volume"; trackId: string; value: number }
   | { type: "toggle_lane_mute"; trackId: string };

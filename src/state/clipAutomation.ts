@@ -30,6 +30,16 @@ export type DeleteClipVolumePointInput = {
   pointId: string;
 };
 
+export type ReshapeClipVolumeSpanInput = {
+  envelope: ClipVolumeEnvelope;
+  durationSec: number;
+  leftPointId: string;
+  rightPointId: string;
+  leftInnerPointId: string;
+  rightInnerPointId: string;
+  gainMultiplier: number;
+};
+
 const EPSILON = 1e-6;
 const VOLUME_GAIN_MIN = 0;
 const VOLUME_GAIN_MAX = 2;
@@ -152,6 +162,65 @@ export function deleteClipVolumePoint(
     },
     duration,
   );
+}
+
+export function reshapeClipVolumeSpan(
+  input: ReshapeClipVolumeSpanInput,
+): ClipVolumeEnvelope {
+  const duration = sanitizeDuration(input.durationSec);
+  const envelope = normalizeEnvelope(input.envelope, duration);
+  const leftIndex = envelope.points.findIndex(
+    (point) => point.id === input.leftPointId,
+  );
+  const rightIndex = envelope.points.findIndex(
+    (point) => point.id === input.rightPointId,
+  );
+  if (leftIndex < 0 || rightIndex !== leftIndex + 1) {
+    return envelope;
+  }
+
+  const leftPoint = envelope.points[leftIndex];
+  const rightPoint = envelope.points[rightIndex];
+  if (leftPoint == null || rightPoint == null) {
+    return envelope;
+  }
+
+  const spanSec = Math.max(0, rightPoint.timeSec - leftPoint.timeSec);
+  if (spanSec <= EPSILON * 2) {
+    return envelope;
+  }
+
+  const insetSec = computeDuckInsetSec(spanSec);
+  const leftInnerTimeSec = clamp(
+    leftPoint.timeSec + insetSec,
+    leftPoint.timeSec + EPSILON,
+    rightPoint.timeSec - EPSILON,
+  );
+  const rightInnerTimeSec = clamp(
+    rightPoint.timeSec - insetSec,
+    leftInnerTimeSec + EPSILON,
+    rightPoint.timeSec - EPSILON,
+  );
+
+  const nextPoints = envelope.points.filter(
+    (point) =>
+      point.id !== input.leftInnerPointId && point.id !== input.rightInnerPointId,
+  );
+
+  nextPoints.push(
+    createPoint(
+      leftInnerTimeSec,
+      clamp(input.gainMultiplier, VOLUME_GAIN_MIN, VOLUME_GAIN_MAX),
+      input.leftInnerPointId,
+    ),
+    createPoint(
+      rightInnerTimeSec,
+      clamp(input.gainMultiplier, VOLUME_GAIN_MIN, VOLUME_GAIN_MAX),
+      input.rightInnerPointId,
+    ),
+  );
+
+  return normalizeEnvelope({ points: nextPoints }, duration);
 }
 
 export function splitClipVolumeEnvelopeAtTime(
@@ -376,4 +445,9 @@ function sanitizeDuration(value: number): number {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
+}
+
+function computeDuckInsetSec(spanSec: number): number {
+  const preferredInsetSec = clamp(spanSec * 0.18, 0.01, 0.08);
+  return Math.min(preferredInsetSec, Math.max(EPSILON, spanSec / 3));
 }

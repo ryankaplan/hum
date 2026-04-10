@@ -6,6 +6,7 @@ import {
   deleteClipVolumePoint,
   insertClipVolumePoint,
   moveClipVolumePoint,
+  reshapeClipVolumeSpan,
   splitClipVolumeEnvelopeAtTime,
 } from "./clipAutomation";
 import { createShortUuid } from "./id";
@@ -112,6 +113,16 @@ export type DeleteClipVolumePointInput = {
   trackId: TrackId;
   clipId: ClipId;
   pointId: string;
+};
+
+export type ReshapeClipVolumeSpanInput = {
+  trackId: TrackId;
+  clipId: ClipId;
+  leftPointId: string;
+  rightPointId: string;
+  leftInnerPointId: string;
+  rightInnerPointId: string;
+  gainMultiplier: number;
 };
 
 type TracksDocumentModelOptions = {
@@ -639,6 +650,49 @@ export class TracksDocumentModel {
     });
 
     return deleted;
+  }
+
+  reshapeClipVolumeSpan(input: ReshapeClipVolumeSpanInput): boolean {
+    let changed = false;
+
+    this.setDocument((current) => {
+      const track = current.tracksById[input.trackId];
+      if (track == null || track.clipIds.includes(input.clipId) === false) {
+        return current;
+      }
+
+      const clip = current.clipsById[input.clipId];
+      if (clip == null) return current;
+
+      const nextEnvelope = reshapeClipVolumeSpan({
+        envelope: clip.volumeEnvelope,
+        durationSec: clip.durationSec,
+        leftPointId: input.leftPointId,
+        rightPointId: input.rightPointId,
+        leftInnerPointId: input.leftInnerPointId,
+        rightInnerPointId: input.rightInnerPointId,
+        gainMultiplier: input.gainMultiplier,
+      });
+
+      if (isSameVolumeEnvelope(clip.volumeEnvelope, nextEnvelope)) {
+        return current;
+      }
+
+      changed = true;
+      return {
+        ...current,
+        clipsById: {
+          ...current.clipsById,
+          [input.clipId]: {
+            ...clip,
+            volumeEnvelope: nextEnvelope,
+            volumeEnvelopeRevision: clip.volumeEnvelopeRevision + 1,
+          },
+        },
+      };
+    });
+
+    return changed;
   }
 
   setTrackVolume(trackId: TrackId, volume: number): void {

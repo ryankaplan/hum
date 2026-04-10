@@ -29,6 +29,7 @@ const LANE_HEIGHT_PX = 72;
 const TRACK_RAIL_WIDTH_PX = 200;
 const VOLUME_LINE_HIT_RADIUS_PX = 11;
 const VOLUME_HANDLE_HIT_RADIUS_PX = 12;
+const VOLUME_DUCK_MAX_GAIN_REDUCTION = 0.001;
 
 type TracksEditorPanelProps = {
   view: TracksEditorStaticView;
@@ -253,6 +254,55 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
 
       window.addEventListener("pointermove", onMovePoint);
       window.addEventListener("pointerup", onMovePointUp);
+      return;
+    }
+
+    const hitLineSegment = findHitVolumeLineSegment(
+      sortedPoints,
+      segmentDurationSec,
+      widthPx,
+      heightPx,
+      e.clientX - rect.left,
+      pointerDownY,
+    );
+
+    if (e.altKey && hitLineSegment != null) {
+      const leftInnerPointId = createVolumePointId();
+      const rightInnerPointId = createVolumePointId();
+      onCommand({
+        type: "reshape_volume_span",
+        trackId,
+        clipId,
+        leftPointId: hitLineSegment.leftPoint.id,
+        rightPointId: hitLineSegment.rightPoint.id,
+        leftInnerPointId,
+        rightInnerPointId,
+        gainMultiplier: pointerDownGainMultiplier,
+      });
+
+      const onDuckMove = (event: PointerEvent) => {
+        onCommand({
+          type: "reshape_volume_span",
+          trackId,
+          clipId,
+          leftPointId: hitLineSegment.leftPoint.id,
+          rightPointId: hitLineSegment.rightPoint.id,
+          leftInnerPointId,
+          rightInnerPointId,
+          gainMultiplier: Math.min(
+            pointerDownGainMultiplier - VOLUME_DUCK_MAX_GAIN_REDUCTION,
+            toGainMultiplier(event.clientY),
+          ),
+        });
+      };
+
+      const onDuckMoveUp = () => {
+        window.removeEventListener("pointermove", onDuckMove);
+        window.removeEventListener("pointerup", onDuckMoveUp);
+      };
+
+      window.addEventListener("pointermove", onDuckMove);
+      window.addEventListener("pointerup", onDuckMoveUp);
       return;
     }
 
@@ -773,6 +823,74 @@ function TimelinePlayheadOverlay(input: {
 function gainToLineYPx(gain: number, heightPx: number): number {
   const ratio = clamp(1 - gain / 2, 0, 1);
   return ratio * heightPx;
+}
+
+function findHitVolumeLineSegment(
+  points: ClipVolumeEnvelope["points"],
+  durationSec: number,
+  widthPx: number,
+  heightPx: number,
+  pointerX: number,
+  pointerY: number,
+): { leftPoint: ClipVolumeEnvelope["points"][number]; rightPoint: ClipVolumeEnvelope["points"][number] } | null {
+  let best:
+    | {
+        leftPoint: ClipVolumeEnvelope["points"][number];
+        rightPoint: ClipVolumeEnvelope["points"][number];
+        distancePx: number;
+      }
+    | null = null;
+
+  for (let i = 0; i < points.length - 1; i++) {
+    const leftPoint = points[i];
+    const rightPoint = points[i + 1];
+    if (leftPoint == null || rightPoint == null) continue;
+
+    const startX = (leftPoint.timeSec / Math.max(durationSec, 1e-6)) * widthPx;
+    const startY = gainToLineYPx(leftPoint.gainMultiplier, heightPx);
+    const endX = (rightPoint.timeSec / Math.max(durationSec, 1e-6)) * widthPx;
+    const endY = gainToLineYPx(rightPoint.gainMultiplier, heightPx);
+    const distancePx = distanceToSegmentPx(
+      pointerX,
+      pointerY,
+      startX,
+      startY,
+      endX,
+      endY,
+    );
+
+    if (distancePx > VOLUME_LINE_HIT_RADIUS_PX) continue;
+    if (best == null || distancePx < best.distancePx) {
+      best = { leftPoint, rightPoint, distancePx };
+    }
+  }
+
+  if (best == null) return null;
+  return {
+    leftPoint: best.leftPoint,
+    rightPoint: best.rightPoint,
+  };
+}
+
+function distanceToSegmentPx(
+  px: number,
+  py: number,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+): number {
+  const abx = bx - ax;
+  const aby = by - ay;
+  const abLenSq = abx * abx + aby * aby;
+  if (abLenSq <= 1e-6) {
+    return Math.hypot(px - ax, py - ay);
+  }
+
+  const t = clamp(((px - ax) * abx + (py - ay) * aby) / abLenSq, 0, 1);
+  const closestX = ax + abx * t;
+  const closestY = ay + aby * t;
+  return Math.hypot(px - closestX, py - closestY);
 }
 
 function formatTime(sec: number): string {

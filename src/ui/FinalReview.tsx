@@ -277,6 +277,26 @@ export function FinalReview() {
         });
         return;
       }
+      case "reshape_volume_span": {
+        if (exporting || isSyncingFrames || isPlaying) return;
+        const changed = model.tracksDocument.reshapeClipVolumeSpan({
+          trackId: command.trackId,
+          clipId: command.clipId,
+          leftPointId: command.leftPointId,
+          rightPointId: command.rightPointId,
+          leftInnerPointId: command.leftInnerPointId,
+          rightInnerPointId: command.rightInnerPointId,
+          gainMultiplier: command.gainMultiplier,
+        });
+        if (changed) {
+          model.tracksEditor.setSelection({
+            trackId: command.trackId,
+            clipId: command.clipId,
+            volumePointId: command.leftInnerPointId,
+          });
+        }
+        return;
+      }
       case "seek": {
         if (isPlaying || exporting || isSyncingFrames) return;
         const next = Math.max(0, Math.min(command.valueSec, timelineEndSec));

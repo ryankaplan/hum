@@ -76,8 +76,12 @@ export class DraftSessionController {
       this.options.onHasDraftChange(true);
       return result;
     } catch (error) {
-      if (error instanceof InvalidSavedDraftError) {
-        console.warn("Discarding incompatible saved draft", error.message);
+      if (isRecoverableDraftRestoreError(error)) {
+        if (error instanceof InvalidSavedDraftError) {
+          console.warn("Discarding incompatible saved draft", error.message);
+        } else {
+          console.warn("Discarding unreadable saved draft.");
+        }
       } else {
         console.error("Failed to restore saved draft", error);
       }
@@ -245,4 +249,13 @@ export class DraftSessionController {
       }
     }
   }
+}
+
+function isRecoverableDraftRestoreError(error: unknown): boolean {
+  if (error instanceof InvalidSavedDraftError) return true;
+  if (!(error instanceof Error)) return false;
+  return (
+    error.message === "Saved draft document is invalid" ||
+    error.message === "Saved draft is missing referenced media assets"
+  );
 }

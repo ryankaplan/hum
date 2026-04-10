@@ -1,6 +1,6 @@
 # Latency Correction Approaches
 
-This document summarizes practical approaches for latency correction in browser-based multitrack recording, including the manual speech-alignment flow currently used in this repo.
+This document summarizes practical approaches for latency correction in browser-based multitrack recording, including the hybrid flow currently used in this repo.
 
 ## Why this matters
 
@@ -12,6 +12,8 @@ In browsers, latency is a combination of:
 - input/capture latency (mic + browser pipeline),
 - DSP effects (AEC/noise suppression/AGC),
 - scheduling and codec/container behavior.
+
+The important distinction in this repo is that we do not treat latency as a single fixed property of "these headphones + this mic". We use Web Audio timing plus a user calibration pass, and the saved calibration value is a residual correction for the current session, not a pure device-profile latency.
 
 ## Approaches
 
@@ -57,7 +59,8 @@ How it works:
 Pros:
 
 - Works even when clap transients are suppressed (for example AirPods speech tuning).
-- Device/session specific.
+- Session-specific and user-verifiable.
+- Captures the residual real-world offset left over after the browser's reported output latency is applied.
 - Transparent and user-verifiable.
 
 Cons:
@@ -127,18 +130,25 @@ Cons:
 Typical stack:
 
 1. Web Audio scheduling baseline.
-2. One-time calibration per session.
-3. Preview/verification UX.
-4. Manual fallback when needed.
+2. Reported output latency baseline (`ctx.outputLatency`) at playback/capture time.
+3. One-time calibration per session for the remaining residual offset.
+4. Preview/verification UX.
+5. Manual fallback when needed.
+
+This repo uses that hybrid model.
 
 ## What is implemented in this repo
 
 Current flow:
 
-- `Setup -> Calibration -> Recording -> Review`.
-- `Calibrate Microphone` acquires camera/mic, resets session state, and routes to calibration.
-- Mic selection is owned by calibration (recording view is mic-locked/read-only).
+- `Setup -> Calibration` when the session is not calibrated.
+- `Calibrate Microphone` acquires camera/mic and routes to calibration.
+- On a fresh session, permission acquisition resets recording state; when draft work already exists, calibration state is preserved unless the active mic route changes.
+- Pressing `Continue` on calibration stores the session correction and returns to review; later takes consume that stored correction.
+- If a session is already calibrated, reacquiring permissions can return directly to review.
+- Mic selection is owned by calibration.
 - Calibration is session-scoped only (`latencyCorrectionSec`, `isCalibrated`).
+- Despite the name, `latencyCorrectionSec` is not a pure "mic latency" measurement. It is the residual correction still needed after the browser's current `ctx.outputLatency` estimate has already been accounted for.
 
 Calibration capture UX:
 
@@ -147,6 +157,7 @@ Calibration capture UX:
 - Bar 2: say “one, two, three, four” on the beats.
 - While capturing, the UI shows a live 8-beat indicator (`LISTEN` for bar 1, `SPEAK` for bar 2).
 - Changing microphone replaces the active audio track and clears any existing calibration.
+- The app requests `echoCancellation: false`, `noiseSuppression: false`, and `autoGainControl: false`, but device- or browser-level processing can still shape the recorded speech in some routes.
 
 Manual alignment + verification UX:
 
@@ -160,15 +171,28 @@ Manual alignment + verification UX:
   - `latencyCorrectionSec = clamp(-manualShiftSec, -0.8, 0.8)` (±800 ms).
 - Preview loop plays bar 2 only (4 beats): metronome clicks + shifted speech.
 - If shift/tempo changes during preview, playback is rescheduled so only one preview transport is active.
-- `Continue to Recording` is enabled after a successful capture, even if drag is left at `0 ms`.
+- `Continue` is enabled after a successful capture, even if drag is left at `0 ms`.
+
+Mental model:
+
+- During calibration capture, the expected beat positions in the recorded media already include `ctx.outputLatency`.
+- During real take recording, beat 1 alignment is again computed with the current `ctx.outputLatency`.
+- The saved calibration value is therefore the remaining residual offset, not the whole end-to-end route latency.
 
 Recording integration:
 
+- Calibration capture builds expected beat times like:
+  - `beatTimeInCapture = scheduledBeatTime + ctx.outputLatency - recorderStartCtxTime`.
+- Count-in for a real take computes:
+  - `alignmentStartTime = gridStartTime + ctx.outputLatency`.
 - Recording computes a clock-based baseline trim:
-  - `baseTrimOffsetSec = recordingStartTime - recorderStartCtxTime`.
-- Final per-take trim applies session correction:
-  - `trimOffsetSec = baseTrimOffsetSec + latencyCorrectionSec`.
-- Stored `trimOffsetSec` drives multitrack alignment in later takes/review/export.
+  - `baseTrimOffsetSec = alignmentStartTime - recorderStartCtxTime`.
+- Final per-take alignment applies the saved session correction:
+  - `alignmentOffsetSec = baseTrimOffsetSec + latencyCorrectionSec`.
+- In practice, the effective alignment is approximately:
+  - `current output latency + saved residual correction`.
+- Stored `alignmentOffsetSec` drives multitrack alignment in later takes/review/export.
+- Because the correction is a single constant per take, it compensates for route/session offset but does not model continuous drift within a take.
 
 Key files:
 
@@ -181,12 +205,14 @@ Key files:
 ## Known limitations
 
 - Alignment quality is user-dependent.
-- Speech waveform can still be shaped by AEC/noise suppression.
-- Bluetooth latency can vary during a session.
+- Speech onset matching is still an estimate based on only four spoken beats.
+- Even with the same named devices, run-to-run corrections can differ because Bluetooth buffering, browser-reported `outputLatency`, `MediaRecorder` startup timing, and speech onset detection all vary a bit.
+- That run-to-run variation does not necessarily imply continuous drift within a take. The current model is a constant offset, and true drift would usually present as "starts in sync, ends out of sync."
 - The alignment window is only one bar, so rushed or very sparse speech can make visual alignment harder.
 
 ## Potential next steps
 
 - Persist calibration by route fingerprint (mic + output device).
+- Surface calibration diagnostics such as `ctx.outputLatency`, auto-alignment confidence, matched beats, and mean alignment error.
 - Add quick recalibration prompts on device/route change.
 - Add optional fine nudge in recording/review screens.

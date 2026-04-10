@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  RecordingTransportController,
   selectMonitorTrackIndices,
   selectReferenceWaveformLane,
 } from "../src/ui/RecordingTransportController";
@@ -60,5 +61,35 @@ describe("selectMonitorTrackIndices", () => {
         null,
       ),
     ).toEqual([0, 1, 2, 3]);
+  });
+});
+
+describe("RecordingTransportController monitor playback", () => {
+  it("does not auto-loop prior takes when entering pre-roll", () => {
+    const controller = new RecordingTransportController() as RecordingTransportController & {
+      monitorPlayer: { startLooping: () => void; stop: () => void } | null;
+      setPhase: (phase: "pre-roll" | "listening") => void;
+      snapshot: { phase: "listening" | "pre-roll" };
+    };
+    let startLoopingCalls = 0;
+    let stopCalls = 0;
+
+    controller.monitorPlayer = {
+      startLooping: () => {
+        startLoopingCalls += 1;
+      },
+      stop: () => {
+        stopCalls += 1;
+      },
+    };
+    controller.snapshot = {
+      ...controller.snapshot,
+      phase: "listening",
+    };
+
+    controller.setPhase("pre-roll");
+
+    expect(startLoopingCalls).toBe(0);
+    expect(stopCalls).toBe(0);
   });
 });

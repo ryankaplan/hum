@@ -417,9 +417,7 @@ export class RecordingTransportController {
     const prevPhase = this.snapshot.phase;
     if (prevPhase === nextPhase) return;
     this.updateSnapshot({ phase: nextPhase });
-    if (nextPhase === "pre-roll") {
-      this.monitorPlayer?.startLooping();
-    } else if (prevPhase === "pre-roll") {
+    if (prevPhase === "pre-roll") {
       this.monitorPlayer?.stop();
     }
   }
@@ -545,10 +543,6 @@ export class RecordingTransportController {
     }
     player.setLevel(inputs.priorHarmonyLevel);
     this.monitorPlayer = player;
-
-    if (this.snapshot.phase === "pre-roll") {
-      player.startLooping();
-    }
   }
 
   private buildEncodedMonitorLanes(

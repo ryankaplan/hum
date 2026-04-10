@@ -13,10 +13,6 @@ function midiToFrequency(midi: MidiNote): number {
   return 440 * Math.pow(2, (midi - 69) / 12);
 }
 
-function getOutputLatencySec(ctx: AudioContext): number {
-  return Number.isFinite(ctx.outputLatency) ? ctx.outputLatency : 0;
-}
-
 // Polls ctx.currentTime at ~60 fps and fires onBeat for each beat time that
 // has been passed. Returns a stop function to cancel the interval.
 function createBeatTracker(
@@ -87,7 +83,9 @@ export function playCountIn(
   // the user actually *hears* beat 1. On wired audio this is ~10ms; on
   // Bluetooth (e.g. AirPods) it can be 150–300ms. Without this, the recorded
   // audio is trimmed too early and the take lands behind the beat.
-  const outputLatency = getOutputLatencySec(ctx);
+  const outputLatency = Number.isFinite(ctx.outputLatency)
+    ? ctx.outputLatency
+    : 0;
   const alignmentStartTime = gridStartTime + outputLatency;
 
   // Schedule all count-in clicks on the AudioContext clock
@@ -114,13 +112,8 @@ export function playCountIn(
 
   // Beat callbacks via polling
   if (onBeat != null) {
-    const heardBeatTimes = Array.from(
-      { length: beatsPerBar },
-      (_, i) => startTime + i * secPerBeat + outputLatency,
-    );
-    const tracker = createBeatTracker(ctx, heardBeatTimes, (i) =>
-      onBeat(i, beatsPerBar),
-    );
+    const beatTimes = Array.from({ length: beatsPerBar }, (_, i) => startTime + i * secPerBeat);
+    const tracker = createBeatTracker(ctx, beatTimes, (i) => onBeat(i, beatsPerBar));
     activeTrackers.add(tracker);
     // Auto-remove after count-in is fully over
     setTimeout(() => {
@@ -174,7 +167,6 @@ export function startRecordingPlayback(
   const secPerBeat = 60 / opts.tempo;
   const startTime =
     opts.startTime ?? ctx.currentTime + AUDIO_SCHEDULE_LEAD_SEC;
-  const outputLatency = getOutputLatencySec(ctx);
   const totalB = totalBeats(opts.chords);
 
   // Schedule clicks
@@ -247,8 +239,7 @@ export function startRecordingPlayback(
     const trackers: Array<{ stop: () => void }> = [];
 
     if (opts.onBeat != null) {
-      const heardBeatTimes = beatTimes.map((time) => time + outputLatency);
-      const t = createBeatTracker(ctx, heardBeatTimes, opts.onBeat);
+      const t = createBeatTracker(ctx, beatTimes, opts.onBeat);
       trackers.push(t);
       activeTrackers.add(t);
     }
@@ -258,9 +249,7 @@ export function startRecordingPlayback(
       const chordChangeTimes: number[] = [];
       let beatOffset = 0;
       for (let i = 0; i < opts.chords.length; i++) {
-        chordChangeTimes.push(
-          startTime + beatOffset * secPerBeat + outputLatency,
-        );
+        chordChangeTimes.push(startTime + beatOffset * secPerBeat);
         beatOffset += opts.chords[i]!.beats;
       }
       const cb = opts.onChordChange;

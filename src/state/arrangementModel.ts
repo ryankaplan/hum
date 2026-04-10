@@ -1,7 +1,7 @@
 import {
   ARRANGEMENT_TICKS_PER_BEAT,
   createArrangementFromLines,
-  getArrangementTotalTicks,
+  parseCustomArrangement,
   sampleLinesAtTicks,
   validateCustomArrangement,
   type CustomArrangement,
@@ -200,20 +200,7 @@ export function resolveSelectedHarmonyVoicing(
 }
 
 function parseCustomArrangementOverride(raw: unknown): CustomArrangement | null {
-  if (
-    typeof raw !== "object" ||
-    raw == null ||
-    Array.isArray(raw) ||
-    !Array.isArray((raw as { voices?: unknown }).voices)
-  ) {
-    return null;
-  }
-
-  return validateCustomArrangement(
-    raw,
-    (raw as { voices: unknown[] }).voices.length,
-    getArrangementTotalTicks(raw as CustomArrangement),
-  );
+  return parseCustomArrangement(raw);
 }
 
 function parseLegacyCustomHarmonyOverride(

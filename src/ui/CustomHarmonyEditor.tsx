@@ -10,12 +10,10 @@ import {
 } from "react";
 import {
   ARRANGEMENT_TICKS_PER_BEAT,
+  arrangementTicksToBeats,
   describeArrangementEvent,
-  findActiveEventAtTick,
   formatBeatCount,
   sampleLinesAtTicks,
-  type ArrangementEvent,
-  type ArrangementVoice,
   type CustomArrangement,
 } from "../music/arrangementScore";
 import {
@@ -40,6 +38,20 @@ import {
 } from "../music/types";
 import type { ArrangementInfo, HarmonySpan } from "../state/model";
 import {
+  canMergeWithNext,
+  cloneArrangement,
+  eventFitsWithinSpan,
+  getArrangementSelectionItems,
+  getNextSelectionInArrangementOrder,
+  getSafeSelection,
+  getSelectedEvent,
+  mergeSelectedEventWithNext,
+  splitSelectedEventInHalf,
+  splitSelectedEventToBeats,
+  type HarmonyEditorSelection,
+  updateSelectedEventMidi,
+} from "./customHarmonyEditorState";
+import {
   dsColors,
   dsOutlineButton,
   dsPanel,
@@ -57,22 +69,13 @@ type Props = {
   onSave: (arrangement: CustomArrangement) => void;
 };
 
-export type HarmonyEditorSelection = {
-  voiceIndex: number;
-  eventId: string;
-};
+export type { HarmonyEditorSelection } from "./customHarmonyEditorState";
 
 type Selection = HarmonyEditorSelection;
 
 type ChordSummary = {
   formula: string;
   noteNames: string[];
-};
-
-type VisualSelectionItem = HarmonyEditorSelection & {
-  startTick: number;
-  midi: MidiNote | null;
-  kind: "note" | "rest";
 };
 
 const CHORD_HEADER_HEIGHT_PX = 64;
@@ -309,10 +312,7 @@ export function CustomHarmonyEditor({
   function applySelectedValue(nextMidi: MidiNote | null) {
     if (selection == null || selectedEvent == null) return;
     updateLocalArrangement((current) => ({
-      arrangement: mapSelectedEvent(current, selection, (event) => ({
-        ...event,
-        midi: nextMidi,
-      })),
+      arrangement: updateSelectedEventMidi(current, selection, nextMidi),
       selection,
     }));
     if (nextMidi != null && ctx != null) {
@@ -656,8 +656,13 @@ export function CustomHarmonyEditor({
                 <Box flex="1" className="record-note-timeline">
                   <Box position="relative" w={`${gridWidthPx}px`} h={`${totalHeightPx}px`}>
                     {arrangement.harmonySpans.map((span, chordIndex) => {
-                      const x = NOTE_GRID_PAD_X_PX + ticksToBeats(span.startTick) * beatWidthPx;
-                      const width = Math.max(44, ticksToBeats(span.durationTicks) * beatWidthPx);
+                      const x =
+                        NOTE_GRID_PAD_X_PX +
+                        arrangementTicksToBeats(span.startTick) * beatWidthPx;
+                      const width = Math.max(
+                        44,
+                        arrangementTicksToBeats(span.durationTicks) * beatWidthPx,
+                      );
                       const isSelectedChord = selectedSpan?.id === span.id;
                       return (
                         <Box
@@ -725,10 +730,12 @@ export function CustomHarmonyEditor({
                         const y = CHORD_HEADER_HEIGHT_PX + rowIndex * NOTE_ROW_HEIGHT_PX;
                         const x =
                           NOTE_GRID_PAD_X_PX +
-                          ticksToBeats(selectedEvent.startTick) * beatWidthPx;
+                          arrangementTicksToBeats(selectedEvent.startTick) *
+                            beatWidthPx;
                         const width = Math.max(
                           24,
-                          ticksToBeats(selectedEvent.durationTicks) * beatWidthPx,
+                          arrangementTicksToBeats(selectedEvent.durationTicks) *
+                            beatWidthPx,
                         );
                         return (
                           <Box
@@ -794,8 +801,13 @@ export function CustomHarmonyEditor({
                     })}
 
                     {arrangement.harmonySpans.map((span) => {
-                      const x = NOTE_GRID_PAD_X_PX + ticksToBeats(span.startTick) * beatWidthPx;
-                      const width = Math.max(44, ticksToBeats(span.durationTicks) * beatWidthPx);
+                      const x =
+                        NOTE_GRID_PAD_X_PX +
+                        arrangementTicksToBeats(span.startTick) * beatWidthPx;
+                      const width = Math.max(
+                        44,
+                        arrangementTicksToBeats(span.durationTicks) * beatWidthPx,
+                      );
                       const y = CHORD_HEADER_HEIGHT_PX + noteAreaHeightPx;
                       return (
                         <Box
@@ -972,10 +984,12 @@ function RestFooter({
             .filter((event) => event.midi == null)
             .map((event) => {
               const x =
-                NOTE_GRID_PAD_X_PX + ticksToBeats(event.startTick) * beatWidthPx + 6;
+                NOTE_GRID_PAD_X_PX +
+                arrangementTicksToBeats(event.startTick) * beatWidthPx +
+                6;
               const width = Math.max(
                 28,
-                ticksToBeats(event.durationTicks) * beatWidthPx - 12,
+                arrangementTicksToBeats(event.durationTicks) * beatWidthPx - 12,
               );
               const isSelected =
                 selection?.voiceIndex === voiceIndex &&
@@ -1008,7 +1022,9 @@ function RestFooter({
                     {shortVoiceLabel(voiceIndex, arrangement.voices.length + 1)}
                   </Text>
                   <Text fontSize="10px" fontWeight="bold">
-                    {formatBeatCount(event.durationTicks / ARRANGEMENT_TICKS_PER_BEAT)}
+                    {formatBeatCount(
+                      arrangementTicksToBeats(event.durationTicks),
+                    )}
                   </Text>
                 </Box>
               );
@@ -1054,10 +1070,13 @@ function renderArrangementEvents({
       .map((event) => {
         const midi = event.midi!;
         const rowIndex = highMidi - midi;
-        const x = NOTE_GRID_PAD_X_PX + ticksToBeats(event.startTick) * beatWidthPx + 6;
+        const x =
+          NOTE_GRID_PAD_X_PX +
+          arrangementTicksToBeats(event.startTick) * beatWidthPx +
+          6;
         const width = Math.max(
           28,
-          ticksToBeats(event.durationTicks) * beatWidthPx - 12,
+          arrangementTicksToBeats(event.durationTicks) * beatWidthPx - 12,
         );
         const y =
           CHORD_HEADER_HEIGHT_PX +
@@ -1115,47 +1134,6 @@ function renderArrangementEvents({
   );
 }
 
-function cloneArrangement(arrangement: CustomArrangement): CustomArrangement {
-  return {
-    voices: arrangement.voices.map((voice) => ({
-      id: voice.id,
-      events: voice.events.map((event) => ({ ...event })),
-    })),
-  };
-}
-
-function getSafeSelection(
-  arrangement: CustomArrangement | null,
-  selection: Selection | null,
-): Selection | null {
-  if (arrangement == null) return null;
-  if (selection != null) {
-    const event = getSelectedEvent(arrangement, selection);
-    if (event != null) {
-      return selection;
-    }
-  }
-  for (let voiceIndex = 0; voiceIndex < arrangement.voices.length; voiceIndex++) {
-    const event = arrangement.voices[voiceIndex]?.events[0];
-    if (event != null) {
-      return { voiceIndex, eventId: event.id };
-    }
-  }
-  return null;
-}
-
-function getSelectedEvent(
-  arrangement: CustomArrangement | null,
-  selection: Selection | null,
-): ArrangementEvent | null {
-  if (arrangement == null || selection == null) return null;
-  return (
-    arrangement.voices[selection.voiceIndex]?.events.find(
-      (event) => event.id === selection.eventId,
-    ) ?? null
-  );
-}
-
 function findSpanForTick(
   spans: HarmonySpan[],
   tick: number,
@@ -1168,187 +1146,12 @@ function findSpanForTick(
   return null;
 }
 
-function eventFitsWithinSpan(event: ArrangementEvent, span: HarmonySpan): boolean {
-  return (
-    event.startTick >= span.startTick &&
-    event.startTick + event.durationTicks <= span.startTick + span.durationTicks
-  );
-}
-
-function splitSelectedEventToBeats(
-  arrangement: CustomArrangement,
-  selection: Selection,
-): { arrangement: CustomArrangement; selection: Selection } {
-  return replaceSelectedEvent(arrangement, selection, (event, voiceIndex) => {
-    const nextEvents: ArrangementEvent[] = [];
-    let cursor = event.startTick;
-    const eventEnd = event.startTick + event.durationTicks;
-    let partIndex = 0;
-    while (cursor < eventEnd) {
-      const nextBoundary =
-        Math.min(
-          eventEnd,
-          Math.floor(cursor / ARRANGEMENT_TICKS_PER_BEAT + 1) *
-            ARRANGEMENT_TICKS_PER_BEAT,
-        ) || eventEnd;
-      const durationTicks = Math.max(1, nextBoundary - cursor);
-      nextEvents.push({
-        ...event,
-        id: `${event.id}-split-${partIndex}`,
-        startTick: cursor,
-        durationTicks,
-      });
-      cursor += durationTicks;
-      partIndex += 1;
-    }
-    return {
-      nextEvents,
-      nextSelection: { voiceIndex, eventId: nextEvents[0]?.id ?? event.id },
-    };
-  });
-}
-
-function splitSelectedEventInHalf(
-  arrangement: CustomArrangement,
-  selection: Selection,
-): { arrangement: CustomArrangement; selection: Selection } {
-  return replaceSelectedEvent(arrangement, selection, (event, voiceIndex) => {
-    const half = event.durationTicks / 2;
-    const first = {
-      ...event,
-      id: `${event.id}-half-a`,
-      durationTicks: half,
-    };
-    const second = {
-      ...event,
-      id: `${event.id}-half-b`,
-      startTick: event.startTick + half,
-      durationTicks: half,
-    };
-    return {
-      nextEvents: [first, second],
-      nextSelection: { voiceIndex, eventId: first.id },
-    };
-  });
-}
-
-function mergeSelectedEventWithNext(
-  arrangement: CustomArrangement,
-  selection: Selection,
-): { arrangement: CustomArrangement; selection: Selection } {
-  return replaceSelectedEvent(arrangement, selection, (event, voiceIndex, voice) => {
-    const currentIndex = voice.events.findIndex((entry) => entry.id === event.id);
-    const nextEvent = voice.events[currentIndex + 1];
-    if (
-      nextEvent == null ||
-      nextEvent.midi !== event.midi ||
-      nextEvent.startTick !== event.startTick + event.durationTicks
-    ) {
-      return {
-        nextEvents: [event],
-        nextSelection: selection,
-      };
-    }
-    return {
-      nextEvents: [
-        {
-          ...event,
-          durationTicks: event.durationTicks + nextEvent.durationTicks,
-        },
-      ],
-      removeFollowingCount: 1,
-      nextSelection: { voiceIndex, eventId: event.id },
-    };
-  });
-}
-
-function replaceSelectedEvent(
-  arrangement: CustomArrangement,
-  selection: Selection,
-  replacer: (
-    event: ArrangementEvent,
-    voiceIndex: number,
-    voice: ArrangementVoice,
-  ) => {
-    nextEvents: ArrangementEvent[];
-    nextSelection: Selection;
-    removeFollowingCount?: number;
-  },
-): { arrangement: CustomArrangement; selection: Selection } {
-  const voice = arrangement.voices[selection.voiceIndex];
-  if (voice == null) {
-    return { arrangement, selection };
-  }
-  const eventIndex = voice.events.findIndex((event) => event.id === selection.eventId);
-  const event = voice.events[eventIndex];
-  if (event == null) {
-    return { arrangement, selection };
-  }
-  const replacement = replacer(event, selection.voiceIndex, voice);
-  const removeCount = 1 + (replacement.removeFollowingCount ?? 0);
-  const nextVoice: ArrangementVoice = {
-    ...voice,
-    events: [
-      ...voice.events.slice(0, eventIndex),
-      ...replacement.nextEvents,
-      ...voice.events.slice(eventIndex + removeCount),
-    ],
-  };
-  return {
-    arrangement: {
-      ...arrangement,
-      voices: arrangement.voices.map((candidate, voiceIndex) =>
-        voiceIndex === selection.voiceIndex ? nextVoice : candidate,
-      ),
-    },
-    selection: replacement.nextSelection,
-  };
-}
-
-function mapSelectedEvent(
-  arrangement: CustomArrangement,
-  selection: Selection,
-  mapper: (event: ArrangementEvent) => ArrangementEvent,
-): CustomArrangement {
-  return {
-    ...arrangement,
-    voices: arrangement.voices.map((voice, voiceIndex) =>
-      voiceIndex !== selection.voiceIndex
-        ? voice
-        : {
-            ...voice,
-            events: voice.events.map((event) =>
-              event.id === selection.eventId ? mapper(event) : event,
-            ),
-          },
-    ),
-  };
-}
-
-function canMergeWithNext(
-  voice: ArrangementVoice | undefined,
-  selectedEvent: ArrangementEvent | null,
-): boolean {
-  if (voice == null || selectedEvent == null) return false;
-  const eventIndex = voice.events.findIndex((event) => event.id === selectedEvent.id);
-  const nextEvent = voice.events[eventIndex + 1];
-  return (
-    nextEvent != null &&
-    nextEvent.midi === selectedEvent.midi &&
-    nextEvent.startTick === selectedEvent.startTick + selectedEvent.durationTicks
-  );
-}
-
 function buildPitchRows(lowMidi: number, highMidi: number): number[] {
   const rows: number[] = [];
   for (let midi = highMidi; midi >= lowMidi; midi--) {
     rows.push(midi);
   }
   return rows;
-}
-
-function ticksToBeats(ticks: number): number {
-  return ticks / ARRANGEMENT_TICKS_PER_BEAT;
 }
 
 function getEditableMidis(
@@ -1419,32 +1222,6 @@ function summarizePitchClasses(notes: readonly MidiNote[]): string[] {
   return names;
 }
 
-function getArrangementSelectionItems(
-  arrangement: CustomArrangement | null,
-): VisualSelectionItem[] {
-  if (arrangement == null) return [];
-  const items: VisualSelectionItem[] = [];
-  arrangement.voices.forEach((voice, voiceIndex) => {
-    voice.events.forEach((event) => {
-      items.push({
-        voiceIndex,
-        eventId: event.id,
-        startTick: event.startTick,
-        midi: event.midi,
-        kind: event.midi == null ? "rest" : "note",
-      });
-    });
-  });
-  items.sort((left, right) => {
-    if (left.startTick !== right.startTick) return left.startTick - right.startTick;
-    if (left.kind !== right.kind) return left.kind === "note" ? -1 : 1;
-    if ((left.midi ?? -1) !== (right.midi ?? -1)) {
-      return (right.midi ?? -1) - (left.midi ?? -1);
-    }
-    return left.voiceIndex - right.voiceIndex;
-  });
-  return items;
-}
 
 export function getNextMidiForArrowMove(
   currentMidi: MidiNote | null,
@@ -1536,24 +1313,6 @@ export function getNextSelectionInVisualOrder(
   return nextItem == null
     ? null
     : { chordIndex: nextItem.chordIndex, voiceIndex: nextItem.voiceIndex };
-}
-
-function getNextSelectionInArrangementOrder(
-  items: readonly VisualSelectionItem[],
-  selection: Selection | null,
-  direction: -1 | 1,
-): Selection | null {
-  if (selection == null) return null;
-  const currentIndex = items.findIndex(
-    (item) => item.voiceIndex === selection.voiceIndex && item.eventId === selection.eventId,
-  );
-  if (currentIndex === -1) return null;
-  const nextIndex = currentIndex + direction;
-  if (nextIndex < 0 || nextIndex >= items.length) return null;
-  const nextItem = items[nextIndex];
-  return nextItem == null
-    ? null
-    : { voiceIndex: nextItem.voiceIndex, eventId: nextItem.eventId };
 }
 
 type TypedPitchBufferResult =

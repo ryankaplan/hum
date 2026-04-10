@@ -1,3 +1,5 @@
+import { parseCustomArrangement } from "../music/arrangementScore";
+
 /*
  * Saved Hum document file schema.
  *
@@ -242,57 +244,18 @@ function parseSavedArrangementDocument(
 function parseSavedCustomArrangement(
   raw: unknown,
 ): SavedArrangementDocument["customArrangement"] {
-  if (raw == null) return null;
-  if (!isRecord(raw) || !Array.isArray(raw.voices)) {
-    return null;
-  }
-
-  const voices = raw.voices.map((voice) => {
-    if (
-      !isRecord(voice) ||
-      typeof voice.id !== "string" ||
-      !Array.isArray(voice.events)
-    ) {
-      return null;
-    }
-    const events = voice.events.map((event) => {
-      if (
-        !isRecord(event) ||
-        typeof event.id !== "string" ||
-        isFiniteNumber(event.startTick) === false ||
-        isFiniteNumber(event.durationTicks) === false ||
-        (event.midi !== null && isFiniteNumber(event.midi) === false)
-      ) {
-        return null;
-      }
-      return {
+  const arrangement = parseCustomArrangement(raw);
+  if (arrangement == null) return null;
+  return {
+    voices: arrangement.voices.map((voice) => ({
+      id: voice.id,
+      events: voice.events.map((event) => ({
         id: event.id,
         startTick: event.startTick,
         durationTicks: event.durationTicks,
-        midi: event.midi as number | null,
-      };
-    });
-
-    if (events.some((event) => event == null)) {
-      return null;
-    }
-
-    return {
-      id: voice.id,
-      events: events as NonNullable<
-        SavedArrangementDocument["customArrangement"]
-      >["voices"][number]["events"],
-    };
-  });
-
-  if (voices.some((voice) => voice == null)) {
-    return null;
-  }
-
-  return {
-    voices: voices as NonNullable<
-      SavedArrangementDocument["customArrangement"]
-    >["voices"],
+        midi: event.midi,
+      })),
+    })),
   };
 }
 

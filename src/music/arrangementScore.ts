@@ -67,6 +67,10 @@ export function getArrangementTotalTicks(
   return lastEvent.startTick + lastEvent.durationTicks;
 }
 
+export function arrangementTicksToBeats(ticks: number): number {
+  return ticks / ARRANGEMENT_TICKS_PER_BEAT;
+}
+
 export function findActiveEventAtTick(
   voice: ArrangementVoice | null | undefined,
   tick: number,
@@ -128,6 +132,23 @@ export function validateCustomArrangement(
   return {
     voices,
   };
+}
+
+export function parseCustomArrangement(raw: unknown): CustomArrangement | null {
+  if (
+    typeof raw !== "object" ||
+    raw == null ||
+    Array.isArray(raw) ||
+    !Array.isArray((raw as { voices?: unknown }).voices)
+  ) {
+    return null;
+  }
+
+  return validateCustomArrangement(
+    raw,
+    (raw as { voices: unknown[] }).voices.length,
+    getArrangementTotalTicks(raw as CustomArrangement),
+  );
 }
 
 export function getFirstActiveMidi(

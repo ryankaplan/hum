@@ -1,4 +1,7 @@
-import type { ArrangementVoice } from "./arrangementScore";
+import {
+  arrangementTicksToBeats,
+  type ArrangementVoice,
+} from "./arrangementScore";
 import { getHarmonyLineNote, type Chord, type HarmonyLine, type MidiNote } from "./types";
 import { totalBeats } from "./parse";
 import type { MonitorPlayer } from "../audio/monitorPlayer";
@@ -410,8 +413,10 @@ function scheduleArrangementVoice(
 ): void {
   for (const event of voice.events) {
     if (event.midi == null) continue;
-    const noteStartTime = startTime + (event.startTick / 4) * secPerBeat;
-    const durationSec = (event.durationTicks / 4) * secPerBeat * 0.95;
+    const noteStartTime =
+      startTime + arrangementTicksToBeats(event.startTick) * secPerBeat;
+    const durationSec =
+      arrangementTicksToBeats(event.durationTicks) * secPerBeat * 0.95;
     guideStops.push(
       playGuideTone(
         ctx,

@@ -79,6 +79,15 @@ export function selectReferenceWaveformLane<
   );
 }
 
+export function selectMonitorTrackIndices(
+  orderedTrackIds: readonly TrackId[],
+  currentTrackId: TrackId | null,
+): number[] {
+  return orderedTrackIds.flatMap((trackId, index) =>
+    trackId !== currentTrackId ? [index] : [],
+  );
+}
+
 type EncodedMonitorLane = {
   trackId: TrackId;
   partIndex: number;
@@ -486,7 +495,7 @@ export class RecordingTransportController {
     const buildVersion = this.monitorBuildVersion;
     const encodedLanes = this.buildEncodedMonitorLanes(
       inputs.orderedTrackIds,
-      inputs.partIndex,
+      inputs.orderedTrackIds[inputs.partIndex] ?? null,
     );
     const lanes =
       encodedLanes.length > 0
@@ -544,11 +553,14 @@ export class RecordingTransportController {
 
   private buildEncodedMonitorLanes(
     orderedTrackIds: TrackId[],
-    partIndex: number,
+    currentTrackId: TrackId | null,
   ): EncodedMonitorLane[] {
     const encodedLanes: EncodedMonitorLane[] = [];
 
-    for (let index = 0; index < partIndex; index++) {
+    for (const index of selectMonitorTrackIndices(
+      orderedTrackIds,
+      currentTrackId,
+    )) {
       const trackId = orderedTrackIds[index];
       if (trackId == null) continue;
 

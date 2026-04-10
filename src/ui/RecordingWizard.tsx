@@ -27,6 +27,7 @@ import { RecordingBeatIndicator } from "./RecordingBeatIndicator";
 import { RecordingMonitorPanel } from "./RecordingMonitorPanel";
 import {
   type RecordPhase,
+  selectMonitorTrackIndices,
   useRecordingTransportController,
 } from "./RecordingTransportController";
 
@@ -264,11 +265,22 @@ export function RecordingWizard() {
   const totalParts = tracksDocument.trackOrder.length;
   const harmonyPartCount = Math.max(1, totalParts - 1);
   const isMelodyPart = resolvedPartIndex >= harmonyPartCount;
-  const hasPriorHarmonyMonitorControl = partIndex > 0;
   const beatsPerBar = arrangement.meter[0];
   const guideToneVolume = recordingMonitorPreferences.guideToneVolume;
   const beatVolume = recordingMonitorPreferences.beatVolume;
   const priorHarmonyLevel = recordingMonitorPreferences.priorHarmonyVolume;
+  const currentTrackIdForMonitor =
+    partIndex >= 0 ? orderedTrackIds[partIndex] ?? null : null;
+  const hasRecordedMonitorTracks = selectMonitorTrackIndices(
+    orderedTrackIds,
+    currentTrackIdForMonitor,
+  ).some((index) => {
+    const trackId = orderedTrackIds[index];
+    return (
+      trackId != null &&
+      model.tracksDocument.getPrimaryRecordingIdForTrack(trackId) != null
+    );
+  });
   const guideMonitorLabel = isMelodyPart
     ? "ARRANGEMENT GUIDE VOLUME"
     : "GUIDE TONES VOLUME";
@@ -405,9 +417,9 @@ export function RecordingWizard() {
                 ? "Sing the melody — harmonies play quietly in your headphones"
                 : hasExistingTake
                   ? "Record a replacement take for this part"
-                : partIndex === 0
+                : !hasRecordedMonitorTracks
                   ? "Listen first, then record when ready"
-                  : "Prior parts play quietly in your headphones"}
+                  : "Recorded tracks play quietly in your headphones"}
             </Text>
           </Box>
 
@@ -443,7 +455,7 @@ export function RecordingWizard() {
           {phase !== "review" && (
             <RecordingMonitorPanel
               guideLabel={guideMonitorLabel}
-              hasPriorHarmonyMonitorControl={hasPriorHarmonyMonitorControl}
+              hasPriorHarmonyMonitorControl={hasRecordedMonitorTracks}
               guideToneVolume={guideToneVolume}
               effectiveGuideToneLevel={effectiveGuideToneLevel}
               beatVolume={beatVolume}

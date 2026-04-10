@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { selectReferenceWaveformLane } from "../src/ui/RecordingTransportController";
+import {
+  selectMonitorTrackIndices,
+  selectReferenceWaveformLane,
+} from "../src/ui/RecordingTransportController";
 
 describe("selectReferenceWaveformLane", () => {
   it("uses the designated reference track instead of the last prior lane", () => {
@@ -37,5 +40,25 @@ describe("selectReferenceWaveformLane", () => {
         { trackId: "track-mid", segments: [{ id: "mid" }] },
       ], "track-low"),
     ).toBeNull();
+  });
+});
+
+describe("selectMonitorTrackIndices", () => {
+  it("includes recorded monitor lanes from any other part, not just earlier ones", () => {
+    expect(
+      selectMonitorTrackIndices(
+        ["track-low", "track-mid", "track-high", "track-melody"],
+        "track-low",
+      ),
+    ).toEqual([1, 2, 3]);
+  });
+
+  it("returns every track when the active track is unknown", () => {
+    expect(
+      selectMonitorTrackIndices(
+        ["track-low", "track-mid", "track-high", "track-melody"],
+        null,
+      ),
+    ).toEqual([0, 1, 2, 3]);
   });
 });

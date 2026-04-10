@@ -2,6 +2,7 @@ import { Box, Button, Flex, Text } from "@chakra-ui/react";
 import {
   memo,
   type PointerEvent as ReactPointerEvent,
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -43,6 +44,10 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
 
   const timelineViewportRef = useRef<HTMLDivElement>(null);
   const [timelineViewportWidth, setTimelineViewportWidth] = useState(0);
+  const [scrubPreviewSec, setScrubPreviewSec] = useState<number | null>(null);
+  const scrubPreviewRef = useRef<number | null>(null);
+  const scrubRafRef = useRef<number | null>(null);
+  const scrubQueuedSecRef = useRef<number | null>(null);
 
   const timelineContentWidthPx = Math.max(
     timelineViewportWidth,
@@ -63,31 +68,134 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
     return () => observer.disconnect();
   }, []);
 
-  function handleLaneClick(
-    e: ReactPointerEvent<HTMLDivElement>,
-    trackId: string,
-  ) {
-    if (view.exporting || view.isSyncingFrames || view.isPlaying) return;
+  const setScrubPreview = useCallback((valueSec: number | null) => {
+    scrubPreviewRef.current = valueSec;
+    setScrubPreviewSec(valueSec);
+  }, []);
 
+  const getTimelineSecForClientX = useCallback((clientX: number): number | null => {
     const viewport = timelineViewportRef.current;
-    if (viewport == null) return;
+    if (viewport == null) return null;
 
     const rect = viewport.getBoundingClientRect();
-    const contentX = e.clientX - rect.left + viewport.scrollLeft;
+    const contentX = clientX - rect.left + viewport.scrollLeft;
     const unclampedTime = contentX / TIMELINE_PX_PER_SEC;
-    const timelineSec = clamp(unclampedTime, 0, view.timelineEndSec);
+    return clamp(unclampedTime, 0, view.timelineEndSec);
+  }, [view.timelineEndSec]);
 
+  const flushQueuedSeek = useCallback(() => {
+    scrubRafRef.current = null;
+    const nextSec = scrubQueuedSecRef.current;
+    scrubQueuedSecRef.current = null;
+    if (nextSec == null) return;
+    onCommand({ type: "seek", valueSec: nextSec });
+  }, [onCommand]);
+
+  const queueSeek = useCallback((valueSec: number) => {
+    if (scrubQueuedSecRef.current != null && Math.abs(scrubQueuedSecRef.current - valueSec) < 1e-4) {
+      return;
+    }
+
+    scrubQueuedSecRef.current = valueSec;
+    if (scrubRafRef.current != null) return;
+    scrubRafRef.current = window.requestAnimationFrame(() => {
+      flushQueuedSeek();
+    });
+  }, [flushQueuedSeek]);
+
+  const flushSeekImmediately = useCallback((valueSec: number) => {
+    if (scrubRafRef.current != null) {
+      window.cancelAnimationFrame(scrubRafRef.current);
+      scrubRafRef.current = null;
+    }
+    scrubQueuedSecRef.current = null;
+    onCommand({ type: "seek", valueSec });
+  }, [onCommand]);
+
+  useEffect(() => {
+    return () => {
+      if (scrubRafRef.current != null) {
+        window.cancelAnimationFrame(scrubRafRef.current);
+      }
+    };
+  }, []);
+
+  const handleLanePointerDown = useCallback((
+    e: ReactPointerEvent<HTMLDivElement>,
+    trackId: string,
+  ) => {
+    if (view.exporting || view.isSyncingFrames || view.isPlaying) return;
+    const timelineSec = getTimelineSecForClientX(e.clientX);
+    if (timelineSec == null) return;
+
+    setScrubPreview(timelineSec);
     onCommand({ type: "select_lane", trackId, timelineSec });
-  }
 
-  function handleSegmentPointerDown(
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // Dragging still works through the window listeners below.
+    }
+
+    const updateScrub = (clientX: number, commitMode: "queued" | "final") => {
+      const nextSec = getTimelineSecForClientX(clientX);
+      if (nextSec == null) return;
+
+      if (scrubPreviewRef.current == null || Math.abs(scrubPreviewRef.current - nextSec) >= 1e-4) {
+        setScrubPreview(nextSec);
+      }
+
+      if (commitMode === "final") {
+        flushSeekImmediately(nextSec);
+      } else {
+        queueSeek(nextSec);
+      }
+    };
+
+    const onScrubMove = (event: PointerEvent) => {
+      if (event.pointerId !== e.pointerId) return;
+      updateScrub(event.clientX, "queued");
+    };
+
+    const finishScrub = (event: PointerEvent) => {
+      if (event.pointerId !== e.pointerId) return;
+
+      window.removeEventListener("pointermove", onScrubMove);
+      window.removeEventListener("pointerup", finishScrub);
+      window.removeEventListener("pointercancel", finishScrub);
+
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch {
+        // Ignore if capture was never acquired or already released.
+      }
+
+      updateScrub(event.clientX, "final");
+      setScrubPreview(null);
+    };
+
+    window.addEventListener("pointermove", onScrubMove);
+    window.addEventListener("pointerup", finishScrub);
+    window.addEventListener("pointercancel", finishScrub);
+  }, [
+    flushSeekImmediately,
+    getTimelineSecForClientX,
+    onCommand,
+    queueSeek,
+    setScrubPreview,
+    view.exporting,
+    view.isPlaying,
+    view.isSyncingFrames,
+  ]);
+
+  const handleSegmentPointerDown = useCallback((
     e: ReactPointerEvent<HTMLDivElement>,
     trackId: string,
     clipId: string,
     segmentStartSec: number,
     segmentDurationSec: number,
     segmentVolumeEnvelope: ClipVolumeEnvelope,
-  ) {
+  ) => {
     e.stopPropagation();
     if (view.exporting || view.isPlaying || view.isSyncingFrames) return;
 
@@ -208,7 +316,7 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
 
     window.addEventListener("pointermove", onMoveClip);
     window.addEventListener("pointerup", onMoveClipUp);
-  }
+  }, [onCommand, view.exporting, view.isPlaying, view.isSyncingFrames]);
 
   return (
     <Box overflow="hidden" h="100%" {...dsPanel}>
@@ -229,7 +337,11 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
         >
           Tracks
         </Text>
-        <PlayheadReadout playhead={playhead} timelineEndSec={view.timelineEndSec} />
+        <PlayheadReadout
+          playhead={playhead}
+          previewPlayheadSec={scrubPreviewSec}
+          timelineEndSec={view.timelineEndSec}
+        />
       </Flex>
 
       <Flex
@@ -377,10 +489,13 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
               lanes={view.lanes}
               selection={view.selection}
               beatLineTimes={view.beatLineTimes}
-              onLanePointerDown={handleLaneClick}
+              onLanePointerDown={handleLanePointerDown}
               onSegmentPointerDown={handleSegmentPointerDown}
             />
-            <TimelinePlayheadOverlay playhead={playhead} />
+            <TimelinePlayheadOverlay
+              playhead={playhead}
+              previewPlayheadSec={scrubPreviewSec}
+            />
           </Box>
         </Box>
       </Flex>
@@ -617,9 +732,11 @@ const TimelineSegmentBox = memo(function TimelineSegmentBox(input: {
 
 function PlayheadReadout(input: {
   playhead: ReadOnlyObservable<number>;
+  previewPlayheadSec?: number | null;
   timelineEndSec: number;
 }) {
-  const playheadSec = useObservable(input.playhead);
+  const observablePlayheadSec = useObservable(input.playhead);
+  const playheadSec = input.previewPlayheadSec ?? observablePlayheadSec;
 
   return (
     <Box
@@ -640,8 +757,10 @@ function PlayheadReadout(input: {
 
 function TimelinePlayheadOverlay(input: {
   playhead: ReadOnlyObservable<number>;
+  previewPlayheadSec?: number | null;
 }) {
-  const playheadSec = useObservable(input.playhead);
+  const observablePlayheadSec = useObservable(input.playhead);
+  const playheadSec = input.previewPlayheadSec ?? observablePlayheadSec;
 
   return (
     <Box

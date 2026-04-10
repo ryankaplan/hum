@@ -77,7 +77,11 @@ export class DraftSessionController {
       return result;
     } catch (error) {
       if (isRecoverableDraftRestoreError(error)) {
-        console.warn("Discarding unreadable saved draft.");
+        if (error instanceof InvalidSavedDraftError) {
+          console.warn("Discarding incompatible saved draft", error.message);
+        } else {
+          console.warn("Discarding unreadable saved draft.");
+        }
       } else {
         console.error("Failed to restore saved draft", error);
       }

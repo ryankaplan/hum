@@ -1,4 +1,4 @@
-import { Box, Button, Flex, Progress, Stack, Text } from "@chakra-ui/react";
+import { Box, Button, Flex, Heading, Progress, Text } from "@chakra-ui/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useObservable } from "../observable";
 import {
@@ -7,7 +7,6 @@ import {
   type TrackClip,
 } from "../state/model";
 import { getPartLabel } from "../music/types";
-import { progressionDurationSec } from "../music/playback";
 import { startCompositor } from "../video/compositor";
 import { exportVideo, getPreferredExportFormat } from "../video/exporter";
 import {
@@ -36,6 +35,7 @@ import {
 } from "./waveformRendering";
 import type { EditorSelection } from "./timeline";
 import {
+  dsColors,
   dsPanel,
   dsOutlineButton,
   dsPrimaryButton,
@@ -67,7 +67,6 @@ export function FinalReview() {
   const exportState = useObservable(model.tracksExport);
   const exportPreferences = useObservable(model.exportPreferences);
   const arrangement = useObservable(model.arrangementDocument);
-  const chords = useObservable(model.parsedChords);
   const ctx = useObservable(model.audioContext);
   const trackCount = documentState.trackOrder.length;
 
@@ -109,6 +108,7 @@ export function FinalReview() {
     [documentState.clipsById, documentState.trackOrder],
   );
   const timelinesRef = useRef<TrackClip[][]>(timelines);
+  const hasAnyTakes = primaryRecordingIds.some((recordingId) => recordingId != null);
 
   const selection = editorState.selection;
   const committedPlayheadSec = editorState.playheadSec;
@@ -130,7 +130,6 @@ export function FinalReview() {
   const ctaExportFormat = exportedFormat ?? preferredExportFormat;
   const showWebmFallbackMessage = preferredExportFormat === "webm";
 
-  const baseDurationSec = progressionDurationSec(chords, arrangement.tempo);
   const beatSec = arrangement.tempo > 0 ? 60 / arrangement.tempo : 0;
 
   const timelineEndSec = useMemo(
@@ -360,7 +359,6 @@ export function FinalReview() {
       }
     };
   }, [
-    baseDurationSec,
     ctx,
     documentState.trackOrder,
     primaryRecordingIds,
@@ -476,6 +474,10 @@ export function FinalReview() {
       }
       case "select_lane": {
         if (exporting || isSyncingFrames || isPlaying) return;
+        const trackIndex = documentState.trackOrder.indexOf(command.trackId);
+        if (trackIndex >= 0) {
+          model.currentPartIndex.set(trackIndex);
+        }
         model.tracksEditor.setSelection({
           trackId: command.trackId,
           clipId: selection.clipId,
@@ -485,6 +487,10 @@ export function FinalReview() {
       }
       case "select_segment": {
         if (exporting || isSyncingFrames || isPlaying) return;
+        const trackIndex = documentState.trackOrder.indexOf(command.trackId);
+        if (trackIndex >= 0) {
+          model.currentPartIndex.set(trackIndex);
+        }
         model.tracksEditor.setSelection({
           trackId: command.trackId,
           clipId: command.clipId,
@@ -539,7 +545,7 @@ export function FinalReview() {
   function handleRedoPart(index: number) {
     if (isSyncingFrames) return;
     stopPlaybackEngine(false);
-    model.redoPart(index);
+    model.openRecordingForPart(index);
   }
 
   async function handleExport() {
@@ -706,50 +712,103 @@ export function FinalReview() {
   ]);
 
   return (
-    <Flex {...dsScreenShell} py={8}>
-      <Box w="100%" maxW="1100px">
-        <Box position="fixed" top={4} left={0} right={0} zIndex={30} px={4}>
+    <Flex
+      {...dsScreenShell}
+      h="100dvh"
+      minH="100dvh"
+      py={0}
+      px={0}
+      align="stretch"
+      justify="stretch"
+      overflow="hidden"
+    >
+      <Box
+        w="100%"
+        h="100dvh"
+        overflow="hidden"
+        {...dsPanel}
+        borderRadius="none"
+        borderLeftWidth="0"
+        borderRightWidth="0"
+        borderTopWidth="0"
+        boxShadow="none"
+      >
+        <Flex direction="column" h="100%" minH={0}>
           <Box
-            maxW="1100px"
-            mx="auto"
-            {...dsPanel}
             px={{ base: 3, md: 4 }}
-            py={3}
+            py={{ base: 3, md: 3.5 }}
+            borderBottom="1px solid"
+            borderColor={dsColors.border}
+            bg={dsColors.surface}
           >
             <Flex
-              direction={{ base: "column", md: "row" }}
-              align={{ base: "stretch", md: "center" }}
+              direction={{ base: "column", xl: "row" }}
+              align={{ base: "stretch", xl: "center" }}
               justify="space-between"
               gap={3}
             >
-              <Text
-                color="appAccent"
-                fontSize={{ base: "2rem", md: "2.2rem" }}
-                lineHeight="0.95"
-                letterSpacing="-0.02em"
-                fontFamily="'Quicksand', 'Manrope', 'Avenir Next', sans-serif"
-                fontWeight="500"
-              >
-                hum
-              </Text>
+              <Box>
+                <Flex
+                  align={{ base: "flex-start", sm: "center" }}
+                  gap={{ base: 2, sm: 3 }}
+                  flexWrap="wrap"
+                >
+                  <Text
+                    color={dsColors.text}
+                    fontSize="lg"
+                    fontWeight="semibold"
+                    lineHeight="1"
+                    letterSpacing="-0.01em"
+                  >
+                    Hum
+                  </Text>
+                  <Box
+                    w="1px"
+                    h="20px"
+                    bg="color-mix(in srgb, var(--app-border-muted) 55%, transparent)"
+                    display={{ base: "none", sm: "block" }}
+                  />
+                  <Text
+                    color={dsColors.textMuted}
+                    fontSize="xs"
+                    fontWeight="semibold"
+                    letterSpacing="0.08em"
+                  >
+                    VIDEO EDITOR
+                  </Text>
+                </Flex>
+                <Heading
+                  size="lg"
+                  color={dsColors.text}
+                  mt={2.5}
+                  letterSpacing="-0.02em"
+                >
+                  Review and shape your arrangement
+                </Heading>
+                <Text color={dsColors.textMuted} fontSize="sm" mt={1}>
+                  {hasAnyTakes
+                    ? "Record new takes from the video grid, then trim and balance tracks below."
+                    : "Start with any part. Each recorded take comes straight back here for editing."}
+                </Text>
+              </Box>
 
               <Flex
-                direction={{ base: "column", sm: "row" }}
-                align={{ base: "stretch", sm: "center" }}
+                direction={{ base: "column", md: "row" }}
+                align={{ base: "stretch", md: "center" }}
                 justify="end"
                 gap={2.5}
                 flexShrink={0}
               >
                 {showWebmFallbackMessage && (
-                  <Text color="appTextMuted" fontSize="xs" alignSelf="center">
+                  <Text color={dsColors.textMuted} fontSize="xs" alignSelf="center">
                     Export will use WebM in this browser.
                   </Text>
                 )}
 
                 {exporting && (
-                  <Box minW={{ base: "100%", sm: "180px" }} alignSelf="center">
+                  <Box minW={{ base: "100%", md: "220px" }} alignSelf="center">
                     <Text
-                      color="appText"
+                      color={dsColors.text}
                       fontSize="xs"
                       fontWeight="medium"
                       mb={1.5}
@@ -801,9 +860,7 @@ export function FinalReview() {
                     {...dsPrimaryButton}
                     size="lg"
                     onClick={handleExport}
-                    disabled={
-                      exporting || isSyncingFrames || timelineEndSec <= 0
-                    }
+                    disabled={exporting || isSyncingFrames || timelineEndSec <= 0}
                     loading={exporting}
                     loadingText="Exporting..."
                   >
@@ -813,75 +870,53 @@ export function FinalReview() {
               </Flex>
             </Flex>
           </Box>
-        </Box>
 
-        <Stack gap={6} pt={{ base: 28, md: 24 }}>
-          <Flex direction={{ base: "column", lg: "row" }} gap={6} align="start">
+          <Flex
+            direction={{ base: "column", lg: "row" }}
+            gap={0}
+            flex="1"
+            minH={0}
+          >
             <Box
-              position="relative"
-              borderRadius="2xl"
-              overflow="hidden"
-              bg="appMediaBg"
-              border="1px solid"
-              borderColor="appBorder"
-              boxShadow="0 10px 24px color-mix(in srgb, var(--app-text) 14%, transparent)"
-              w={{
-                base: "min(100%, 340px)",
-                lg: "min(46%, calc(70vh * 9 / 16))",
-              }}
-              aspectRatio="9/16"
-              flexShrink={0}
-              mx={{ base: "auto", lg: 0 }}
+              flex={{ base: "0 0 auto", lg: "0 0 42%" }}
+              minW={0}
+              minH={{ base: "320px", lg: 0 }}
+              borderRight={{ base: "0", lg: "1px solid" }}
+              borderBottom={{ base: "1px solid", lg: "0" }}
+              borderColor={dsColors.border}
+              bg={dsColors.surfaceSubtle}
             >
-              <canvas
-                ref={canvasRef}
-                style={{ width: "100%", height: "100%", display: "block" }}
-              />
-
-              {documentState.trackOrder.slice(0, 4).map((_, i) => {
-                const placement = PREVIEW_CELL_POSITIONS[i];
-                if (placement == null) return null;
-                return (
-                  <Box
-                    key={`redo-overlay-${i}`}
-                    position="absolute"
-                    left={placement.left}
-                    top={placement.top}
-                    w="50%"
-                    h="50%"
-                    p={3}
-                    display="flex"
-                    alignItems="flex-end"
-                    justifyContent="center"
-                    pointerEvents="none"
-                  >
-                    <Button
-                      size="xs"
-                      borderRadius="full"
-                      bg="rgba(12, 12, 14, 0.3)"
-                      color="white"
-                      border="1px solid"
-                      borderColor="rgba(255, 255, 255, 0.1)"
-                      backdropFilter="blur(4px)"
-                      boxShadow="0 8px 18px rgba(0, 0, 0, 0.2)"
-                      fontSize="xs"
-                      fontWeight="medium"
-                      h={8}
-                      minW="72px"
-                      px={3}
-                      pointerEvents="auto"
-                      onClick={() => handleRedoPart(i)}
-                      disabled={exporting || isSyncingFrames}
-                      _hover={{ bg: "rgba(12, 12, 14, 0.45)" }}
-                    >
-                      Edit
-                    </Button>
-                  </Box>
-                );
-              })}
+              <Box
+                position="relative"
+                h="100%"
+                minH={{ base: "320px", md: "420px", lg: "100%" }}
+                bg={dsColors.mediaBg}
+                overflow="hidden"
+              >
+                <canvas
+                  ref={canvasRef}
+                  style={{ width: "100%", height: "100%", display: "block" }}
+                />
+                <PreviewOverlay
+                  trackOrder={documentState.trackOrder}
+                  primaryRecordingIds={primaryRecordingIds}
+                  selectedTrackId={selection.trackId}
+                  onSelectPart={(index) => {
+                    const trackId = documentState.trackOrder[index];
+                    if (trackId == null) return;
+                    const clipId =
+                      model.tracksDocument.getOrderedClipsForTrack(trackId)[0]?.id ??
+                      null;
+                    model.currentPartIndex.set(index);
+                    model.tracksEditor.setSelection({ trackId, clipId });
+                  }}
+                  onRecordPart={handleRedoPart}
+                  disabled={exporting || isSyncingFrames}
+                />
+              </Box>
             </Box>
 
-            <Box flex="1" minW={0}>
+            <Box flex="1" minW={0} minH={0}>
               <TracksEditorPanel
                 view={tracksEditorView}
                 playhead={model.tracksEditor.playbackPlayheadSec}
@@ -891,9 +926,159 @@ export function FinalReview() {
               />
             </Box>
           </Flex>
-        </Stack>
+        </Flex>
       </Box>
     </Flex>
+  );
+}
+
+function PreviewOverlay(input: {
+  trackOrder: string[];
+  primaryRecordingIds: Array<string | null>;
+  selectedTrackId: string | null;
+  onSelectPart: (index: number) => void;
+  onRecordPart: (index: number) => void;
+  disabled: boolean;
+}) {
+  const {
+    trackOrder,
+    primaryRecordingIds,
+    selectedTrackId,
+    onSelectPart,
+    onRecordPart,
+    disabled,
+  } = input;
+
+  return (
+    <>
+      {trackOrder.slice(0, 4).map((trackId, index) => {
+        const placement = PREVIEW_CELL_POSITIONS[index];
+        if (placement == null) return null;
+        const hasTake = primaryRecordingIds[index] != null;
+        const isSelected = selectedTrackId === trackId;
+
+        return (
+          <Box
+            key={`preview-tile-${trackId}`}
+            position="absolute"
+            left={placement.left}
+            top={placement.top}
+            w="50%"
+            h="50%"
+            p={{ base: 2.5, md: 3 }}
+            pointerEvents="none"
+          >
+            <Flex
+              direction="column"
+              justify="space-between"
+              w="100%"
+              h="100%"
+              p={{ base: 2.5, md: 3 }}
+              borderRadius="2xl"
+              border="1px solid"
+              borderColor={
+                isSelected
+                  ? "color-mix(in srgb, var(--app-accent) 78%, white 22%)"
+                  : "rgba(255, 255, 255, 0.12)"
+              }
+              bg={
+                hasTake
+                  ? "linear-gradient(180deg, rgba(10, 10, 14, 0.14), rgba(10, 10, 14, 0.3))"
+                  : "linear-gradient(180deg, rgba(9, 11, 18, 0.82), rgba(17, 20, 28, 0.72))"
+              }
+              boxShadow={
+                isSelected
+                  ? "0 0 0 1px color-mix(in srgb, var(--app-accent) 42%, transparent), 0 24px 44px rgba(0, 0, 0, 0.24)"
+                  : "0 20px 36px rgba(0, 0, 0, 0.18)"
+              }
+              backdropFilter="blur(8px)"
+              pointerEvents="auto"
+              onClick={() => onSelectPart(index)}
+              style={{ cursor: "pointer" }}
+            >
+              <Flex justify="space-between" align="flex-start" gap={2}>
+                <Box>
+                  <Text
+                    color="white"
+                    fontSize={{ base: "sm", md: "md" }}
+                    fontWeight="semibold"
+                    letterSpacing="-0.01em"
+                  >
+                    {getPartLabel(index, trackOrder.length)}
+                  </Text>
+                  <Text
+                    color="rgba(255,255,255,0.7)"
+                    fontSize="10px"
+                    fontWeight="semibold"
+                    letterSpacing="0.08em"
+                    textTransform="uppercase"
+                    mt={0.5}
+                  >
+                    {hasTake ? "Take ready" : "No take yet"}
+                  </Text>
+                </Box>
+                {isSelected && (
+                  <Box
+                    px={2}
+                    py={1}
+                    borderRadius="full"
+                    bg="rgba(255,255,255,0.14)"
+                    color="white"
+                    fontSize="10px"
+                    fontWeight="semibold"
+                    letterSpacing="0.08em"
+                    textTransform="uppercase"
+                  >
+                    Selected
+                  </Box>
+                )}
+              </Flex>
+
+              {!hasTake && (
+                <Box>
+                  <Text
+                    color="rgba(255,255,255,0.76)"
+                    fontSize={{ base: "xs", md: "sm" }}
+                    maxW="18ch"
+                    lineHeight="1.35"
+                    mb={3}
+                  >
+                    Capture this part to start building the grid.
+                  </Text>
+                </Box>
+              )}
+
+              <Flex justify="flex-start">
+                <Button
+                  size="sm"
+                  borderRadius="full"
+                  bg={hasTake ? "rgba(12, 12, 14, 0.46)" : "white"}
+                  color={hasTake ? "white" : "black"}
+                  border="1px solid"
+                  borderColor={hasTake ? "rgba(255,255,255,0.16)" : "transparent"}
+                  backdropFilter={hasTake ? "blur(6px)" : undefined}
+                  boxShadow="0 10px 20px rgba(0, 0, 0, 0.2)"
+                  px={4}
+                  h={9}
+                  fontSize="sm"
+                  fontWeight="semibold"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onRecordPart(index);
+                  }}
+                  disabled={disabled}
+                  _hover={{
+                    bg: hasTake ? "rgba(12, 12, 14, 0.62)" : "rgba(255,255,255,0.9)",
+                  }}
+                >
+                  {hasTake ? "Redo" : "Record"}
+                </Button>
+              </Flex>
+            </Flex>
+          </Box>
+        );
+      })}
+    </>
   );
 }
 

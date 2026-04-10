@@ -426,7 +426,7 @@ export function LatencyCalibrationScreen() {
     if (capture == null) return;
     stopPreview();
     model.setCalibrationOffset(correctionSec);
-    model.appScreen.set("recording");
+    model.appScreen.set("review");
   }
 
   function handleBack() {

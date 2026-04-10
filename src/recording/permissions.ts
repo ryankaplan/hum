@@ -59,10 +59,10 @@ export async function acquirePermissionsAndStart(): Promise<void> {
   if (shouldSkipCalibrationFromUrl()) {
     // Debug path: bypass calibration and use zero correction.
     model.setCalibrationOffset(0);
-    model.appScreen.set("recording");
+    model.appScreen.set("review");
     return;
   }
-  model.appScreen.set(model.isCalibrated.get() ? "recording" : "calibration");
+  model.appScreen.set(model.isCalibrated.get() ? "review" : "calibration");
 }
 
 function shouldSkipCalibrationFromUrl(): boolean {

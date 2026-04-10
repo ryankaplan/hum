@@ -56,7 +56,7 @@ export function keepRecordedTake(
 }
 
 export function redoPart(index: number): void {
-  model.redoPart(index);
+  model.openRecordingForPart(index);
 }
 
 export function resetSession(): void {

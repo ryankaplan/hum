@@ -251,6 +251,8 @@ export function RecordingWizard() {
   const recordingMonitorPreferences = useObservable(
     model.recordingMonitorPreferences,
   );
+  const arrangementVoices =
+    arrangementInfo.effectiveCustomArrangement?.voices ?? [];
   const orderedTrackIds = tracksDocument.trackOrder;
   const partIndex =
     recordingTargetTrackId == null
@@ -268,11 +270,13 @@ export function RecordingWizard() {
   const beatVolume = recordingMonitorPreferences.beatVolume;
   const priorHarmonyLevel = recordingMonitorPreferences.priorHarmonyVolume;
 
-  const { harmonyLine, countInCueMidi } = resolveRecordingHarmonyGuidance(
-    voicing,
-    resolvedPartIndex,
-    totalParts,
-  );
+  const { harmonyLine, arrangementVoice, countInCueMidi } =
+    resolveRecordingHarmonyGuidance(
+      voicing,
+      arrangementVoices,
+      resolvedPartIndex,
+      totalParts,
+    );
 
   const ctx = useObservable(model.audioContext);
   const hasExistingTake =
@@ -280,6 +284,7 @@ export function RecordingWizard() {
       ? model.tracksDocument.getPrimaryRecordingIdForTrack(currentTrackId) != null
       : false;
   const melodyBackingLines = isMelodyPart ? (voicing?.lines ?? []) : [];
+  const backingArrangementVoices = isMelodyPart ? arrangementVoices : [];
   const keptUrls = orderedTrackIds.map((trackId) => {
     const recordingId =
       model.tracksDocument.getPrimaryRecordingIdForTrack(trackId);
@@ -294,7 +299,9 @@ export function RecordingWizard() {
     tracksRevision: tracksDocument,
     chords,
     harmonyLine,
+    arrangementVoice,
     melodyBackingLines,
+    backingArrangementVoices,
     countInCueMidi,
     beatsPerBar,
     tempo: arrangement.tempo,

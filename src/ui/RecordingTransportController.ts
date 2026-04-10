@@ -5,6 +5,7 @@ import {
   type EncodedMonitorSegment,
   type MonitorPlayer,
 } from "../audio/monitorPlayer";
+import type { ArrangementVoice } from "../music/arrangementScore";
 import {
   progressionDurationSec,
   startRecordingPlayback,
@@ -50,7 +51,9 @@ export type RecordingTransportInputs = {
   tracksRevision: TracksDocumentState;
   chords: Chord[];
   harmonyLine: HarmonyLine | null;
+  arrangementVoice: ArrangementVoice | null;
   melodyBackingLines: HarmonyLine[];
+  backingArrangementVoices: ArrangementVoice[];
   countInCueMidi?: MidiNote | null;
   beatsPerBar: number;
   tempo: number;
@@ -215,7 +218,11 @@ export class RecordingTransportController {
       ctx: inputs.ctx,
       chords: inputs.chords,
       harmonyLine: this.snapshot.guideToneEnabled ? inputs.harmonyLine : null,
+      arrangementVoice: this.snapshot.guideToneEnabled
+        ? inputs.arrangementVoice
+        : null,
       backingHarmonyLines: inputs.melodyBackingLines,
+      backingArrangementVoices: inputs.backingArrangementVoices,
       beatsPerBar: inputs.beatsPerBar,
       tempo: inputs.tempo,
       beatLevel: 1,
@@ -281,7 +288,11 @@ export class RecordingTransportController {
         stream: inputs.stream,
         chords: inputs.chords,
         harmonyLine: this.snapshot.guideToneEnabled ? inputs.harmonyLine : null,
+        arrangementVoice: this.snapshot.guideToneEnabled
+          ? inputs.arrangementVoice
+          : null,
         backingHarmonyLines: inputs.melodyBackingLines,
+        backingArrangementVoices: inputs.backingArrangementVoices,
         countInCueMidi: inputs.countInCueMidi,
         beatsPerBar: inputs.beatsPerBar,
         tempo: inputs.tempo,

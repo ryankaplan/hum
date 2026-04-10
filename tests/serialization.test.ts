@@ -19,8 +19,30 @@ function makeDraftSnapshot(
         harmonyRangeCoverage: "lower two thirds",
         selectedHarmonyGenerator,
         totalParts: 4,
-        customHarmony: {
-          lines: [[48, null], [52, 53], [55, 57]],
+        customArrangement: {
+          voices: [
+            {
+              id: "voice-0",
+              events: [
+                { id: "a0", startTick: 0, durationTicks: 16, midi: 48 },
+                { id: "a1", startTick: 16, durationTicks: 16, midi: null },
+              ],
+            },
+            {
+              id: "voice-1",
+              events: [
+                { id: "b0", startTick: 0, durationTicks: 16, midi: 52 },
+                { id: "b1", startTick: 16, durationTicks: 16, midi: 53 },
+              ],
+            },
+            {
+              id: "voice-2",
+              events: [
+                { id: "c0", startTick: 0, durationTicks: 16, midi: 55 },
+                { id: "c1", startTick: 16, durationTicks: 16, midi: 57 },
+              ],
+            },
+          ],
         },
       },
       tracks: {
@@ -67,10 +89,9 @@ describe("serializeHumDocument / deserializeHumDocument", () => {
     const serialized = serializeHumDocument(makeDraftSnapshot("dynamic"));
     const restored = deserializeHumDocument(serialized);
 
-    expect(restored.document.arrangement.customHarmony?.lines).toEqual([
-      [48, null],
-      [52, 53],
-      [55, 57],
+    expect(restored.document.arrangement.customArrangement?.voices[0]?.events).toEqual([
+      { id: "a0", startTick: 0, durationTicks: 16, midi: 48 },
+      { id: "a1", startTick: 16, durationTicks: 16, midi: null },
     ]);
   });
 

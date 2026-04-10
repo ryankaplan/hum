@@ -1,3 +1,7 @@
+import {
+  arrangementTicksToBeats,
+  type ArrangementVoice,
+} from "./arrangementScore";
 import { getHarmonyLineNote, type Chord, type HarmonyLine, type MidiNote } from "./types";
 import { totalBeats } from "./parse";
 import type { MonitorPlayer } from "../audio/monitorPlayer";
@@ -139,7 +143,9 @@ export type RecordingPlaybackOpts = {
   ctx: AudioContext;
   chords: Chord[];
   harmonyLine: HarmonyLine | null; // null = melody (no guide tones)
+  arrangementVoice?: ArrangementVoice | null;
   backingHarmonyLines?: HarmonyLine[];
+  backingArrangementVoices?: ArrangementVoice[];
   beatsPerBar: number;
   tempo: number;
   // Pass the count-in's gridStartTime for a grid-continuous timeline.
@@ -185,7 +191,17 @@ export function startRecordingPlayback(
 
   // Schedule guide tones
   const guideStops: Array<() => void> = [];
-  if (opts.harmonyLine != null) {
+  if (opts.arrangementVoice != null) {
+    scheduleArrangementVoice(
+      guideStops,
+      ctx,
+      opts.arrangementVoice,
+      secPerBeat,
+      startTime,
+      guideToneLevel,
+      guideToneDestination,
+    );
+  } else if (opts.harmonyLine != null) {
     let beatOffset = 0;
     for (let i = 0; i < opts.chords.length; i++) {
       const chord = opts.chords[i]!;
@@ -208,7 +224,19 @@ export function startRecordingPlayback(
     }
   }
 
-  if (opts.backingHarmonyLines != null) {
+  if (opts.backingArrangementVoices != null) {
+    for (const voice of opts.backingArrangementVoices) {
+      scheduleArrangementVoice(
+        guideStops,
+        ctx,
+        voice,
+        secPerBeat,
+        startTime,
+        guideToneLevel,
+        guideToneDestination,
+      );
+    }
+  } else if (opts.backingHarmonyLines != null) {
     for (const line of opts.backingHarmonyLines) {
       let beatOffset = 0;
       for (let i = 0; i < opts.chords.length; i++) {
@@ -318,9 +346,12 @@ export function playNotePreview(ctx: AudioContext, midi: MidiNote, durationSec =
 export function playHarmonyPreview(
   ctx: AudioContext,
   chords: Chord[],
-  harmonyLines: HarmonyLine[],
   beatsPerBar: number,
   tempo: number,
+  options: {
+    harmonyLines?: HarmonyLine[];
+    arrangementVoices?: ArrangementVoice[];
+  },
 ): PlaybackSession {
   const secPerBeat = 60 / tempo;
   const startTime = ctx.currentTime + AUDIO_SCHEDULE_LEAD_SEC;
@@ -333,17 +364,31 @@ export function playHarmonyPreview(
 
   // All harmony lines
   const guideStops: Array<() => void> = [];
-  for (const line of harmonyLines) {
-    let beatOffset = 0;
-    for (let i = 0; i < chords.length; i++) {
-      const chord = chords[i]!;
-      const midi = getHarmonyLineNote(line, i);
-      if (midi != null) {
-        const noteStartTime = startTime + beatOffset * secPerBeat;
-        const durationSec = chord.beats * secPerBeat * 0.95;
-        guideStops.push(playGuideTone(ctx, midiToFrequency(midi), noteStartTime, durationSec));
+  if (options.arrangementVoices != null) {
+    for (const voice of options.arrangementVoices) {
+      scheduleArrangementVoice(
+        guideStops,
+        ctx,
+        voice,
+        secPerBeat,
+        startTime,
+        1,
+        ctx.destination,
+      );
+    }
+  } else {
+    for (const line of options.harmonyLines ?? []) {
+      let beatOffset = 0;
+      for (let i = 0; i < chords.length; i++) {
+        const chord = chords[i]!;
+        const midi = getHarmonyLineNote(line, i);
+        if (midi != null) {
+          const noteStartTime = startTime + beatOffset * secPerBeat;
+          const durationSec = chord.beats * secPerBeat * 0.95;
+          guideStops.push(playGuideTone(ctx, midiToFrequency(midi), noteStartTime, durationSec));
+        }
+        beatOffset += chord.beats;
       }
-      beatOffset += chord.beats;
     }
   }
 
@@ -355,4 +400,32 @@ export function playHarmonyPreview(
       }
     },
   };
+}
+
+function scheduleArrangementVoice(
+  guideStops: Array<() => void>,
+  ctx: AudioContext,
+  voice: ArrangementVoice,
+  secPerBeat: number,
+  startTime: number,
+  level: number,
+  destination: AudioNode,
+): void {
+  for (const event of voice.events) {
+    if (event.midi == null) continue;
+    const noteStartTime =
+      startTime + arrangementTicksToBeats(event.startTick) * secPerBeat;
+    const durationSec =
+      arrangementTicksToBeats(event.durationTicks) * secPerBeat * 0.95;
+    guideStops.push(
+      playGuideTone(
+        ctx,
+        midiToFrequency(event.midi),
+        noteStartTime,
+        durationSec,
+        level,
+        destination,
+      ),
+    );
+  }
 }

@@ -52,6 +52,7 @@ export type {
 
 export type {
   ArrangementChord,
+  HarmonySpan,
   ArrangementDocState,
   ArrangementInfo,
   ArrangementMeasure,
@@ -300,8 +301,8 @@ class AppModel {
       ...patch,
     };
     const nextInfo = computeArrangementInfo(next);
-    if (next.customHarmony != null && !nextInfo.hasCustomHarmony) {
-      next.customHarmony = null;
+    if (next.customArrangement != null && !nextInfo.hasCustomHarmony) {
+      next.customArrangement = null;
     }
     this.arrangementDocument.set(next);
   }

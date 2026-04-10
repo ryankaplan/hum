@@ -70,11 +70,19 @@ function serializeArrangementDocument(
     harmonyRangeCoverage: arrangement.harmonyRangeCoverage,
     selectedHarmonyGenerator: arrangement.selectedHarmonyGenerator,
     totalParts: arrangement.totalParts,
-    customHarmony:
-      arrangement.customHarmony == null
+    customArrangement:
+      arrangement.customArrangement == null
         ? null
         : {
-            lines: arrangement.customHarmony.lines.map((line) => [...line]),
+            voices: arrangement.customArrangement.voices.map((voice) => ({
+              id: voice.id,
+              events: voice.events.map((event) => ({
+                id: event.id,
+                startTick: event.startTick,
+                durationTicks: event.durationTicks,
+                midi: event.midi,
+              })),
+            })),
           },
   };
 }
@@ -91,11 +99,19 @@ function deserializeArrangementDocument(
     harmonyRangeCoverage: saved.harmonyRangeCoverage,
     selectedHarmonyGenerator: saved.selectedHarmonyGenerator ?? "dynamic",
     totalParts: saved.totalParts,
-    customHarmony:
-      saved.customHarmony == null
+    customArrangement:
+      saved.customArrangement == null
         ? null
         : {
-            lines: saved.customHarmony.lines.map((line) => [...line]),
+            voices: saved.customArrangement.voices.map((voice) => ({
+              id: voice.id,
+              events: voice.events.map((event) => ({
+                id: event.id,
+                startTick: event.startTick,
+                durationTicks: event.durationTicks,
+                midi: event.midi,
+              })),
+            })),
           },
   };
 }

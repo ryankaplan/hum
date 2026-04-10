@@ -2,6 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HumDocument } from "../src/state/model";
 
 const persistenceMocks = vi.hoisted(() => ({
+  InvalidSavedDraftError: class InvalidSavedDraftError extends Error {
+    constructor(message: string) {
+      super(message);
+      this.name = "InvalidSavedDraftError";
+    }
+  },
   clearDraftFromIndexedDb: vi.fn<() => Promise<void>>(),
   deleteMediaAssetFromIndexedDb: vi.fn<(mediaAssetId: string) => Promise<void>>(),
   loadDraftFromIndexedDb: vi.fn<() => Promise<null>>(),
@@ -67,7 +73,7 @@ function makeDocument(
       harmonyRangeCoverage: "lower two thirds",
       selectedHarmonyGenerator: "dynamic",
       totalParts: 2,
-      customHarmony: null,
+      customArrangement: null,
     },
     tracks: {
       trackOrder,

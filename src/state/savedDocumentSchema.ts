@@ -1,3 +1,5 @@
+import { parseCustomArrangement } from "../music/arrangementScore";
+
 /*
  * Saved Hum document file schema.
  *
@@ -49,7 +51,7 @@
  * - On parse failure or schema version mismatch, callers should clear the draft
  *   instead of trying to partially recover it.
  */
-export const SAVED_HUM_DOCUMENT_SCHEMA_VERSION = "10";
+export const SAVED_HUM_DOCUMENT_SCHEMA_VERSION = "11";
 
 export const SAVED_HUM_DOCUMENT_ID = "current";
 
@@ -74,7 +76,17 @@ export type SavedArrangementDocument = {
   harmonyRangeCoverage: "lower two thirds" | "whole-range";
   selectedHarmonyGenerator?: "legacy" | "dynamic";
   totalParts: 2 | 4;
-  customHarmony: { lines: Array<Array<number | null>> } | null;
+  customArrangement: {
+    voices: Array<{
+      id: string;
+      events: Array<{
+        id: string;
+        startTick: number;
+        durationTicks: number;
+        midi: number | null;
+      }>;
+    }>;
+  } | null;
 };
 
 export type SavedVolumePoint = {
@@ -190,7 +202,7 @@ function parseSavedArrangementDocument(
   raw: unknown,
 ): SavedArrangementDocument | null {
   if (!isRecord(raw)) return null;
-  const customHarmony = parseSavedCustomHarmony(raw.customHarmony);
+  const customArrangement = parseSavedCustomArrangement(raw.customArrangement);
   const meter = raw.meter;
   if (
     typeof raw.chordsInput !== "string" ||
@@ -208,7 +220,7 @@ function parseSavedArrangementDocument(
       raw.selectedHarmonyGenerator !== "legacy" &&
       raw.selectedHarmonyGenerator !== "dynamic") ||
     (raw.totalParts !== 2 && raw.totalParts !== 4) ||
-    (raw.customHarmony != null && customHarmony == null)
+    (raw.customArrangement != null && customArrangement == null)
   ) {
     return null;
   }
@@ -221,32 +233,29 @@ function parseSavedArrangementDocument(
     vocalRangeHigh: raw.vocalRangeHigh,
     harmonyRangeCoverage: (raw.harmonyRangeCoverage ??
       "lower two thirds") as SavedArrangementDocument["harmonyRangeCoverage"],
-    selectedHarmonyGenerator:
-      raw.selectedHarmonyGenerator as
-        | SavedArrangementDocument["selectedHarmonyGenerator"]
-        | undefined,
+    selectedHarmonyGenerator: raw.selectedHarmonyGenerator as
+      | SavedArrangementDocument["selectedHarmonyGenerator"]
+      | undefined,
     totalParts: raw.totalParts,
-    customHarmony,
+    customArrangement,
   };
 }
 
-function parseSavedCustomHarmony(
+function parseSavedCustomArrangement(
   raw: unknown,
-): { lines: Array<Array<number | null>> } | null {
-  if (raw == null) return null;
-  if (
-    !isRecord(raw) ||
-    !Array.isArray(raw.lines) ||
-    raw.lines.some(
-      (line) =>
-        !Array.isArray(line) ||
-        line.some((entry) => entry !== null && isFiniteNumber(entry) === false),
-    )
-  ) {
-    return null;
-  }
+): SavedArrangementDocument["customArrangement"] {
+  const arrangement = parseCustomArrangement(raw);
+  if (arrangement == null) return null;
   return {
-    lines: raw.lines.map((line) => [...line]) as Array<Array<number | null>>,
+    voices: arrangement.voices.map((voice) => ({
+      id: voice.id,
+      events: voice.events.map((event) => ({
+        id: event.id,
+        startTick: event.startTick,
+        durationTicks: event.durationTicks,
+        midi: event.midi,
+      })),
+    })),
   };
 }
 

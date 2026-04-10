@@ -1,6 +1,7 @@
 import type { HumDocument } from "./model";
 import {
   clearDraftFromIndexedDb,
+  InvalidSavedDraftError,
   deleteMediaAssetFromIndexedDb,
   loadDraftFromIndexedDb,
   saveDraftDocumentToIndexedDb,
@@ -75,7 +76,11 @@ export class DraftSessionController {
       this.options.onHasDraftChange(true);
       return result;
     } catch (error) {
-      console.error("Failed to restore saved draft", error);
+      if (error instanceof InvalidSavedDraftError) {
+        console.warn("Discarding incompatible saved draft", error.message);
+      } else {
+        console.error("Failed to restore saved draft", error);
+      }
       await clearDraftFromIndexedDb().catch(() => undefined);
       this.options.onHasDraftChange(false);
       return null;

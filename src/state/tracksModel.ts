@@ -872,21 +872,14 @@ export class TracksEditorModel {
   }
 
   setSelection(selection: TracksEditorSelection): void {
-    this.setEditor((current) => {
-      const prev = current.selection;
-      if (
-        prev.trackId === selection.trackId &&
-        prev.clipId === selection.clipId &&
-        prev.volumePointId === selection.volumePointId
-      ) {
-        return current;
-      }
-
-      return {
-        ...current,
-        selection,
-      };
-    });
+    const current = this.editor.get().selection;
+    if (isSameTracksEditorSelection(current, selection)) {
+      return;
+    }
+    this.setEditor((current) => ({
+      ...current,
+      selection,
+    }));
   }
 
   clearSelection(): void {
@@ -922,4 +915,15 @@ function isSameVolumeEnvelope(
     }
   }
   return true;
+}
+
+function isSameTracksEditorSelection(
+  a: TracksEditorSelection,
+  b: TracksEditorSelection,
+): boolean {
+  return (
+    a.trackId === b.trackId &&
+    a.clipId === b.clipId &&
+    a.volumePointId === b.volumePointId
+  );
 }

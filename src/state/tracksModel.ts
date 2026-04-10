@@ -101,8 +101,9 @@ type TracksDocumentModelOptions = {
   getMixer: () => Mixer | null;
 };
 
-const DEFAULT_TRACK_VOLUME = 1;
-const DEFAULT_REVERB_WET = 0.15;
+const DEFAULT_MELODY_TRACK_VOLUME = 1;
+const DEFAULT_HARMONY_TRACK_VOLUME = 0.6;
+const DEFAULT_REVERB_WET = 0.2;
 
 function createTrackRecord(
   id: TrackId,
@@ -110,11 +111,15 @@ function createTrackRecord(
   totalParts: number,
 ): TrackRecord {
   const harmonyPartCount = Math.max(1, totalParts - 1);
+  const role = displayIndex >= harmonyPartCount ? "melody" : "harmony";
   return {
     id,
-    role: displayIndex >= harmonyPartCount ? "melody" : "harmony",
+    role,
     clipIds: [],
-    volume: DEFAULT_TRACK_VOLUME,
+    volume:
+      role === "melody"
+        ? DEFAULT_MELODY_TRACK_VOLUME
+        : DEFAULT_HARMONY_TRACK_VOLUME,
     muted: false,
   };
 }

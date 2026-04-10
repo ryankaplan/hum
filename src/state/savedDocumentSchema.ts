@@ -49,7 +49,7 @@
  * - On parse failure or schema version mismatch, callers should clear the draft
  *   instead of trying to partially recover it.
  */
-export const SAVED_HUM_DOCUMENT_SCHEMA_VERSION = "10";
+export const SAVED_HUM_DOCUMENT_SCHEMA_VERSION = "11";
 
 export const SAVED_HUM_DOCUMENT_ID = "current";
 
@@ -74,19 +74,17 @@ export type SavedArrangementDocument = {
   harmonyRangeCoverage: "lower two thirds" | "whole-range";
   selectedHarmonyGenerator?: "legacy" | "dynamic";
   totalParts: 2 | 4;
-  customArrangement:
-    | {
-        voices: Array<{
-          id: string;
-          events: Array<{
-            id: string;
-            startTick: number;
-            durationTicks: number;
-            midi: number | null;
-          }>;
-        }>;
-      }
-    | null;
+  customArrangement: {
+    voices: Array<{
+      id: string;
+      events: Array<{
+        id: string;
+        startTick: number;
+        durationTicks: number;
+        midi: number | null;
+      }>;
+    }>;
+  } | null;
 };
 
 export type SavedVolumePoint = {
@@ -233,10 +231,9 @@ function parseSavedArrangementDocument(
     vocalRangeHigh: raw.vocalRangeHigh,
     harmonyRangeCoverage: (raw.harmonyRangeCoverage ??
       "lower two thirds") as SavedArrangementDocument["harmonyRangeCoverage"],
-    selectedHarmonyGenerator:
-      raw.selectedHarmonyGenerator as
-        | SavedArrangementDocument["selectedHarmonyGenerator"]
-        | undefined,
+    selectedHarmonyGenerator: raw.selectedHarmonyGenerator as
+      | SavedArrangementDocument["selectedHarmonyGenerator"]
+      | undefined,
     totalParts: raw.totalParts,
     customArrangement,
   };
@@ -246,10 +243,7 @@ function parseSavedCustomArrangement(
   raw: unknown,
 ): SavedArrangementDocument["customArrangement"] {
   if (raw == null) return null;
-  if (
-    !isRecord(raw) ||
-    !Array.isArray(raw.voices)
-  ) {
+  if (!isRecord(raw) || !Array.isArray(raw.voices)) {
     return null;
   }
 
@@ -296,7 +290,9 @@ function parseSavedCustomArrangement(
   }
 
   return {
-    voices: voices as NonNullable<SavedArrangementDocument["customArrangement"]>["voices"],
+    voices: voices as NonNullable<
+      SavedArrangementDocument["customArrangement"]
+    >["voices"],
   };
 }
 

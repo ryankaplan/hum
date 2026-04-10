@@ -1,12 +1,20 @@
-import { model } from "../state/model";
+import { model, type AppScreen } from "../state/model";
 import {
   acquireConfiguredMediaStream,
   getStreamAudioDeviceId,
   streamMatchesAudioDeviceId,
 } from "./mediaStream";
 
-// Called when the user clicks "Calibrate Microphone" on the setup screen.
-// Acquires camera + mic, sets up AudioContext, then transitions to calibration.
+export function resolvePostPermissionAppScreen(input: {
+  isCalibrated: boolean;
+  hasPendingRecordingTarget: boolean;
+}): AppScreen {
+  if (!input.isCalibrated) return "calibration";
+  return input.hasPendingRecordingTarget ? "recording" : "review";
+}
+
+// Acquires camera + mic, prepares AudioContext, then routes into the next
+// transient step for either setup or record-from-review.
 export async function acquirePermissionsAndStart(): Promise<void> {
   model.permissionError.set(null);
   const expectedMicId = model.selectedMicId.get();
@@ -59,10 +67,20 @@ export async function acquirePermissionsAndStart(): Promise<void> {
   if (shouldSkipCalibrationFromUrl()) {
     // Debug path: bypass calibration and use zero correction.
     model.setCalibrationOffset(0);
-    model.appScreen.set("review");
+    model.appScreen.set(
+      resolvePostPermissionAppScreen({
+        isCalibrated: true,
+        hasPendingRecordingTarget: model.recordingTargetTrackId.get() != null,
+      }),
+    );
     return;
   }
-  model.appScreen.set(model.isCalibrated.get() ? "review" : "calibration");
+  model.appScreen.set(
+    resolvePostPermissionAppScreen({
+      isCalibrated: model.isCalibrated.get(),
+      hasPendingRecordingTarget: model.recordingTargetTrackId.get() != null,
+    }),
+  );
 }
 
 function shouldSkipCalibrationFromUrl(): boolean {

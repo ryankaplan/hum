@@ -872,6 +872,10 @@ export class TracksEditorModel {
   }
 
   setSelection(selection: TracksEditorSelection): void {
+    const current = this.editor.get().selection;
+    if (isSameTracksEditorSelection(current, selection)) {
+      return;
+    }
     this.setEditor((current) => ({
       ...current,
       selection,
@@ -911,4 +915,11 @@ function isSameVolumeEnvelope(
     }
   }
   return true;
+}
+
+function isSameTracksEditorSelection(
+  a: TracksEditorSelection,
+  b: TracksEditorSelection,
+): boolean {
+  return a.trackId === b.trackId && a.clipId === b.clipId;
 }

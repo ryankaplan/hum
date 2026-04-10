@@ -613,7 +613,7 @@ class AppModel {
     });
   }
 
-  redoPart(index: number): void {
+  openRecordingForPart(index: number): void {
     const trackId = this.tracksDocument.getTrackIdAtIndex(index);
     if (trackId == null) return;
 
@@ -622,7 +622,7 @@ class AppModel {
     this.appScreen.set("recording");
   }
 
-  cancelRedoPart(): void {
+  cancelRecordingForPart(): void {
     if (!this.returnToReviewAfterRecording.get()) return;
     this.returnToReviewAfterRecording.set(false);
     this.appScreen.set("review");

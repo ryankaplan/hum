@@ -273,7 +273,11 @@ export function RecordingWizard() {
   const ctx = useObservable(model.audioContext);
   const orderedTrackIds = tracksDocument.trackOrder;
   const currentTrackId = orderedTrackIds[partIndex] ?? null;
-  const isRedoingCurrentPart = returnToReviewAfterRecording;
+  const launchedFromReview = returnToReviewAfterRecording;
+  const hasExistingTake =
+    currentTrackId != null
+      ? model.tracksDocument.getPrimaryRecordingIdForTrack(currentTrackId) != null
+      : false;
   const melodyBackingLines = isMelodyPart ? (voicing?.lines ?? []) : [];
   const keptUrls = orderedTrackIds.map((trackId) => {
     const recordingId =
@@ -320,6 +324,11 @@ export function RecordingWizard() {
       alignmentOffsetSec: pendingTake.alignmentOffsetSec,
     });
 
+    if (launchedFromReview) {
+      model.appScreen.set("review");
+      return;
+    }
+
     const nextIncompletePartIndex =
       model.getNextIncompletePartIndex(partIndex + 1) ??
       model.getNextIncompletePartIndex(0);
@@ -338,8 +347,8 @@ export function RecordingWizard() {
 
   function handleBack() {
     controller.stopTransport();
-    if (isRedoingCurrentPart) {
-      model.cancelRedoPart();
+    if (launchedFromReview) {
+      model.cancelRecordingForPart();
       return;
     }
     if (partIndex > 0) {
@@ -381,7 +390,7 @@ export function RecordingWizard() {
               onClick={handleBack}
               disabled={busy}
             >
-              {isRedoingCurrentPart ? "← Review" : "← Back"}
+              {launchedFromReview ? "← Review" : "← Back"}
             </Button>
             <Text color={dsColors.textMuted} fontSize="sm">
               Part {partIndex + 1} of {totalParts}
@@ -396,8 +405,10 @@ export function RecordingWizard() {
             <Text color={dsColors.textMuted} fontSize="sm" mt={1}>
               {isMelodyPart
                 ? "Sing the melody — harmonies play quietly in your headphones"
-                : isRedoingCurrentPart
+                : launchedFromReview && hasExistingTake
                   ? "Record a replacement take for this part"
+                : launchedFromReview
+                  ? "Record the first take for this part"
                 : partIndex === 0
                   ? "Listen first, then record when ready"
                   : "Prior parts play quietly in your headphones"}
@@ -430,7 +441,7 @@ export function RecordingWizard() {
             reviewUrl={reviewUrl}
             mutedParts={mutedParts}
             onToggleMute={(index) => controller.toggleMute(index)}
-            hideCurrentKeptPreview={isRedoingCurrentPart}
+            hideCurrentKeptPreview={launchedFromReview}
           />
 
           {phase !== "review" && (
@@ -537,7 +548,13 @@ export function RecordingWizard() {
                 Redo
               </Button>
               <Button {...dsPrimaryButton} size="lg" onClick={handleKeep}>
-                {isRedoingCurrentPart ? "Replace" : isLastPart ? "Finish" : "Keep"}
+                {launchedFromReview
+                  ? hasExistingTake
+                    ? "Replace"
+                    : "Keep"
+                  : isLastPart
+                    ? "Finish"
+                    : "Keep"}
               </Button>
             </Grid>
           )}

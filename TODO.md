@@ -3,6 +3,8 @@ To fix asap:
 - [ ] change brush volume control; just click to add volume node and move it up / down; make line uniform
 - [ ] Make it possible to re-record part of a take
 - [ ] Music and/or DAW data model?
+- [ ] Fix playing when shouldn't and vice versa
+- [ ] Make latency per session
 - [ ] Export arrangement to sheet music
 - [ ] Saving + project management
 - [x] Way to record melody first as template / waveform for timing

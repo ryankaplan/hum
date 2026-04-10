@@ -203,7 +203,7 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
   }
 
   return (
-    <Box overflow="hidden" {...dsPanel}>
+    <Box overflow="hidden" h="100%" {...dsPanel}>
       <Flex
         align="center"
         justify="space-between"
@@ -378,22 +378,6 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
         </Box>
       </Flex>
 
-      <Box
-        px={3}
-        py={2.5}
-        borderTopWidth="1px"
-        borderColor="appBorderMuted"
-        bg="appSurface"
-      >
-        <PlayheadSlider
-          playhead={playhead}
-          timelineEndSec={view.timelineEndSec}
-          disabled={
-            view.exporting || view.isPlaying || view.isSyncingFrames || view.timelineEndSec <= 0
-          }
-          onChange={(valueSec) => onCommand({ type: "seek", valueSec })}
-        />
-      </Box>
     </Box>
   );
 }
@@ -664,28 +648,6 @@ function TimelinePlayheadOverlay(input: {
     <Box
       className="timeline-playhead"
       left={`${playheadSec * TIMELINE_PX_PER_SEC}px`}
-    />
-  );
-}
-
-function PlayheadSlider(input: {
-  playhead: ReadOnlyObservable<number>;
-  timelineEndSec: number;
-  disabled: boolean;
-  onChange: (valueSec: number) => void;
-}) {
-  const playheadSec = useObservable(input.playhead);
-
-  return (
-    <input
-      type="range"
-      className="timeline-slider"
-      min={0}
-      max={Math.max(1, Math.round(input.timelineEndSec * 1000))}
-      step={1}
-      value={Math.round(playheadSec * 1000)}
-      onChange={(e) => input.onChange(parseInt(e.target.value, 10) / 1000)}
-      disabled={input.disabled}
     />
   );
 }

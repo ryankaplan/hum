@@ -649,7 +649,6 @@ class AppModel {
       this.currentPartIndex.set(0);
       this.returnToReviewAfterRecording.set(false);
       this.permissionError.set(null);
-      this.clearCalibration();
       this.appScreen.set("setup");
 
       const removedRecordings = this.tracksDocument.reset(totalParts);

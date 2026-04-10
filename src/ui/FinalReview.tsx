@@ -634,7 +634,6 @@ export function FinalReview() {
     }
     stopPlaybackEngine(false);
     model.resetSession();
-    model.appScreen.set("setup");
   }
 
   const selectedSegment = findSegmentBySelection(selection);

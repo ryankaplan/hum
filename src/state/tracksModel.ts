@@ -2,8 +2,10 @@ import { Observable } from "../observable";
 import type { Mixer } from "../audio/mixer";
 import {
   type ClipVolumeEnvelope,
-  applyClipVolumeBrush,
   createDefaultClipVolumeEnvelope,
+  deleteClipVolumePoint,
+  insertClipVolumePoint,
+  moveClipVolumePoint,
   splitClipVolumeEnvelopeAtTime,
 } from "./clipAutomation";
 import { createShortUuid } from "./id";
@@ -68,6 +70,7 @@ export type RecordingRecord = {
 export type TracksEditorSelection = {
   trackId: TrackId | null;
   clipId: ClipId | null;
+  volumePointId: string | null;
 };
 
 export type TracksDocumentState = {
@@ -88,12 +91,26 @@ export type TracksEditorState = {
   playheadSec: number;
 };
 
-export type ApplyClipVolumeBrushInput = {
+export type InsertClipVolumePointInput = {
   trackId: TrackId;
   clipId: ClipId;
-  centerSec: number;
-  deltaGainMultiplier: number;
-  radiusSec: number;
+  pointId: string;
+  timeSec: number;
+  gainMultiplier: number;
+};
+
+export type MoveClipVolumePointInput = {
+  trackId: TrackId;
+  clipId: ClipId;
+  pointId: string;
+  timeSec: number;
+  gainMultiplier: number;
+};
+
+export type DeleteClipVolumePointInput = {
+  trackId: TrackId;
+  clipId: ClipId;
+  pointId: string;
 };
 
 type TracksDocumentModelOptions = {
@@ -143,7 +160,7 @@ export function createEmptyTracksDocument(
 
 export function createEmptyTracksEditorState(): TracksEditorState {
   return {
-    selection: { trackId: null, clipId: null },
+    selection: { trackId: null, clipId: null, volumePointId: null },
     playheadSec: 0,
   };
 }
@@ -498,11 +515,7 @@ export class TracksDocumentModel {
     return { deleted, removedRecordings };
   }
 
-  applyClipVolumeBrush(input: ApplyClipVolumeBrushInput): void {
-    if (Math.abs(input.deltaGainMultiplier) <= 1e-6 || input.radiusSec <= 0) {
-      return;
-    }
-
+  insertClipVolumePoint(input: InsertClipVolumePointInput): void {
     this.setDocument((current) => {
       const track = current.tracksById[input.trackId];
       if (track == null || track.clipIds.includes(input.clipId) === false) {
@@ -512,12 +525,12 @@ export class TracksDocumentModel {
       const clip = current.clipsById[input.clipId];
       if (clip == null || clip.durationSec <= 0) return current;
 
-      const nextEnvelope = applyClipVolumeBrush({
+      const nextEnvelope = insertClipVolumePoint({
         envelope: clip.volumeEnvelope,
         durationSec: clip.durationSec,
-        centerSec: input.centerSec,
-        deltaGainMultiplier: input.deltaGainMultiplier,
-        radiusSec: input.radiusSec,
+        pointId: input.pointId,
+        timeSec: input.timeSec,
+        gainMultiplier: input.gainMultiplier,
       });
 
       if (isSameVolumeEnvelope(clip.volumeEnvelope, nextEnvelope)) {
@@ -536,6 +549,81 @@ export class TracksDocumentModel {
         },
       };
     });
+  }
+
+  moveClipVolumePoint(input: MoveClipVolumePointInput): void {
+    this.setDocument((current) => {
+      const track = current.tracksById[input.trackId];
+      if (track == null || track.clipIds.includes(input.clipId) === false) {
+        return current;
+      }
+
+      const clip = current.clipsById[input.clipId];
+      if (clip == null || clip.durationSec < 0) return current;
+
+      const nextEnvelope = moveClipVolumePoint({
+        envelope: clip.volumeEnvelope,
+        durationSec: clip.durationSec,
+        pointId: input.pointId,
+        timeSec: input.timeSec,
+        gainMultiplier: input.gainMultiplier,
+      });
+
+      if (isSameVolumeEnvelope(clip.volumeEnvelope, nextEnvelope)) {
+        return current;
+      }
+
+      return {
+        ...current,
+        clipsById: {
+          ...current.clipsById,
+          [input.clipId]: {
+            ...clip,
+            volumeEnvelope: nextEnvelope,
+            volumeEnvelopeRevision: clip.volumeEnvelopeRevision + 1,
+          },
+        },
+      };
+    });
+  }
+
+  deleteClipVolumePoint(input: DeleteClipVolumePointInput): boolean {
+    let deleted = false;
+
+    this.setDocument((current) => {
+      const track = current.tracksById[input.trackId];
+      if (track == null || track.clipIds.includes(input.clipId) === false) {
+        return current;
+      }
+
+      const clip = current.clipsById[input.clipId];
+      if (clip == null) return current;
+
+      const nextEnvelope = deleteClipVolumePoint({
+        envelope: clip.volumeEnvelope,
+        durationSec: clip.durationSec,
+        pointId: input.pointId,
+      });
+
+      if (isSameVolumeEnvelope(clip.volumeEnvelope, nextEnvelope)) {
+        return current;
+      }
+
+      deleted = true;
+      return {
+        ...current,
+        clipsById: {
+          ...current.clipsById,
+          [input.clipId]: {
+            ...clip,
+            volumeEnvelope: nextEnvelope,
+            volumeEnvelopeRevision: clip.volumeEnvelopeRevision + 1,
+          },
+        },
+      };
+    });
+
+    return deleted;
   }
 
   setTrackVolume(trackId: TrackId, volume: number): void {
@@ -786,7 +874,7 @@ export class TracksEditorModel {
   }
 
   clearSelection(): void {
-    this.setSelection({ trackId: null, clipId: null });
+    this.setSelection({ trackId: null, clipId: null, volumePointId: null });
   }
 
   reset(): void {

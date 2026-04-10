@@ -6,6 +6,12 @@ export type TracksEditorSegmentRenderAsset = {
   widthPx: number;
   waveformBarHeights: number[];
   volumeLinePoints: string;
+  volumeHandles: {
+    id: string;
+    leftPercent: number;
+    topPercent: number;
+    isBoundary: boolean;
+  }[];
 };
 
 export type TracksEditorSegmentView = {

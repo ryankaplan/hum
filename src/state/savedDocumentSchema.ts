@@ -49,7 +49,7 @@
  * - On parse failure or schema version mismatch, callers should clear the draft
  *   instead of trying to partially recover it.
  */
-export const SAVED_HUM_DOCUMENT_SCHEMA_VERSION = "9";
+export const SAVED_HUM_DOCUMENT_SCHEMA_VERSION = "10";
 
 export const SAVED_HUM_DOCUMENT_ID = "current";
 

@@ -8,21 +8,32 @@ export type ClipVolumeEnvelope = {
   points: VolumePoint[];
 };
 
-export type ApplyClipVolumeBrushInput = {
+export type InsertClipVolumePointInput = {
   envelope: ClipVolumeEnvelope;
   durationSec: number;
-  centerSec: number;
-  deltaGainMultiplier: number;
-  radiusSec: number;
+  pointId: string;
+  timeSec: number;
+  gainMultiplier: number;
+};
+
+export type MoveClipVolumePointInput = {
+  envelope: ClipVolumeEnvelope;
+  durationSec: number;
+  pointId: string;
+  timeSec: number;
+  gainMultiplier: number;
+};
+
+export type DeleteClipVolumePointInput = {
+  envelope: ClipVolumeEnvelope;
+  durationSec: number;
+  pointId: string;
 };
 
 const EPSILON = 1e-6;
 const VOLUME_GAIN_MIN = 0;
 const VOLUME_GAIN_MAX = 2;
 const DEFAULT_GAIN_MULTIPLIER = 1;
-const SAMPLE_STEP_SEC = 0.08;
-const SIMPLIFY_TOLERANCE = 0.008;
-const MAX_SIMPLIFIED_GAP_SEC = 0.32;
 
 let pointIdCounter = 0;
 
@@ -33,6 +44,10 @@ export function createDefaultClipVolumeEnvelope(
   return {
     points: makeBoundaryPoints(duration, DEFAULT_GAIN_MULTIPLIER),
   };
+}
+
+export function createVolumePointId(): string {
+  return makePointId();
 }
 
 export function evaluateClipVolumeAtTime(
@@ -65,52 +80,78 @@ export function evaluateClipVolumeAtTime(
   return prev.gainMultiplier;
 }
 
-export function applyClipVolumeBrush(
-  input: ApplyClipVolumeBrushInput,
+export function insertClipVolumePoint(
+  input: InsertClipVolumePointInput,
 ): ClipVolumeEnvelope {
   const duration = sanitizeDuration(input.durationSec);
-  const radius = Math.max(0, input.radiusSec);
-  if (
-    duration <= 0 ||
-    radius <= EPSILON ||
-    Math.abs(input.deltaGainMultiplier) <= EPSILON
-  ) {
-    return normalizeEnvelope(input.envelope, duration);
+  const envelope = normalizeEnvelope(input.envelope, duration);
+
+  return normalizeEnvelope(
+    {
+      points: [
+        ...envelope.points,
+        createPoint(
+          clamp(input.timeSec, 0, duration),
+          clamp(input.gainMultiplier, VOLUME_GAIN_MIN, VOLUME_GAIN_MAX),
+          input.pointId,
+        ),
+      ],
+    },
+    duration,
+  );
+}
+
+export function moveClipVolumePoint(
+  input: MoveClipVolumePointInput,
+): ClipVolumeEnvelope {
+  const duration = sanitizeDuration(input.durationSec);
+  const envelope = normalizeEnvelope(input.envelope, duration);
+  const index = envelope.points.findIndex((point) => point.id === input.pointId);
+  if (index < 0) return envelope;
+
+  const point = envelope.points[index];
+  if (point == null) return envelope;
+
+  const isFirst = index === 0;
+  const isLast = index === envelope.points.length - 1;
+  const prev = isFirst ? null : envelope.points[index - 1] ?? null;
+  const next = isLast ? null : envelope.points[index + 1] ?? null;
+  const minTime = isFirst ? 0 : Math.max(0, (prev?.timeSec ?? 0) + EPSILON);
+  const maxTime = isLast
+    ? duration
+    : Math.max(minTime, (next?.timeSec ?? duration) - EPSILON);
+
+  const nextPoint: VolumePoint = {
+    ...point,
+    timeSec: isFirst ? 0 : isLast ? duration : clamp(input.timeSec, minTime, maxTime),
+    gainMultiplier: clamp(
+      input.gainMultiplier,
+      VOLUME_GAIN_MIN,
+      VOLUME_GAIN_MAX,
+    ),
+  };
+
+  const nextPoints = [...envelope.points];
+  nextPoints[index] = nextPoint;
+  return normalizeEnvelope({ points: nextPoints }, duration);
+}
+
+export function deleteClipVolumePoint(
+  input: DeleteClipVolumePointInput,
+): ClipVolumeEnvelope {
+  const duration = sanitizeDuration(input.durationSec);
+  const envelope = normalizeEnvelope(input.envelope, duration);
+  const index = envelope.points.findIndex((point) => point.id === input.pointId);
+  if (index <= 0 || index >= envelope.points.length - 1) {
+    return envelope;
   }
 
-  const envelope = normalizeEnvelope(input.envelope, duration);
-  const center = clamp(input.centerSec, 0, duration);
-  const start = Math.max(0, center - radius);
-  const end = Math.min(duration, center + radius);
-
-  const sampleTimes = buildSampleTimes({
-    durationSec: duration,
-    startSec: start,
-    centerSec: center,
-    endSec: end,
-    points: envelope.points,
-  });
-
-  const points = sampleTimes.map((timeSec) => {
-    const base = evaluateClipVolumeAtTime(envelope, timeSec, duration);
-    const distanceFromCenter = Math.abs(timeSec - center);
-    const weight =
-      distanceFromCenter >= radius
-        ? 0
-        : 0.5 * (Math.cos((distanceFromCenter / radius) * Math.PI) + 1);
-    return createPoint(
-      timeSec,
-      clamp(
-        base + input.deltaGainMultiplier * weight,
-        VOLUME_GAIN_MIN,
-        VOLUME_GAIN_MAX,
-      ),
-    );
-  });
-
-  return {
-    points: simplifyPoints(points, duration),
-  };
+  return normalizeEnvelope(
+    {
+      points: envelope.points.filter((point) => point.id !== input.pointId),
+    },
+    duration,
+  );
 }
 
 export function splitClipVolumeEnvelopeAtTime(
@@ -124,7 +165,12 @@ export function splitClipVolumeEnvelopeAtTime(
 
   return {
     left: sliceEnvelopeRange(normalized, 0, split, duration),
-    right: sliceEnvelopeRange(normalized, split, Math.max(0, duration - split), duration),
+    right: sliceEnvelopeRange(
+      normalized,
+      split,
+      Math.max(0, duration - split),
+      duration,
+    ),
   };
 }
 
@@ -141,7 +187,10 @@ function sliceEnvelopeRange(
   if (duration <= EPSILON) {
     return {
       points: [
-        createPoint(0, evaluateClipVolumeAtTime(envelope, start, sourceDurationSec)),
+        createPoint(
+          0,
+          evaluateClipVolumeAtTime(envelope, start, sourceDurationSec),
+        ),
       ],
     };
   }
@@ -167,47 +216,7 @@ function sliceEnvelopeRange(
     ),
   );
 
-  return {
-    points: simplifyPoints(points, duration),
-  };
-}
-
-function buildSampleTimes(input: {
-  durationSec: number;
-  startSec: number;
-  centerSec: number;
-  endSec: number;
-  points: VolumePoint[];
-}): number[] {
-  const times: number[] = [
-    0,
-    input.durationSec,
-    input.startSec,
-    input.centerSec,
-    input.endSec,
-  ];
-
-  for (const point of input.points) {
-    times.push(point.timeSec);
-  }
-
-  for (let t = 0; t < input.durationSec; t += SAMPLE_STEP_SEC) {
-    times.push(t);
-  }
-
-  const deduped: number[] = [];
-  const sorted = times
-    .map((timeSec) => clamp(timeSec, 0, input.durationSec))
-    .sort((a, b) => a - b);
-
-  for (const timeSec of sorted) {
-    const last = deduped[deduped.length - 1];
-    if (last == null || Math.abs(last - timeSec) > EPSILON) {
-      deduped.push(timeSec);
-    }
-  }
-
-  return deduped;
+  return normalizeEnvelope({ points }, duration);
 }
 
 function normalizeEnvelope(
@@ -216,9 +225,8 @@ function normalizeEnvelope(
 ): ClipVolumeEnvelope {
   const duration = sanitizeDuration(durationSec);
   const normalizedPoints = normalizePoints(envelope?.points ?? [], duration);
-  const withBoundaries = ensureBoundaryPoints(normalizedPoints, duration);
   return {
-    points: simplifyPoints(withBoundaries, duration),
+    points: ensureBoundaryPoints(normalizedPoints, duration),
   };
 }
 
@@ -258,12 +266,20 @@ function ensureBoundaryPoints(
   durationSec: number,
 ): VolumePoint[] {
   if (durationSec <= EPSILON) {
-    return [createPoint(0, points[0]?.gainMultiplier ?? DEFAULT_GAIN_MULTIPLIER)];
+    const gainMultiplier = points[0]?.gainMultiplier ?? DEFAULT_GAIN_MULTIPLIER;
+    const existingBoundary =
+      points.find((point) => Math.abs(point.timeSec) <= EPSILON) ?? points[0] ?? null;
+    return [createPoint(0, gainMultiplier, existingBoundary?.id)];
   }
 
   const interior = points.filter(
     (point) => point.timeSec > EPSILON && point.timeSec < durationSec - EPSILON,
   );
+  const existingStart =
+    points.find((point) => Math.abs(point.timeSec) <= EPSILON) ?? null;
+  const existingEnd =
+    [...points].reverse().find((point) => Math.abs(point.timeSec - durationSec) <= EPSILON) ??
+    null;
   const startGainMultiplier = evaluatePointsWithFallback(points, 0, durationSec);
   const endGainMultiplier = evaluatePointsWithFallback(
     points,
@@ -273,9 +289,9 @@ function ensureBoundaryPoints(
 
   return normalizePoints(
     [
-      createPoint(0, startGainMultiplier),
+      createPoint(0, startGainMultiplier, existingStart?.id),
       ...interior,
-      createPoint(durationSec, endGainMultiplier),
+      createPoint(durationSec, endGainMultiplier, existingEnd?.id),
     ],
     durationSec,
   );
@@ -321,80 +337,6 @@ function evaluatePointsWithFallback(
     prev.gainMultiplier +
     (DEFAULT_GAIN_MULTIPLIER - prev.gainMultiplier) * ratio
   );
-}
-
-function simplifyPoints(
-  points: VolumePoint[],
-  durationSec: number,
-): VolumePoint[] {
-  if (points.length <= 2) {
-    return normalizePoints(points, durationSec);
-  }
-
-  const normalized = normalizePoints(points, durationSec);
-  const kept: VolumePoint[] = [];
-
-  for (let i = 0; i < normalized.length; i++) {
-    const point = normalized[i];
-    if (point == null) continue;
-
-    if (i === 0 || i === normalized.length - 1) {
-      kept.push(point);
-      continue;
-    }
-
-    const prev = kept[kept.length - 1];
-    const next = normalized[i + 1];
-    if (prev == null || next == null) {
-      kept.push(point);
-      continue;
-    }
-
-    const span = Math.max(EPSILON, next.timeSec - prev.timeSec);
-    const ratio = clamp((point.timeSec - prev.timeSec) / span, 0, 1);
-    const linear =
-      prev.gainMultiplier +
-      (next.gainMultiplier - prev.gainMultiplier) * ratio;
-    const linearError = Math.abs(point.gainMultiplier - linear);
-    const gapFromPrev = point.timeSec - prev.timeSec;
-
-    if (
-      linearError > SIMPLIFY_TOLERANCE ||
-      gapFromPrev > MAX_SIMPLIFIED_GAP_SEC
-    ) {
-      kept.push(point);
-    }
-  }
-
-  const last = normalized[normalized.length - 1];
-  if (last != null) {
-    const tail = kept[kept.length - 1];
-    if (tail == null || Math.abs(tail.timeSec - last.timeSec) > EPSILON) {
-      kept.push(last);
-    }
-  }
-
-  if (durationSec <= EPSILON) {
-    return [createPoint(0, kept[0]?.gainMultiplier ?? DEFAULT_GAIN_MULTIPLIER)];
-  }
-
-  const start = kept[0];
-  const end = kept[kept.length - 1];
-  if (start == null || end == null) {
-    return makeBoundaryPoints(durationSec, DEFAULT_GAIN_MULTIPLIER);
-  }
-
-  if (
-    kept.length === 2 &&
-    Math.abs(start.gainMultiplier - DEFAULT_GAIN_MULTIPLIER) <=
-      SIMPLIFY_TOLERANCE &&
-    Math.abs(end.gainMultiplier - DEFAULT_GAIN_MULTIPLIER) <=
-      SIMPLIFY_TOLERANCE
-  ) {
-    return makeBoundaryPoints(durationSec, DEFAULT_GAIN_MULTIPLIER);
-  }
-
-  return kept;
 }
 
 function makeBoundaryPoints(

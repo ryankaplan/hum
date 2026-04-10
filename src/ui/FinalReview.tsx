@@ -101,13 +101,9 @@ export function FinalReview() {
       ),
     [documentState, orderedTracks],
   );
-  const primaryRecordingIds = useMemo(
-    () =>
-      documentState.trackOrder.map((trackId) =>
-        model.tracksDocument.getPrimaryRecordingIdForTrack(trackId),
-      ),
-    [documentState.clipsById, documentState.trackOrder],
-  );
+  const primaryRecordingIdsKey = documentState.trackOrder
+    .map((trackId) => model.tracksDocument.getPrimaryRecordingIdForTrack(trackId) ?? "")
+    .join("|");
   const timelinesRef = useRef<TrackClip[][]>(timelines);
 
   const selection = editorState.selection;
@@ -363,7 +359,7 @@ export function FinalReview() {
     baseDurationSec,
     ctx,
     documentState.trackOrder,
-    primaryRecordingIds,
+    primaryRecordingIdsKey,
     stopPlaybackEngine,
     trackCount,
   ]);

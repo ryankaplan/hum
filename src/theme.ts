@@ -160,6 +160,8 @@ const config = defineConfig({
       strokeWidth: "2.25",
       strokeLinecap: "round",
       strokeLinejoin: "round",
+      vectorEffect: "non-scaling-stroke",
+      shapeRendering: "geometricPrecision",
       filter: "drop-shadow(0 0 2px color-mix(in srgb, var(--app-accent) 35%, transparent))",
     },
     ".segment-volume-handle-hit": {

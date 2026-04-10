@@ -608,6 +608,7 @@ const TimelineSegmentBox = memo(function TimelineSegmentBox(input: {
         <polyline
           className="segment-volume-line"
           points={segment.renderAsset.volumeLinePoints}
+          vectorEffect="non-scaling-stroke"
         />
       </svg>
       {segment.renderAsset.volumeHandles.map((handle) => (

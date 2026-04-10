@@ -1,25 +1,18 @@
 To fix asap:
 
-- [ ] change brush volume control; just click to add volume node and move it up / down; make line uniform
+- [ ] Controller change for final review
 - [ ] Make it possible to re-record part of a take
 - [ ] Music and/or DAW data model?
 - [ ] Fix playing when shouldn't and vice versa
-- [ ] Make latency per session
 - [ ] Export arrangement to sheet music
 - [ ] Saving + project management
+- [x] Make latency per session
 - [x] Way to record melody first as template / waveform for timing
 - [x] Sound sometimes bad / garbled??
 - [x] Re-take puts me through flow again
 
 Chordus
 Chorum
-
-- [ ] Break up pieces of SetupScreen
-- [ ] Move chord progression down just above arrangement
-
-- [ ] Let user drag tracks to negative start times, to align them better
-- [ ] Better timing / singing visualization while recording, maybe just sheet music?
-- [ ] Harmony polisher, 7th chords
 
 Medium
 
@@ -32,4 +25,9 @@ Later
 
 Done
 
+- [x] Better timing / singing visualization while recording, maybe just sheet music?
+- [x] Harmony polisher, 7th chords
+- [x] Break up pieces of SetupScreen
+- [x] Move chord progression down just above arrangement
+- [x] change brush volume control; just click to add volume node and move it up / down; make line uniform
 - [x] Export as mp4

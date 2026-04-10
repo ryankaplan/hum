@@ -43,6 +43,7 @@ describe("TracksEditorModel", () => {
     expect(editor.editor.get().selection).toEqual({
       trackId: null,
       clipId: null,
+      volumePointId: null,
     });
   });
 });

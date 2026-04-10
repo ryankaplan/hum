@@ -1032,7 +1032,11 @@ export function FinalReview() {
                       const clipId =
                         model.tracksDocument.getOrderedClipsForTrack(trackId)[0]
                           ?.id ?? null;
-                      model.tracksEditor.setSelection({ trackId, clipId });
+                      model.tracksEditor.setSelection({
+                        trackId,
+                        clipId,
+                        volumePointId: null,
+                      });
                     }}
                     onRecordPart={(index) => {
                       void handleRedoPart(index);

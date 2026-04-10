@@ -1,6 +1,7 @@
 import type { HumDocument } from "./model";
 import {
   clearDraftFromIndexedDb,
+  InvalidSavedDraftError,
   deleteMediaAssetFromIndexedDb,
   loadDraftFromIndexedDb,
   saveDraftDocumentToIndexedDb,
@@ -247,6 +248,7 @@ export class DraftSessionController {
 }
 
 function isRecoverableDraftRestoreError(error: unknown): boolean {
+  if (error instanceof InvalidSavedDraftError) return true;
   if (!(error instanceof Error)) return false;
   return (
     error.message === "Saved draft document is invalid" ||

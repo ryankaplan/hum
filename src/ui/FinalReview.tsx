@@ -1016,7 +1016,7 @@ export function FinalReview() {
                   bg="transparent"
                   border="1px solid"
                   borderColor={dsColors.border}
-                  boxShadow="0 10px 28px color-mix(in srgb, var(--app-text) 10%, transparent), 0 2px 10px color-mix(in srgb, var(--app-text) 6%, transparent)"
+                  boxShadow="0 10px 28px color-mix(in srgb, var(--app-text) 28%, transparent), 0 2px 10px color-mix(in srgb, var(--app-text) 16%, transparent)"
                 >
                   <canvas
                     ref={canvasRef}
@@ -1025,22 +1025,7 @@ export function FinalReview() {
                   <PreviewOverlay
                     trackOrder={documentState.trackOrder}
                     primaryRecordingIds={primaryRecordingIds}
-                    selectedTrackId={selection.trackId}
-                    onSelectPart={(index) => {
-                      const trackId = documentState.trackOrder[index];
-                      if (trackId == null) return;
-                      const clipId =
-                        model.tracksDocument.getOrderedClipsForTrack(trackId)[0]
-                          ?.id ?? null;
-                      model.tracksEditor.setSelection({
-                        trackId,
-                        clipId,
-                        volumePointId: null,
-                      });
-                    }}
-                    onRecordPart={(index) => {
-                      void handleRedoPart(index);
-                    }}
+                    onRecordPart={handleRedoPart}
                     disabled={exporting || isSyncingFrames}
                   />
                 </Box>
@@ -1066,19 +1051,10 @@ export function FinalReview() {
 function PreviewOverlay(input: {
   trackOrder: string[];
   primaryRecordingIds: Array<string | null>;
-  selectedTrackId: string | null;
-  onSelectPart: (index: number) => void;
   onRecordPart: (index: number) => void;
   disabled: boolean;
 }) {
-  const {
-    trackOrder,
-    primaryRecordingIds,
-    selectedTrackId,
-    onSelectPart,
-    onRecordPart,
-    disabled,
-  } = input;
+  const { trackOrder, primaryRecordingIds, onRecordPart, disabled } = input;
 
   return (
     <>
@@ -1086,7 +1062,7 @@ function PreviewOverlay(input: {
         const placement = PREVIEW_CELL_POSITIONS[index];
         if (placement == null) return null;
         const hasTake = primaryRecordingIds[index] != null;
-        const isSelected = selectedTrackId === trackId;
+        const previewLabel = getPreviewPartLabel(index, trackOrder.length);
 
         return (
           <Box
@@ -1102,91 +1078,56 @@ function PreviewOverlay(input: {
             <Flex
               direction="column"
               justify="space-between"
+              align="stretch"
               w="100%"
               h="100%"
-              p={{ base: 2.5, md: 3 }}
+              p={{ base: 1.5, md: 2 }}
               borderRadius="2xl"
-              border="1px solid"
-              borderColor={
-                hasTake
-                  ? "transparent"
-                  : isSelected
-                  ? "color-mix(in srgb, var(--app-accent) 78%, white 22%)"
-                  : "rgba(255, 255, 255, 0.22)"
-              }
-              bg="transparent"
-              boxShadow={
-                !hasTake && isSelected
-                  ? "0 0 0 1px color-mix(in srgb, var(--app-accent) 42%, transparent), 0 24px 44px rgba(93, 69, 48, 0.18)"
-                  : "none"
-              }
               pointerEvents="auto"
-              onClick={() => onSelectPart(index)}
-              style={{ cursor: "pointer" }}
             >
-              <Flex justify="space-between" align="flex-start" gap={2}>
-                <Box>
-                  <Text
-                    color="white"
-                    fontSize={{ base: "sm", md: "md" }}
-                    fontWeight="semibold"
-                    letterSpacing="-0.01em"
-                    textShadow="0 2px 12px rgba(0, 0, 0, 0.28)"
-                  >
-                    {getPartLabel(index, trackOrder.length)}
-                  </Text>
-                  <Text
-                    color="rgba(255,255,255,0.78)"
-                    fontSize="10px"
-                    fontWeight="semibold"
-                    letterSpacing="0.08em"
-                    textTransform="uppercase"
-                    mt={0.5}
-                    textShadow="0 2px 10px rgba(0, 0, 0, 0.24)"
-                  >
-                    {hasTake ? "Take ready" : "No take yet"}
-                  </Text>
-                </Box>
-                <Box />
-              </Flex>
-
-              <Flex justify="flex-start">
-                <Button
-                  size="sm"
-                  borderRadius="full"
-                  bg={
-                    hasTake
-                      ? "rgba(20, 20, 24, 0.56)"
-                      : "rgba(255,255,255,0.88)"
-                  }
-                  color={
-                    hasTake
-                      ? "white"
-                      : "color-mix(in srgb, var(--app-text) 90%, black 10%)"
-                  }
-                  border="1px solid"
-                  borderColor={
-                    hasTake
-                      ? "rgba(255,255,255,0.24)"
-                      : "color-mix(in srgb, var(--app-border) 45%, white 55%)"
-                  }
-                  boxShadow="0 8px 18px rgba(0, 0, 0, 0.16)"
-                  px={4}
-                  h={9}
-                  fontSize="sm"
+              <Flex justify="space-between" align="center" gap={2}>
+                <Text
+                  color="white"
+                  fontSize={{ base: "xs", md: "sm" }}
                   fontWeight="semibold"
+                  letterSpacing="-0.01em"
+                  lineHeight="1.15"
+                  textShadow="0 2px 8px rgba(0, 0, 0, 0.45)"
+                  pt="1px"
+                >
+                  {previewLabel}
+                </Text>
+                <Button
+                  size="xs"
+                  minW="0"
+                  w={7}
+                  h={7}
+                  p={0}
+                  borderRadius="full"
+                  bg="rgba(20, 20, 24, 0.42)"
+                  color="white"
+                  border="1px solid"
+                  borderColor="rgba(255,255,255,0.18)"
+                  boxShadow="0 4px 10px rgba(0, 0, 0, 0.16)"
+                  backdropFilter="blur(6px)"
+                  fontWeight="semibold"
+                  aria-label={hasTake ? "Redo take" : "Record take"}
                   onClick={(event) => {
                     event.stopPropagation();
                     onRecordPart(index);
                   }}
                   disabled={disabled}
                   _hover={{
-                    bg: hasTake
-                      ? "rgba(20, 20, 24, 0.68)"
-                      : "rgba(255,255,255,0.96)",
+                    bg: "rgba(20, 20, 24, 0.56)",
                   }}
                 >
-                  {hasTake ? "Redo" : "Record"}
+                  <Box
+                    w="10px"
+                    h="10px"
+                    borderRadius="full"
+                    bg="#FF5A54"
+                    boxShadow="0 0 0 1px rgba(255,255,255,0.18)"
+                  />
                 </Button>
               </Flex>
             </Flex>
@@ -1195,6 +1136,13 @@ function PreviewOverlay(input: {
       })}
     </>
   );
+}
+
+function getPreviewPartLabel(index: number, totalParts: number): string {
+  if (totalParts === 4) {
+    return ["Low", "Mid", "High", "Melody"][index] ?? `Part ${index + 1}`;
+  }
+  return getPartLabel(index, totalParts);
 }
 
 function getCachedSegmentRenderAsset(input: {

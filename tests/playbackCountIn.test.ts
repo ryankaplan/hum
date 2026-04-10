@@ -23,7 +23,6 @@ describe("playCountIn", () => {
     synthMocks.playGuideTone.mockReset();
     synthMocks.stopAllSynths.mockReset();
   });
-
   it("schedules the cue note through recording start when a count-in pitch is provided", () => {
     const destination = {} as AudioNode;
     const ctx = {

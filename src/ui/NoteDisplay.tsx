@@ -34,6 +34,7 @@ const LYRIC_CUE_TOP_OFFSET_PX = 6;
 const WAVEFORM_STRIP_BOTTOM_OFFSET_PX = 6;
 const WAVEFORM_BAR_WIDTH_PX = 1;
 const WAVEFORM_BAR_GAP_PX = 1;
+const NOTE_TIMELINE_MIN_WIDTH_PX = 280;
 
 type NoteSegment = {
   chordIndex: number;
@@ -42,6 +43,35 @@ type NoteSegment = {
   midi: MidiNote;
   noteLabel: string;
 };
+
+type NoteTimelineMetrics = {
+  trackWidthPx: number;
+  contentWidthPx: number;
+  notePxPerBeat: number;
+  beatGuideCount: number;
+};
+
+export function computeNoteTimelineMetrics(
+  totalBeats: number,
+  beatsPerBar: number,
+): NoteTimelineMetrics {
+  const safeTotalBeats = Math.max(0, totalBeats);
+  const safeBeatsPerBar = Math.max(1, beatsPerBar);
+  const notePxPerBeat = MEASURE_WIDTH_PX / safeBeatsPerBar;
+  const contentWidthPx = Math.ceil(safeTotalBeats * notePxPerBeat);
+  const trackWidthPx = Math.max(
+    NOTE_TIMELINE_MIN_WIDTH_PX,
+    contentWidthPx + NOTE_TRACK_PAD_X_PX * 2,
+  );
+  const beatGuideCount = Math.max(1, Math.ceil(safeTotalBeats) + 1);
+
+  return {
+    trackWidthPx,
+    contentWidthPx,
+    notePxPerBeat,
+    beatGuideCount,
+  };
+}
 
 export function NoteDisplay({
   ctx,
@@ -131,16 +161,15 @@ export function NoteDisplay({
   const lowMidi = Math.floor(minMidi) - NOTE_PITCH_PADDING;
   const highMidi = Math.ceil(maxMidi) + NOTE_PITCH_PADDING;
   const pitchRows = Math.max(1, highMidi - lowMidi + 1);
-  const trackWidthPx = Math.max(
-    280,
-    Math.ceil(
-      totalBeats * (MEASURE_WIDTH_PX / Math.max(1, beatsPerBar)) +
-        NOTE_TRACK_PAD_X_PX * 2,
-    ),
-  );
+  const {
+    trackWidthPx,
+    contentWidthPx,
+    notePxPerBeat,
+    beatGuideCount,
+  } = computeNoteTimelineMetrics(totalBeats, beatsPerBar);
   const referenceWaveformBarHeights = sampleReferenceWaveformBars({
     waveform: referenceWaveform,
-    widthPx: Math.max(0, trackWidthPx - NOTE_TRACK_PAD_X_PX * 2),
+    widthPx: contentWidthPx,
   });
   const referenceWaveformLaneHeightPx =
     referenceWaveformBarHeights.length > 0
@@ -155,9 +184,6 @@ export function NoteDisplay({
     pitchRows * NOTE_ROW_HEIGHT_PX +
     referenceWaveformLaneHeightPx;
 
-  const safeBeatsPerBar = Math.max(1, beatsPerBar);
-  const notePxPerBeat = MEASURE_WIDTH_PX / safeBeatsPerBar;
-  const beatGuideCount = Math.max(1, Math.ceil(totalBeats) + 1);
   const hasActiveBeat = currentAbsoluteBeat >= 0;
 
   const scrollViewportRef = useRef<HTMLDivElement | null>(null);
@@ -354,7 +380,7 @@ export function NoteDisplay({
 
           <ReferenceWaveformStrip
             barHeights={referenceWaveformBarHeights}
-            widthPx={trackWidthPx}
+            contentWidthPx={contentWidthPx}
             bottomPx={WAVEFORM_STRIP_BOTTOM_OFFSET_PX}
           />
         </Box>
@@ -391,19 +417,16 @@ function LyricLane({
   transportActive,
 }: LyricLaneProps) {
   const totalBeats = chords.reduce((sum, chord) => sum + chord.beats, 0);
-  const trackWidthPx = Math.max(
-    280,
-    Math.ceil(
-      totalBeats * (MEASURE_WIDTH_PX / Math.max(1, beatsPerBar)) +
-        NOTE_TRACK_PAD_X_PX * 2,
-    ),
-  );
-  const notePxPerBeat = MEASURE_WIDTH_PX / Math.max(1, beatsPerBar);
-  const beatGuideCount = Math.max(1, Math.ceil(totalBeats) + 1);
+  const {
+    trackWidthPx,
+    contentWidthPx,
+    notePxPerBeat,
+    beatGuideCount,
+  } = computeNoteTimelineMetrics(totalBeats, beatsPerBar);
   const hasActiveBeat = currentAbsoluteBeat >= 0;
   const referenceWaveformBarHeights = sampleReferenceWaveformBars({
     waveform: referenceWaveform,
-    widthPx: Math.max(0, trackWidthPx - NOTE_TRACK_PAD_X_PX * 2),
+    widthPx: contentWidthPx,
   });
   const referenceWaveformLaneHeightPx =
     referenceWaveformBarHeights.length > 0
@@ -459,7 +482,7 @@ function LyricLane({
         })}
         <ReferenceWaveformStrip
           barHeights={referenceWaveformBarHeights}
-          widthPx={trackWidthPx}
+          contentWidthPx={contentWidthPx}
           bottomPx={WAVEFORM_STRIP_BOTTOM_OFFSET_PX}
         />
       </Box>
@@ -550,25 +573,24 @@ function renderLyricSegments(input: {
 
 function ReferenceWaveformStrip(input: {
   barHeights: number[];
-  widthPx: number;
+  contentWidthPx: number;
   bottomPx: number;
 }) {
-  const innerWidthPx = Math.max(0, input.widthPx - NOTE_TRACK_PAD_X_PX * 2);
-  if (innerWidthPx <= 0 || input.barHeights.length === 0) return null;
+  if (input.contentWidthPx <= 0 || input.barHeights.length === 0) return null;
 
   return (
     <Box
       position="absolute"
       left={`${NOTE_TRACK_PAD_X_PX}px`}
-      right={`${NOTE_TRACK_PAD_X_PX}px`}
       bottom={`${input.bottomPx}px`}
+      w={`${input.contentWidthPx}px`}
       h={`${REFERENCE_WAVEFORM_STRIP_HEIGHT_PX}px`}
       overflow="hidden"
       pointerEvents="none"
     >
       <Box
         h="100%"
-        w={`${innerWidthPx}px`}
+        w="100%"
         display="flex"
         alignItems="flex-end"
         gap={`${WAVEFORM_BAR_GAP_PX}px`}

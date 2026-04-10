@@ -921,5 +921,9 @@ function isSameTracksEditorSelection(
   a: TracksEditorSelection,
   b: TracksEditorSelection,
 ): boolean {
-  return a.trackId === b.trackId && a.clipId === b.clipId;
+  return (
+    a.trackId === b.trackId &&
+    a.clipId === b.clipId &&
+    a.volumePointId === b.volumePointId
+  );
 }

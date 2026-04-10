@@ -100,9 +100,17 @@ export function FinalReview() {
       ),
     [documentState, orderedTracks],
   );
-  const primaryRecordingIdsKey = documentState.trackOrder
-    .map((trackId) => model.tracksDocument.getPrimaryRecordingIdForTrack(trackId) ?? "")
-    .join("|");
+  const primaryRecordingIds = useMemo(
+    () =>
+      documentState.trackOrder.map((trackId) =>
+        model.tracksDocument.getPrimaryRecordingIdForTrack(trackId),
+      ),
+    [documentState.clipsById, documentState.trackOrder],
+  );
+  const primaryRecordingIdsKey = useMemo(
+    () => primaryRecordingIds.map((recordingId) => recordingId ?? "").join("|"),
+    [primaryRecordingIds],
+  );
   const timelinesRef = useRef<TrackClip[][]>(timelines);
   const hasAnyTakes = primaryRecordingIds.some(
     (recordingId) => recordingId != null,

@@ -15,6 +15,13 @@ export type LoadedDraft = {
   mediaAssets: SavedMediaAsset[];
 };
 
+export class InvalidSavedDraftError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidSavedDraftError";
+  }
+}
+
 async function openDatabase(): Promise<IDBDatabase> {
   return await new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
@@ -83,7 +90,7 @@ export async function loadDraftFromIndexedDb(): Promise<LoadedDraft | null> {
     }
     const savedDocument = parseSavedHumDocument(rawDocument);
     if (savedDocument == null) {
-      throw new Error("Saved draft document is invalid");
+      throw new InvalidSavedDraftError("Saved draft document is invalid");
     }
 
     const index = mediaAssets.index("documentId");
@@ -101,7 +108,9 @@ export async function loadDraftFromIndexedDb(): Promise<LoadedDraft | null> {
       mediaAssetIds.has(asset.mediaAssetId),
     );
     if (filtered.length !== mediaAssetIds.size) {
-      throw new Error("Saved draft is missing referenced media assets");
+      throw new InvalidSavedDraftError(
+        "Saved draft is missing referenced media assets",
+      );
     }
 
     return {

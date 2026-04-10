@@ -872,10 +872,21 @@ export class TracksEditorModel {
   }
 
   setSelection(selection: TracksEditorSelection): void {
-    this.setEditor((current) => ({
-      ...current,
-      selection,
-    }));
+    this.setEditor((current) => {
+      const prev = current.selection;
+      if (
+        prev.trackId === selection.trackId &&
+        prev.clipId === selection.clipId &&
+        prev.volumePointId === selection.volumePointId
+      ) {
+        return current;
+      }
+
+      return {
+        ...current,
+        selection,
+      };
+    });
   }
 
   clearSelection(): void {

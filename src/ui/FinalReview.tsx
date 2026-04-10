@@ -1,5 +1,5 @@
 import { Box, Button, Flex, Progress, Text } from "@chakra-ui/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useObservable } from "../observable";
 import { acquirePermissionsAndStart } from "../recording/permissions";
 import {
@@ -8,21 +8,8 @@ import {
   type TrackClip,
 } from "../state/model";
 import { getPartLabel } from "../music/types";
-import { startCompositor } from "../video/compositor";
-import { exportVideo, getPreferredExportFormat } from "../video/exporter";
-import {
-  createReviewTransport,
-  type ReviewTransport,
-} from "../video/reviewTransport";
-import { createMixer } from "../audio/mixer";
-import {
-  AUDIO_SCHEDULE_LEAD_SEC,
-  FRAME_READY_TIMEOUT_MS,
-} from "../transport/core";
-import {
-  type ClipVolumeEnvelope,
-  evaluateClipVolumeAtTime,
-} from "../state/clipAutomation";
+import { getPreferredExportFormat } from "../video/exporter";
+import { type ClipVolumeEnvelope } from "../state/clipAutomation";
 import {
   getActiveSegmentAtTime,
   getTimelineEndSec,
@@ -48,6 +35,7 @@ import {
   type TracksEditorSegmentRenderAsset,
   type TracksEditorStaticView,
 } from "./finalReview/tracksEditor";
+import { useFinalReviewRuntimeController } from "./FinalReviewRuntimeController";
 
 const TIMELINE_PX_PER_SEC = 110;
 const SEGMENT_WAVEFORM_HORIZONTAL_PADDING_PX = 8;
@@ -57,10 +45,6 @@ const PREVIEW_CELL_POSITIONS = [
   { left: "0%", top: "50%" },
   { left: "50%", top: "50%" },
 ] as const;
-
-type ActiveAudioSource = {
-  source: AudioBufferSourceNode;
-};
 
 export function FinalReview() {
   const documentState = useObservable(model.tracksDocument.document);
@@ -72,12 +56,6 @@ export function FinalReview() {
   const trackCount = documentState.trackOrder.length;
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const activeVideoMaskRef = useRef<boolean[]>(
-    Array.from({ length: trackCount }, () => false),
-  );
-  const reviewTransportRef = useRef<ReviewTransport | null>(null);
-  const startRequestTokenRef = useRef(0);
-  const activeSourcesRef = useRef<ActiveAudioSource[]>([]);
   const segmentRenderCacheRef = useRef<
     Map<string, { cacheKey: string; asset: TracksEditorSegmentRenderAsset }>
   >(new Map());
@@ -108,22 +86,19 @@ export function FinalReview() {
       ),
     [documentState.clipsById, documentState.trackOrder],
   );
-  const primaryRecordingIdsKey = useMemo(
-    () => primaryRecordingIds.map((recordingId) => recordingId ?? "").join("|"),
-    [primaryRecordingIds],
+  const runtimeMediaKey = useMemo(
+    () =>
+      documentState.trackOrder
+        .map((trackId, index) => `${trackId}:${primaryRecordingIds[index] ?? ""}`)
+        .join("|"),
+    [documentState.trackOrder, primaryRecordingIds],
   );
-  const timelinesRef = useRef<TrackClip[][]>(timelines);
   const hasAnyTakes = primaryRecordingIds.some(
     (recordingId) => recordingId != null,
   );
   const selection = editorState.selection;
   const committedPlayheadSec = editorState.playheadSec;
   const reverbWet = documentState.reverbWet;
-
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [isSyncingFrames, setIsSyncingFrames] = useState(false);
-  const [syncWarning, setSyncWarning] = useState<string | null>(null);
-  const [waveformVersion, setWaveformVersion] = useState(0);
 
   const exporting = exportState.exporting;
   const exportProgress = exportState.progress;
@@ -152,108 +127,30 @@ export function FinalReview() {
     return lines;
   }, [beatSec, timelineEndSec]);
 
-  timelinesRef.current = timelines;
-
-  const stopAudio = useCallback(() => {
-    for (const entry of activeSourcesRef.current) {
-      try {
-        entry.source.stop();
-      } catch {
-        // Safe to ignore if already stopped.
-      }
-    }
-    activeSourcesRef.current = [];
-  }, []);
-
-  const stopPlaybackEngine = useCallback(
-    (preservePlayhead: boolean) => {
-      startRequestTokenRef.current += 1;
-      reviewTransportRef.current?.stop();
-      stopAudio();
-      setIsPlaying(false);
-      setIsSyncingFrames(false);
-      const nextPlayheadSec = preservePlayhead
-        ? model.tracksEditor.playbackPlayheadSec.get()
-        : 0;
-      model.tracksEditor.setPlayhead(nextPlayheadSec);
-      reviewTransportRef.current?.syncPaused(nextPlayheadSec);
-    },
-    [stopAudio],
-  );
-
-  const startAudioFromTimeline = useCallback(
-    (
-      startCtxTime: number,
-      startTimelineSec: number,
-      endTimelineSec: number,
-    ) => {
-      if (ctx == null || model.mixer == null) return;
-
-      stopAudio();
-
-      for (let lane = 0; lane < trackCount; lane++) {
-        const track = timelinesRef.current[lane];
-        if (track == null) continue;
-
-        for (const segment of track) {
-          const buffer = model.getRecordingAudioBuffer(segment.recordingId);
-          if (buffer == null) continue;
-
-          const segStart = segment.timelineStartSec;
-          const segEnd = segment.timelineStartSec + segment.durationSec;
-          if (segEnd <= startTimelineSec || segStart >= endTimelineSec)
-            continue;
-
-          const playFrom = Math.max(startTimelineSec, segStart);
-          const playTo = Math.min(endTimelineSec, segEnd);
-          const playDuration = playTo - playFrom;
-          if (playDuration <= 0) continue;
-
-          const sourceOffset = segment.sourceStartSec + (playFrom - segStart);
-          if (sourceOffset >= buffer.duration) continue;
-
-          const cappedDuration = Math.min(
-            playDuration,
-            buffer.duration - sourceOffset,
-          );
-          if (cappedDuration <= 0) continue;
-
-          const source = ctx.createBufferSource();
-          const clipGain = ctx.createGain();
-          source.buffer = buffer;
-
-          const startAt = startCtxTime + (playFrom - startTimelineSec);
-          const localSegmentStartSec = Math.max(0, playFrom - segStart);
-          scheduleClipVolumeGain({
-            gain: clipGain.gain,
-            volumeEnvelope: segment.volumeEnvelope,
-            segmentDurationSec: segment.durationSec,
-            segmentStartSec: localSegmentStartSec,
-            playDurationSec: cappedDuration,
-            startAtSec: startAt,
-          });
-
-          source.connect(clipGain);
-          model.mixer.connectSource(lane, clipGain);
-          source.start(startAt, sourceOffset, cappedDuration);
-          activeSourcesRef.current.push({ source });
-        }
-      }
-    },
-    [ctx, stopAudio, trackCount],
-  );
-
-  const primeTransportForRun = useCallback(
-    async (startTimelineSec: number): Promise<number[]> => {
-      const transport = reviewTransportRef.current;
-      if (transport == null) return [];
-      return transport.primeForStart({
-        startTimelineSec,
-        frameReadyTimeoutMs: FRAME_READY_TIMEOUT_MS,
-      });
-    },
-    [],
-  );
+  const runtimeInputs = {
+    ctx,
+    canvasRef,
+    trackOrder: documentState.trackOrder,
+    orderedTracks,
+    timelines,
+    runtimeMediaKey,
+    committedPlayheadSec,
+    selection,
+    timelineEndSec,
+    reverbWet,
+  };
+  const { controller: runtimeController, snapshot: runtimeSnapshot } =
+    useFinalReviewRuntimeController(runtimeInputs);
+  const waveformVersion = runtimeSnapshot.mediaRevision;
+  const isPlaying = runtimeSnapshot.status === "previewing";
+  const isSyncingFrames =
+    runtimeSnapshot.status === "priming-preview" ||
+    runtimeSnapshot.status === "priming-export" ||
+    runtimeSnapshot.status === "exporting";
+  const syncWarning =
+    runtimeSnapshot.unavailableLanes.length > 0
+      ? formatLaneWarning(runtimeSnapshot.unavailableLanes, trackCount)
+      : null;
 
   function findSegmentBySelection(sel: EditorSelection): TrackClip | null {
     if (sel.trackId == null || sel.clipId == null) return null;
@@ -264,211 +161,17 @@ export function FinalReview() {
   }
 
   useEffect(() => {
-    if (ctx == null) return;
-
-    let cancelled = false;
-    const videos: HTMLVideoElement[] = [];
-    model.clearDecodedRuntimeMedia();
-    model.tracksEditor.setPlayhead(0);
-    model.tracksEditor.clearSelection();
-    setWaveformVersion((v) => v + 1);
-
-    for (let i = 0; i < trackCount; i++) {
-      const trackId = documentState.trackOrder[i];
-      const recordingId =
-        trackId != null
-          ? model.tracksDocument.getPrimaryRecordingIdForTrack(trackId)
-          : null;
-      const url =
-        recordingId != null ? model.getRecordingUrl(recordingId) : null;
-      const video = document.createElement("video");
-      video.muted = true;
-      video.playsInline = true;
-      video.loop = false;
-      video.preload = "auto";
-      if (url != null) {
-        video.src = url;
-      }
-      videos.push(video);
-    }
-
-    const mixer = createMixer(ctx, trackCount);
-    for (let i = 0; i < trackCount; i++) {
-      const track = orderedTracks[i];
-      mixer.setTrackVolume(i, track?.volume ?? 1);
-      mixer.setTrackMuted(i, track?.muted ?? false);
-    }
-    mixer.setReverbWet(reverbWet);
-    model.mixer = mixer;
-
-    if (canvasRef.current != null) {
-      model.compositor = startCompositor(canvasRef.current, videos, {
-        isVideoActive: (index) => activeVideoMaskRef.current[index] ?? false,
-      });
-    }
-
-    reviewTransportRef.current = createReviewTransport({
-      ctx,
-      trackCount,
-      videos,
-      getTimelines: () => timelinesRef.current,
-      onActiveMask: (mask) => {
-        activeVideoMaskRef.current = mask;
-      },
-    });
-    reviewTransportRef.current.syncPaused(0);
-
-    for (let i = 0; i < trackCount; i++) {
-      const trackId = documentState.trackOrder[i];
-      if (trackId == null) continue;
-      const recordingId =
-        model.tracksDocument.getPrimaryRecordingIdForTrack(trackId);
-      if (recordingId == null) continue;
-      const recording = model.tracksDocument.getRecording(recordingId);
-      if (recording == null) continue;
-
-      const videoEl = videos[i];
-      if (videoEl == null) continue;
-
-      void model
-        .ingestRecordingRuntimeMedia({
-          recordingId,
-          mediaAssetId: recording.mediaAssetId,
-          ctx,
-          videoEl,
-          waveformBucketsPerSec: FINAL_REVIEW_WAVEFORM_BUCKETS_PER_SEC,
-        })
-        .then((ingested) => {
-          if (cancelled || !ingested) return;
-          setWaveformVersion((v) => v + 1);
-        })
-        .catch(() => {
-          // Keep lane empty if decoding fails.
-        });
-    }
-
-    return () => {
-      cancelled = true;
-      stopPlaybackEngine(false);
-      reviewTransportRef.current?.dispose();
-      reviewTransportRef.current = null;
-
-      model.compositor?.stop();
-      model.compositor = null;
-
-      model.mixer?.dispose();
-      model.mixer = null;
-
-      for (const video of videos) {
-        video.pause();
-        video.src = "";
-      }
-    };
-  }, [
-    ctx,
-    documentState.trackOrder,
-    primaryRecordingIdsKey,
-    stopPlaybackEngine,
-    trackCount,
-  ]);
-
-  useEffect(() => {
-    const mixer = model.mixer;
-    if (mixer == null) return;
-    for (let i = 0; i < trackCount; i++) {
-      const track = orderedTracks[i];
-      mixer.setTrackVolume(i, track?.volume ?? 1);
-      mixer.setTrackMuted(i, track?.muted ?? false);
-    }
-    mixer.setReverbWet(reverbWet);
-  }, [orderedTracks, reverbWet, trackCount]);
-
-  useEffect(() => {
-    if (isPlaying || exporting || isSyncingFrames) return;
-    reviewTransportRef.current?.syncPaused(committedPlayheadSec);
-  }, [
-    committedPlayheadSec,
-    exporting,
-    isPlaying,
-    isSyncingFrames,
-    timelines,
-    waveformVersion,
-  ]);
-
-  useEffect(() => {
     const selected = findSegmentBySelection(selection);
     if (selected != null) return;
     model.ensureValidEditorSelection();
   }, [selection, timelines]);
 
-  useEffect(() => {
-    if (!isPlaying || selection.volumePointId == null) return;
-    model.tracksEditor.setSelection({
-      trackId: selection.trackId,
-      clipId: selection.clipId,
-      volumePointId: null,
-    });
-  }, [isPlaying, selection.clipId, selection.trackId, selection.volumePointId]);
-
-  useEffect(() => {
-    return () => {
-      stopPlaybackEngine(false);
-    };
-  }, [stopPlaybackEngine]);
-
   async function handlePlayPause() {
-    const ctx = await model.ensureAudioContext();
-    if (exporting || isSyncingFrames || ctx == null) return;
+    const ensuredCtx = await model.ensureAudioContext();
+    if (exporting || isSyncingFrames || ensuredCtx == null) return;
     if (timelineEndSec <= 0) return;
-
-    if (isPlaying) {
-      stopPlaybackEngine(true);
-      return;
-    }
-
-    const startTimelineSec =
-      committedPlayheadSec >= timelineEndSec ? 0 : committedPlayheadSec;
-    const requestToken = startRequestTokenRef.current + 1;
-    startRequestTokenRef.current = requestToken;
-
-    setSyncWarning(null);
-    setIsSyncingFrames(true);
-
-    try {
-      const unavailableLanes = await primeTransportForRun(startTimelineSec);
-      if (startRequestTokenRef.current !== requestToken) return;
-      const transport = reviewTransportRef.current;
-      if (transport == null) return;
-
-      if (unavailableLanes.length > 0) {
-        setSyncWarning(formatLaneWarning(unavailableLanes, trackCount));
-      }
-
-      const startCtxTime = ctx.currentTime + AUDIO_SCHEDULE_LEAD_SEC;
-      model.tracksEditor.setPlayhead(startTimelineSec);
-      startAudioFromTimeline(startCtxTime, startTimelineSec, timelineEndSec);
-
-      transport.startRun({
-        mode: "preview",
-        startCtxTimeSec: startCtxTime,
-        startTimelineSec,
-        endTimelineSec: timelineEndSec,
-        onTick: (timelineSec) => {
-          model.tracksEditor.setPlaybackPlayhead(timelineSec);
-        },
-        onEnded: () => {
-          stopAudio();
-          setIsPlaying(false);
-          model.tracksEditor.setPlayhead(timelineEndSec);
-        },
-      });
-      model.tracksEditor.setPlaybackPlayhead(startTimelineSec);
-      setIsPlaying(true);
-    } finally {
-      if (startRequestTokenRef.current === requestToken) {
-        setIsSyncingFrames(false);
-      }
-    }
+    runtimeController.syncInputs({ ...runtimeInputs, ctx: ensuredCtx });
+    await runtimeController.togglePreview();
   }
 
   function handleTracksCommand(command: TracksEditorCommand) {
@@ -476,14 +179,14 @@ export function FinalReview() {
       case "split_selected": {
         if (exporting || isSyncingFrames) return;
         if (selection.trackId == null || selection.volumePointId != null) return;
-        if (isPlaying) stopPlaybackEngine(true);
+        if (isPlaying) runtimeController.stopPlayback(true);
         model.splitSelectedClipAtPlayhead();
         return;
       }
       case "delete_selected": {
         if (exporting || isSyncingFrames) return;
         if (selection.trackId == null || selection.clipId == null) return;
-        if (isPlaying) stopPlaybackEngine(true);
+        if (isPlaying) runtimeController.stopPlayback(true);
         if (selection.volumePointId != null) {
           const clip = documentState.clipsById[selection.clipId];
           const pointIndex =
@@ -636,7 +339,7 @@ export function FinalReview() {
     if (isSyncingFrames) return;
     const trackId = documentState.trackOrder[index] ?? null;
     if (trackId == null) return;
-    stopPlaybackEngine(false);
+    runtimeController.stopPlayback(false);
     if (model.mediaStream.get() != null && model.isCalibrated.get()) {
       model.openRecordingForTrack(trackId);
       return;
@@ -647,69 +350,12 @@ export function FinalReview() {
   }
 
   async function handleExport() {
-    const ctx = await model.ensureAudioContext();
-    const mixer = model.mixer;
-    if (ctx == null || canvasRef.current == null || mixer == null) return;
+    const ensuredCtx = await model.ensureAudioContext();
+    if (ensuredCtx == null) return;
     if (isSyncingFrames) return;
     if (timelineEndSec <= 0) return;
-
-    stopPlaybackEngine(false);
-    model.beginExport();
-    setSyncWarning(null);
-    const requestToken = startRequestTokenRef.current + 1;
-    startRequestTokenRef.current = requestToken;
-    setIsSyncingFrames(true);
-
-    try {
-      const unavailableLanes = await primeTransportForRun(0);
-      if (startRequestTokenRef.current !== requestToken) return;
-      const transport = reviewTransportRef.current;
-      if (transport == null) {
-        model.failOrResetExport();
-        return;
-      }
-      if (unavailableLanes.length > 0) {
-        setSyncWarning(formatLaneWarning(unavailableLanes, trackCount));
-      }
-
-      const startCtxTime = ctx.currentTime + AUDIO_SCHEDULE_LEAD_SEC;
-      startAudioFromTimeline(startCtxTime, 0, timelineEndSec);
-      transport.startRun({
-        mode: "export",
-        startCtxTimeSec: startCtxTime,
-        startTimelineSec: 0,
-        endTimelineSec: timelineEndSec,
-        onTick: (timelineSec) => {
-          model.tracksEditor.setPlaybackPlayhead(timelineSec);
-        },
-        onEnded: () => {
-          model.tracksEditor.setPlayhead(timelineEndSec);
-        },
-      });
-
-      const result = await exportVideo({
-        canvas: canvasRef.current,
-        audioContext: ctx,
-        mixer,
-        durationMs: timelineEndSec * 1000,
-        onProgress: (progress) => model.updateExportProgress(progress),
-      });
-
-      const nextUrl = URL.createObjectURL(result.blob);
-      model.completeExport({
-        url: nextUrl,
-        format: result.format,
-        mimeType: result.mimeType,
-      });
-    } catch (err) {
-      console.error("Export failed", err);
-      model.failOrResetExport();
-    } finally {
-      if (startRequestTokenRef.current === requestToken) {
-        setIsSyncingFrames(false);
-      }
-      stopPlaybackEngine(false);
-    }
+    runtimeController.syncInputs({ ...runtimeInputs, ctx: ensuredCtx });
+    await runtimeController.exportCurrentVideo();
   }
 
   function handleDownload() {
@@ -729,7 +375,7 @@ export function FinalReview() {
     ) {
       return;
     }
-    stopPlaybackEngine(false);
+    runtimeController.stopPlayback(false);
     model.resetSession();
   }
 
@@ -1250,55 +896,6 @@ function buildVolumeHandleAssets(
     topPercent: clamp((1 - point.gainMultiplier / 2) * 100, 2, 98),
     isBoundary: index === 0 || index === sorted.length - 1,
   }));
-}
-
-function scheduleClipVolumeGain(input: {
-  gain: AudioParam;
-  volumeEnvelope: ClipVolumeEnvelope;
-  segmentDurationSec: number;
-  segmentStartSec: number;
-  playDurationSec: number;
-  startAtSec: number;
-}): void {
-  const {
-    gain,
-    volumeEnvelope,
-    segmentDurationSec,
-    segmentStartSec,
-    playDurationSec,
-    startAtSec,
-  } = input;
-  if (playDurationSec <= 0) return;
-
-  const localStartSec = clamp(segmentStartSec, 0, segmentDurationSec);
-  const localEndSec = clamp(
-    segmentStartSec + playDurationSec,
-    0,
-    segmentDurationSec,
-  );
-
-  const startGainMultiplier = evaluateClipVolumeAtTime(
-    volumeEnvelope,
-    localStartSec,
-    segmentDurationSec,
-  );
-  gain.setValueAtTime(startGainMultiplier, startAtSec);
-
-  for (const point of volumeEnvelope.points) {
-    if (point.timeSec <= localStartSec || point.timeSec >= localEndSec)
-      continue;
-    gain.linearRampToValueAtTime(
-      point.gainMultiplier,
-      startAtSec + (point.timeSec - localStartSec),
-    );
-  }
-
-  const endGainMultiplier = evaluateClipVolumeAtTime(
-    volumeEnvelope,
-    localEndSec,
-    segmentDurationSec,
-  );
-  gain.linearRampToValueAtTime(endGainMultiplier, startAtSec + playDurationSec);
 }
 
 function formatLabel(format: "mp4" | "webm"): string {

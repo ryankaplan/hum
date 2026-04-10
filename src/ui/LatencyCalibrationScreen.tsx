@@ -255,6 +255,7 @@ export function LatencyCalibrationScreen() {
   const stream = useObservable(model.mediaStream);
   const ctx = useObservable(model.audioContext);
   const arrangement = useObservable(model.arrangementDocument);
+  const appScreen = useObservable(model.appScreen);
   const persistedSelectedMicId = useObservable(model.selectedMicId);
   const recordingTargetTrackId = useObservable(model.recordingTargetTrackId);
 
@@ -312,6 +313,11 @@ export function LatencyCalibrationScreen() {
       previewSessionRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    if (appScreen === "calibration") return;
+    stopPreview();
+  }, [appScreen]);
 
   function stopPreview() {
     previewSessionRef.current?.stop();

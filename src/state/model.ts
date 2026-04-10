@@ -123,8 +123,8 @@ function createDefaultExportPreferences(): ExportPreferences {
 
 function createDefaultRecordingMonitorPreferences(): RecordingMonitorPreferences {
   return {
-    guideToneVolume: 0.9,
-    beatVolume: 0.9,
+    guideToneVolume: 0.6,
+    beatVolume: 0.6,
     priorHarmonyVolume: 1,
   };
 }
@@ -133,7 +133,8 @@ function parseExportPreferences(raw: unknown): ExportPreferences {
   if (typeof raw !== "object" || raw == null) {
     return createDefaultExportPreferences();
   }
-  const preferredFormat = (raw as { preferredFormat?: unknown }).preferredFormat;
+  const preferredFormat = (raw as { preferredFormat?: unknown })
+    .preferredFormat;
   return {
     preferredFormat:
       preferredFormat === "mp4" || preferredFormat === "webm"
@@ -148,7 +149,9 @@ function parseRecordingMonitorPreferences(
   if (typeof raw !== "object" || raw == null) {
     return createDefaultRecordingMonitorPreferences();
   }
-  const candidate = raw as Partial<Record<keyof RecordingMonitorPreferences, unknown>>;
+  const candidate = raw as Partial<
+    Record<keyof RecordingMonitorPreferences, unknown>
+  >;
   const readLevel = (value: unknown, fallback: number) =>
     typeof value === "number" && Number.isFinite(value)
       ? Math.max(0, Math.min(1, value))

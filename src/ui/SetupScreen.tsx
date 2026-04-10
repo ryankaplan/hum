@@ -27,6 +27,7 @@ export function SetupScreen() {
   const arrangement = useObservable(model.derivedArrangementInfo);
   const audioContext = useObservable(model.audioContext);
   const error = useObservable(model.permissionError);
+  const appScreen = useObservable(model.appScreen);
 
   const [previewingMode, setPreviewingMode] = useState<PreviewMode>(null);
   const [starting, setStarting] = useState(false);
@@ -56,6 +57,22 @@ export function SetupScreen() {
       setPreviewingMode(null);
     }
   }, [arrangement.hasCustomHarmony, previewingMode]);
+
+  useEffect(() => {
+    if (appScreen === "setup") return;
+    stopAllPlayback();
+    previewSessionRef.current?.stop();
+    previewSessionRef.current = null;
+    setPreviewingMode(null);
+  }, [appScreen]);
+
+  useEffect(() => {
+    return () => {
+      stopAllPlayback();
+      previewSessionRef.current?.stop();
+      previewSessionRef.current = null;
+    };
+  }, []);
 
   async function handlePreview(mode: Exclude<PreviewMode, null>) {
     const parsed = arrangement.parsedChords;

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ARRANGEMENT_TICKS_PER_BEAT } from "../src/music/arrangementScore";
 import {
   computeArrangementInfo,
   createDefaultArrangementDocState,
@@ -15,10 +16,11 @@ function makeArrangementDocState(
     meter: [4, 4],
     vocalRangeLow: "C3",
     vocalRangeHigh: "A4",
-    harmonyRangeCoverage: "lower two thirds",
-    selectedHarmonyGenerator: "dynamic",
-    totalParts: 4,
-    ...overrides,
+        harmonyRangeCoverage: "lower two thirds",
+        selectedHarmonyGenerator: "dynamic",
+        totalParts: 4,
+        customArrangement: null,
+        ...overrides,
   };
 }
 
@@ -64,8 +66,22 @@ describe("computeArrangementInfo", () => {
   it("recomputes chord annotations when custom harmony adds non-chord tones", () => {
     const info = computeArrangementInfo(
       makeArrangementDocState("Em", {
-        customHarmony: {
-          lines: [[52], [59], [62]],
+        customArrangement: {
+          ticksPerBeat: ARRANGEMENT_TICKS_PER_BEAT,
+          voices: [
+            {
+              id: "voice-0",
+              events: [{ id: "a", startTick: 0, durationTicks: 16, midi: 52 }],
+            },
+            {
+              id: "voice-1",
+              events: [{ id: "b", startTick: 0, durationTicks: 16, midi: 59 }],
+            },
+            {
+              id: "voice-2",
+              events: [{ id: "c", startTick: 0, durationTicks: 16, midi: 62 }],
+            },
+          ],
         },
       }),
     );
@@ -82,11 +98,30 @@ describe("computeArrangementInfo", () => {
   it("keeps nullable custom harmony slots and ignores rests in annotations", () => {
     const info = computeArrangementInfo(
       makeArrangementDocState("A E", {
-        customHarmony: {
-          lines: [
-            [45, null],
-            [52, 52],
-            [57, 59],
+        customArrangement: {
+          ticksPerBeat: ARRANGEMENT_TICKS_PER_BEAT,
+          voices: [
+            {
+              id: "voice-0",
+              events: [
+                { id: "a0", startTick: 0, durationTicks: 16, midi: 45 },
+                { id: "a1", startTick: 16, durationTicks: 16, midi: null },
+              ],
+            },
+            {
+              id: "voice-1",
+              events: [
+                { id: "b0", startTick: 0, durationTicks: 16, midi: 52 },
+                { id: "b1", startTick: 16, durationTicks: 16, midi: 52 },
+              ],
+            },
+            {
+              id: "voice-2",
+              events: [
+                { id: "c0", startTick: 0, durationTicks: 16, midi: 57 },
+                { id: "c1", startTick: 16, durationTicks: 16, midi: 59 },
+              ],
+            },
           ],
         },
       }),

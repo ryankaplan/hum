@@ -67,7 +67,7 @@ function makeDocument(
       harmonyRangeCoverage: "lower two thirds",
       selectedHarmonyGenerator: "dynamic",
       totalParts: 2,
-      customHarmony: null,
+      customArrangement: null,
     },
     tracks: {
       trackOrder,

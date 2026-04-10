@@ -20,11 +20,13 @@ describe("resolveRecordingHarmonyGuidance", () => {
 
     const legacyGuidance = resolveRecordingHarmonyGuidance(
       legacyInfo.selectedHarmonyVoicing,
+      legacyInfo.effectiveCustomArrangement?.voices ?? [],
       0,
       4,
     );
     const dynamicGuidance = resolveRecordingHarmonyGuidance(
       dynamicInfo.selectedHarmonyVoicing,
+      dynamicInfo.effectiveCustomArrangement?.voices ?? [],
       0,
       4,
     );

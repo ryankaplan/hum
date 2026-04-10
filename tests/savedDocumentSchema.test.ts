@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ARRANGEMENT_TICKS_PER_BEAT } from "../src/music/arrangementScore";
 import {
   parseSavedHumDocument,
   SAVED_HUM_DOCUMENT_SCHEMA_VERSION,
@@ -20,6 +21,7 @@ function makeSavedHumDocument(
       harmonyRangeCoverage,
       selectedHarmonyGenerator,
       totalParts: 4,
+      customArrangement: null,
     },
     tracks: {
       trackOrder: [],
@@ -80,8 +82,21 @@ describe("parseSavedHumDocument", () => {
       ...makeSavedHumDocument("lower two thirds"),
       arrangement: {
         ...makeSavedHumDocument("lower two thirds").arrangement,
-        customHarmony: {
-          lines: [["not-a-midi-note"]],
+        customArrangement: {
+          ticksPerBeat: ARRANGEMENT_TICKS_PER_BEAT,
+          voices: [
+            {
+              id: "voice-0",
+              events: [
+                {
+                  id: "bad",
+                  startTick: 0,
+                  durationTicks: 16,
+                  midi: "not-a-midi-note",
+                },
+              ],
+            },
+          ],
         },
       },
     });
@@ -94,13 +109,27 @@ describe("parseSavedHumDocument", () => {
       ...makeSavedHumDocument("lower two thirds"),
       arrangement: {
         ...makeSavedHumDocument("lower two thirds").arrangement,
-        customHarmony: {
-          lines: [[48, null, 55]],
+        customArrangement: {
+          ticksPerBeat: ARRANGEMENT_TICKS_PER_BEAT,
+          voices: [
+            {
+              id: "voice-0",
+              events: [
+                { id: "a0", startTick: 0, durationTicks: 16, midi: 48 },
+                { id: "a1", startTick: 16, durationTicks: 16, midi: null },
+                { id: "a2", startTick: 32, durationTicks: 16, midi: 55 },
+              ],
+            },
+          ],
         },
       },
     });
 
-    expect(parsed?.arrangement.customHarmony?.lines).toEqual([[48, null, 55]]);
+    expect(parsed?.arrangement.customArrangement?.voices[0]?.events).toEqual([
+      { id: "a0", startTick: 0, durationTicks: 16, midi: 48 },
+      { id: "a1", startTick: 16, durationTicks: 16, midi: null },
+      { id: "a2", startTick: 32, durationTicks: 16, midi: 55 },
+    ]);
   });
 
   it("accepts current drafts without persisted workflow state", () => {

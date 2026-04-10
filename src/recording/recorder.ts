@@ -1,3 +1,4 @@
+import type { ArrangementVoice } from "../music/arrangementScore";
 import type { Chord, MidiNote } from "../music/types";
 import type { HarmonyLine } from "../music/types";
 import {
@@ -32,7 +33,9 @@ export type RecordingOpts = {
   chords: Chord[];
   // null for melody (no guide tones during recording)
   harmonyLine: HarmonyLine | null;
+  arrangementVoice?: ArrangementVoice | null;
   backingHarmonyLines?: HarmonyLine[];
+  backingArrangementVoices?: ArrangementVoice[];
   countInCueMidi?: MidiNote | null;
   beatsPerBar: number;
   tempo: number;
@@ -75,7 +78,9 @@ export function startRecordTake(opts: RecordingOpts): RecordingSession {
     stream,
     chords,
     harmonyLine,
+    arrangementVoice,
     backingHarmonyLines,
+    backingArrangementVoices,
     countInCueMidi,
     beatsPerBar,
     tempo,
@@ -179,7 +184,9 @@ export function startRecordTake(opts: RecordingOpts): RecordingSession {
       ctx,
       chords,
       harmonyLine,
+      arrangementVoice,
       backingHarmonyLines,
+      backingArrangementVoices,
       beatsPerBar,
       tempo,
       startTime: gridStartTime,

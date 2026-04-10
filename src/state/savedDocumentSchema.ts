@@ -49,7 +49,7 @@
  * - On parse failure or schema version mismatch, callers should clear the draft
  *   instead of trying to partially recover it.
  */
-export const SAVED_HUM_DOCUMENT_SCHEMA_VERSION = "9";
+export const SAVED_HUM_DOCUMENT_SCHEMA_VERSION = "10";
 
 export const SAVED_HUM_DOCUMENT_ID = "current";
 
@@ -74,7 +74,20 @@ export type SavedArrangementDocument = {
   harmonyRangeCoverage: "lower two thirds" | "whole-range";
   selectedHarmonyGenerator?: "legacy" | "dynamic";
   totalParts: 2 | 4;
-  customHarmony: { lines: Array<Array<number | null>> } | null;
+  customArrangement:
+    | {
+        ticksPerBeat: number;
+        voices: Array<{
+          id: string;
+          events: Array<{
+            id: string;
+            startTick: number;
+            durationTicks: number;
+            midi: number | null;
+          }>;
+        }>;
+      }
+    | null;
 };
 
 export type SavedVolumePoint = {
@@ -190,7 +203,7 @@ function parseSavedArrangementDocument(
   raw: unknown,
 ): SavedArrangementDocument | null {
   if (!isRecord(raw)) return null;
-  const customHarmony = parseSavedCustomHarmony(raw.customHarmony);
+  const customArrangement = parseSavedCustomArrangement(raw.customArrangement);
   const meter = raw.meter;
   if (
     typeof raw.chordsInput !== "string" ||
@@ -208,7 +221,7 @@ function parseSavedArrangementDocument(
       raw.selectedHarmonyGenerator !== "legacy" &&
       raw.selectedHarmonyGenerator !== "dynamic") ||
     (raw.totalParts !== 2 && raw.totalParts !== 4) ||
-    (raw.customHarmony != null && customHarmony == null)
+    (raw.customArrangement != null && customArrangement == null)
   ) {
     return null;
   }
@@ -226,27 +239,67 @@ function parseSavedArrangementDocument(
         | SavedArrangementDocument["selectedHarmonyGenerator"]
         | undefined,
     totalParts: raw.totalParts,
-    customHarmony,
+    customArrangement,
   };
 }
 
-function parseSavedCustomHarmony(
+function parseSavedCustomArrangement(
   raw: unknown,
-): { lines: Array<Array<number | null>> } | null {
+): SavedArrangementDocument["customArrangement"] {
   if (raw == null) return null;
   if (
     !isRecord(raw) ||
-    !Array.isArray(raw.lines) ||
-    raw.lines.some(
-      (line) =>
-        !Array.isArray(line) ||
-        line.some((entry) => entry !== null && isFiniteNumber(entry) === false),
-    )
+    isFiniteNumber(raw.ticksPerBeat) === false ||
+    !Array.isArray(raw.voices)
   ) {
     return null;
   }
+
+  const voices = raw.voices.map((voice) => {
+    if (
+      !isRecord(voice) ||
+      typeof voice.id !== "string" ||
+      !Array.isArray(voice.events)
+    ) {
+      return null;
+    }
+    const events = voice.events.map((event) => {
+      if (
+        !isRecord(event) ||
+        typeof event.id !== "string" ||
+        isFiniteNumber(event.startTick) === false ||
+        isFiniteNumber(event.durationTicks) === false ||
+        (event.midi !== null && isFiniteNumber(event.midi) === false)
+      ) {
+        return null;
+      }
+      return {
+        id: event.id,
+        startTick: event.startTick,
+        durationTicks: event.durationTicks,
+        midi: event.midi as number | null,
+      };
+    });
+
+    if (events.some((event) => event == null)) {
+      return null;
+    }
+
+    return {
+      id: voice.id,
+      events: events as NonNullable<
+        SavedArrangementDocument["customArrangement"]
+      >["voices"][number]["events"],
+    };
+  });
+
+  if (voices.some((voice) => voice == null)) {
+    return null;
+  }
+
   return {
-    lines: raw.lines.map((line) => [...line]) as Array<Array<number | null>>,
+    ticksPerBeat: raw.ticksPerBeat,
+    voices: voices as NonNullable<SavedArrangementDocument["customArrangement"]>["voices"],
   };
 }
 

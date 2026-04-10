@@ -5,9 +5,9 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { useObservable } from "../observable";
 import { acquirePermissionsAndStart } from "../recording/permissions";
+import type { CustomArrangement } from "../music/arrangementScore";
 import { resolveHarmonyVoicingForGenerator } from "../state/arrangementModel";
 import type {
-  HarmonyLine,
   HarmonyRangeCoverage,
   SelectedHarmonyGenerator,
 } from "../music/types";
@@ -31,9 +31,8 @@ export function SetupScreen() {
   const [previewingMode, setPreviewingMode] = useState<PreviewMode>(null);
   const [starting, setStarting] = useState(false);
   const [isCustomizingHarmony, setIsCustomizingHarmony] = useState(false);
-  const [customHarmonyDraft, setCustomHarmonyDraft] = useState<HarmonyLine[]>(
-    [],
-  );
+  const [customArrangementDraft, setCustomArrangementDraft] =
+    useState<CustomArrangement | null>(null);
   const [tempoInputValue, setTempoInputValue] = useState(
     String(arrangement.input.tempo),
   );
@@ -77,9 +76,11 @@ export function SetupScreen() {
     const session = playHarmonyPreview(
       ctx,
       parsed,
-      voicing.lines,
       arrangement.input.meter[0],
       tempo,
+      mode === "custom" && arrangement.effectiveCustomArrangement != null
+        ? { arrangementVoices: arrangement.effectiveCustomArrangement.voices }
+        : { harmonyLines: voicing.lines },
     );
     previewSessionRef.current = session;
 
@@ -111,21 +112,28 @@ export function SetupScreen() {
   }
 
   function handleCustomizeHarmony() {
-    const baseLines =
-      arrangement.input.customHarmony?.lines ??
-      arrangement.selectedHarmonyVoicing?.lines;
-    if (baseLines == null) return;
+    const baseArrangement =
+      arrangement.input.customArrangement ?? arrangement.effectiveCustomArrangement;
+    if (baseArrangement == null) return;
     handleStopPreview();
-    setCustomHarmonyDraft(baseLines.map((line: HarmonyLine) => [...line]));
+    setCustomArrangementDraft({
+      ticksPerBeat: baseArrangement.ticksPerBeat,
+      voices: baseArrangement.voices.map((voice: CustomArrangement["voices"][number]) => ({
+        id: voice.id,
+        events: voice.events.map(
+          (
+            event: CustomArrangement["voices"][number]["events"][number],
+          ) => ({ ...event }),
+        ),
+      })),
+    });
     setIsCustomizingHarmony(true);
   }
 
-  function handleSaveCustomHarmony(lines: HarmonyLine[]) {
+  function handleSaveCustomHarmony(arrangementOverride: CustomArrangement) {
     handleStopPreview();
     model.setArrangementInput({
-      customHarmony: {
-        lines: lines.map((line) => [...line]),
-      },
+      customArrangement: arrangementOverride,
     });
     setIsCustomizingHarmony(false);
   }
@@ -134,7 +142,7 @@ export function SetupScreen() {
     if (previewingMode === "custom") {
       handleStopPreview();
     }
-    model.setArrangementInput({ customHarmony: null });
+    model.setArrangementInput({ customArrangement: null });
   }
 
   function handleTempoInputChange(value: string) {
@@ -217,7 +225,7 @@ export function SetupScreen() {
     return (
       <CustomHarmonyEditor
         arrangement={arrangement}
-        draftLines={customHarmonyDraft}
+        draftArrangement={customArrangementDraft ?? arrangement.effectiveCustomArrangement}
         ctx={audioContext}
         onRequestAudioContext={() => model.ensureAudioContext()}
         onCancel={() => setIsCustomizingHarmony(false)}

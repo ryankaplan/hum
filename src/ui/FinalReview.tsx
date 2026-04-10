@@ -1,4 +1,4 @@
-import { Box, Button, Flex, Heading, Progress, Text } from "@chakra-ui/react";
+import { Box, Button, Flex, Progress, Text } from "@chakra-ui/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useObservable } from "../observable";
 import {
@@ -108,8 +108,9 @@ export function FinalReview() {
     [documentState.clipsById, documentState.trackOrder],
   );
   const timelinesRef = useRef<TrackClip[][]>(timelines);
-  const hasAnyTakes = primaryRecordingIds.some((recordingId) => recordingId != null);
-
+  const hasAnyTakes = primaryRecordingIds.some(
+    (recordingId) => recordingId != null,
+  );
   const selection = editorState.selection;
   const committedPlayheadSec = editorState.playheadSec;
   const reverbWet = documentState.reverbWet;
@@ -777,14 +778,6 @@ export function FinalReview() {
                     VIDEO EDITOR
                   </Text>
                 </Flex>
-                <Heading
-                  size="lg"
-                  color={dsColors.text}
-                  mt={2.5}
-                  letterSpacing="-0.02em"
-                >
-                  Review and shape your arrangement
-                </Heading>
                 <Text color={dsColors.textMuted} fontSize="sm" mt={1}>
                   {hasAnyTakes
                     ? "Record new takes from the video grid, then trim and balance tracks below."
@@ -800,7 +793,11 @@ export function FinalReview() {
                 flexShrink={0}
               >
                 {showWebmFallbackMessage && (
-                  <Text color={dsColors.textMuted} fontSize="xs" alignSelf="center">
+                  <Text
+                    color={dsColors.textMuted}
+                    fontSize="xs"
+                    alignSelf="center"
+                  >
                     Export will use WebM in this browser.
                   </Text>
                 )}
@@ -860,7 +857,9 @@ export function FinalReview() {
                     {...dsPrimaryButton}
                     size="lg"
                     onClick={handleExport}
-                    disabled={exporting || isSyncingFrames || timelineEndSec <= 0}
+                    disabled={
+                      exporting || isSyncingFrames || timelineEndSec <= 0
+                    }
                     loading={exporting}
                     loadingText="Exporting..."
                   >
@@ -884,35 +883,56 @@ export function FinalReview() {
               borderRight={{ base: "0", lg: "1px solid" }}
               borderBottom={{ base: "1px solid", lg: "0" }}
               borderColor={dsColors.border}
-              bg={dsColors.surfaceSubtle}
+              bg="transparent"
             >
               <Box
-                position="relative"
+                display="flex"
+                alignItems="center"
+                justifyContent="center"
                 h="100%"
                 minH={{ base: "320px", md: "420px", lg: "100%" }}
-                bg={dsColors.mediaBg}
+                p={{ base: 4, md: 5 }}
                 overflow="hidden"
+                bg="transparent"
               >
-                <canvas
-                  ref={canvasRef}
-                  style={{ width: "100%", height: "100%", display: "block" }}
-                />
-                <PreviewOverlay
-                  trackOrder={documentState.trackOrder}
-                  primaryRecordingIds={primaryRecordingIds}
-                  selectedTrackId={selection.trackId}
-                  onSelectPart={(index) => {
-                    const trackId = documentState.trackOrder[index];
-                    if (trackId == null) return;
-                    const clipId =
-                      model.tracksDocument.getOrderedClipsForTrack(trackId)[0]?.id ??
-                      null;
-                    model.currentPartIndex.set(index);
-                    model.tracksEditor.setSelection({ trackId, clipId });
+                <Box
+                  position="relative"
+                  w="100%"
+                  h="100%"
+                  maxW={{
+                    base: "min(100%, 340px)",
+                    lg: "min(100%, calc((100dvh - 140px) * 9 / 16))",
                   }}
-                  onRecordPart={handleRedoPart}
-                  disabled={exporting || isSyncingFrames}
-                />
+                  maxH="100%"
+                  aspectRatio="9/16"
+                  borderRadius="2xl"
+                  overflow="hidden"
+                  bg="transparent"
+                  border="1px solid"
+                  borderColor={dsColors.border}
+                  boxShadow="0 16px 36px color-mix(in srgb, var(--app-text) 12%, transparent)"
+                >
+                  <canvas
+                    ref={canvasRef}
+                    style={{ width: "100%", height: "100%", display: "block" }}
+                  />
+                  <PreviewOverlay
+                    trackOrder={documentState.trackOrder}
+                    primaryRecordingIds={primaryRecordingIds}
+                    selectedTrackId={selection.trackId}
+                    onSelectPart={(index) => {
+                      const trackId = documentState.trackOrder[index];
+                      if (trackId == null) return;
+                      const clipId =
+                        model.tracksDocument.getOrderedClipsForTrack(trackId)[0]
+                          ?.id ?? null;
+                      model.currentPartIndex.set(index);
+                      model.tracksEditor.setSelection({ trackId, clipId });
+                    }}
+                    onRecordPart={handleRedoPart}
+                    disabled={exporting || isSyncingFrames}
+                  />
+                </Box>
               </Box>
             </Box>
 
@@ -979,19 +999,19 @@ function PreviewOverlay(input: {
               borderColor={
                 isSelected
                   ? "color-mix(in srgb, var(--app-accent) 78%, white 22%)"
-                  : "rgba(255, 255, 255, 0.12)"
+                  : "color-mix(in srgb, var(--app-border) 55%, white 45%)"
               }
               bg={
                 hasTake
-                  ? "linear-gradient(180deg, rgba(10, 10, 14, 0.14), rgba(10, 10, 14, 0.3))"
-                  : "linear-gradient(180deg, rgba(9, 11, 18, 0.82), rgba(17, 20, 28, 0.72))"
+                  ? "transparent"
+                  : "linear-gradient(180deg, rgba(250, 244, 236, 0.76), rgba(224, 212, 198, 0.66))"
               }
               boxShadow={
                 isSelected
-                  ? "0 0 0 1px color-mix(in srgb, var(--app-accent) 42%, transparent), 0 24px 44px rgba(0, 0, 0, 0.24)"
-                  : "0 20px 36px rgba(0, 0, 0, 0.18)"
+                  ? "0 0 0 1px color-mix(in srgb, var(--app-accent) 42%, transparent), 0 24px 44px rgba(93, 69, 48, 0.18)"
+                  : "0 18px 34px rgba(93, 69, 48, 0.14)"
               }
-              backdropFilter="blur(8px)"
+              backdropFilter={hasTake ? undefined : "blur(8px)"}
               pointerEvents="auto"
               onClick={() => onSelectPart(index)}
               style={{ cursor: "pointer" }}
@@ -999,7 +1019,11 @@ function PreviewOverlay(input: {
               <Flex justify="space-between" align="flex-start" gap={2}>
                 <Box>
                   <Text
-                    color="white"
+                    color={
+                      hasTake
+                        ? "white"
+                        : "color-mix(in srgb, var(--app-text) 90%, black 10%)"
+                    }
                     fontSize={{ base: "sm", md: "md" }}
                     fontWeight="semibold"
                     letterSpacing="-0.01em"
@@ -1007,7 +1031,11 @@ function PreviewOverlay(input: {
                     {getPartLabel(index, trackOrder.length)}
                   </Text>
                   <Text
-                    color="rgba(255,255,255,0.7)"
+                    color={
+                      hasTake
+                        ? "rgba(255,255,255,0.72)"
+                        : "color-mix(in srgb, var(--app-text-muted) 88%, black 12%)"
+                    }
                     fontSize="10px"
                     fontWeight="semibold"
                     letterSpacing="0.08em"
@@ -1017,47 +1045,31 @@ function PreviewOverlay(input: {
                     {hasTake ? "Take ready" : "No take yet"}
                   </Text>
                 </Box>
-                {isSelected && (
-                  <Box
-                    px={2}
-                    py={1}
-                    borderRadius="full"
-                    bg="rgba(255,255,255,0.14)"
-                    color="white"
-                    fontSize="10px"
-                    fontWeight="semibold"
-                    letterSpacing="0.08em"
-                    textTransform="uppercase"
-                  >
-                    Selected
-                  </Box>
-                )}
+                <Box />
               </Flex>
-
-              {!hasTake && (
-                <Box>
-                  <Text
-                    color="rgba(255,255,255,0.76)"
-                    fontSize={{ base: "xs", md: "sm" }}
-                    maxW="18ch"
-                    lineHeight="1.35"
-                    mb={3}
-                  >
-                    Capture this part to start building the grid.
-                  </Text>
-                </Box>
-              )}
 
               <Flex justify="flex-start">
                 <Button
                   size="sm"
                   borderRadius="full"
-                  bg={hasTake ? "rgba(12, 12, 14, 0.46)" : "white"}
-                  color={hasTake ? "white" : "black"}
+                  bg={
+                    hasTake
+                      ? "rgba(255, 250, 245, 0.2)"
+                      : "rgba(255,255,255,0.88)"
+                  }
+                  color={
+                    hasTake
+                      ? "white"
+                      : "color-mix(in srgb, var(--app-text) 90%, black 10%)"
+                  }
                   border="1px solid"
-                  borderColor={hasTake ? "rgba(255,255,255,0.16)" : "transparent"}
+                  borderColor={
+                    hasTake
+                      ? "rgba(255,255,255,0.2)"
+                      : "color-mix(in srgb, var(--app-border) 45%, white 55%)"
+                  }
                   backdropFilter={hasTake ? "blur(6px)" : undefined}
-                  boxShadow="0 10px 20px rgba(0, 0, 0, 0.2)"
+                  boxShadow="0 10px 20px rgba(93, 69, 48, 0.16)"
                   px={4}
                   h={9}
                   fontSize="sm"
@@ -1068,7 +1080,9 @@ function PreviewOverlay(input: {
                   }}
                   disabled={disabled}
                   _hover={{
-                    bg: hasTake ? "rgba(12, 12, 14, 0.62)" : "rgba(255,255,255,0.9)",
+                    bg: hasTake
+                      ? "rgba(255, 250, 245, 0.3)"
+                      : "rgba(255,255,255,0.96)",
                   }}
                 >
                   {hasTake ? "Redo" : "Record"}

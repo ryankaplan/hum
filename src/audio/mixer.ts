@@ -39,14 +39,14 @@ export function createMixer(
 
   // Dry path
   const dryGain = ctx.createGain();
-  dryGain.gain.value = 0.85;
+  dryGain.gain.value = 0.8;
   dryGain.connect(masterGain);
 
   // Wet (reverb) path
   const convolver = ctx.createConvolver();
   convolver.buffer = buildImpulseBuffer(ctx, 1.5, 2.5);
   const wetGain = ctx.createGain();
-  wetGain.gain.value = 0.15;
+  wetGain.gain.value = 0.2;
   convolver.connect(wetGain);
   wetGain.connect(masterGain);
 

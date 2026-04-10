@@ -81,6 +81,7 @@ export type TracksDocumentState = {
   tracksById: Record<TrackId, TrackRecord>;
   clipsById: Record<ClipId, TrackClip>;
   recordingsById: Record<RecordingId, RecordingRecord>;
+  referenceWaveformTrackId: TrackId | null;
 
   // Global mix state that still applies across the full track document.
   reverbWet: number;
@@ -159,6 +160,7 @@ export function createEmptyTracksDocument(
     tracksById,
     clipsById: {},
     recordingsById: {},
+    referenceWaveformTrackId: null,
     reverbWet: DEFAULT_REVERB_WET,
   };
 }
@@ -221,7 +223,14 @@ export class TracksDocumentModel {
   }
 
   replaceDocument(document: TracksDocumentState): void {
-    this.document.set(document);
+    this.document.set({
+      ...document,
+      referenceWaveformTrackId:
+        document.referenceWaveformTrackId != null &&
+        document.tracksById[document.referenceWaveformTrackId] != null
+          ? document.referenceWaveformTrackId
+          : null,
+    });
   }
 
   stageCommittedRecording(input: {
@@ -282,6 +291,7 @@ export class TracksDocumentModel {
         tracksById: nextTracksById,
         clipsById: nextClipsById,
         recordingsById: nextRecordingsById,
+        referenceWaveformTrackId: current.referenceWaveformTrackId ?? trackId,
       };
     });
 
@@ -778,6 +788,11 @@ export class TracksDocumentModel {
         tracksById: nextTracksById,
         clipsById: nextClipsById,
         recordingsById: nextRecordingsById,
+        referenceWaveformTrackId:
+          current.referenceWaveformTrackId != null &&
+          nextTracksById[current.referenceWaveformTrackId] != null
+            ? current.referenceWaveformTrackId
+            : null,
       };
     });
 

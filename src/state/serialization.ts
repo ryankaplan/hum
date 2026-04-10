@@ -200,6 +200,7 @@ function serializeTracksDocument(
     tracksById,
     clipsById,
     recordingsById,
+    referenceWaveformTrackId: tracks.referenceWaveformTrackId,
     reverbWet: tracks.reverbWet,
   };
 }
@@ -252,6 +253,11 @@ function deserializeTracksDocument(
     tracksById,
     clipsById,
     recordingsById,
+    referenceWaveformTrackId:
+      saved.referenceWaveformTrackId != null &&
+      tracksById[saved.referenceWaveformTrackId] != null
+        ? saved.referenceWaveformTrackId
+        : null,
     reverbWet: saved.reverbWet,
   };
 }

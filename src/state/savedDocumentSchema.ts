@@ -128,6 +128,7 @@ export type SavedTracksDocument = {
   tracksById: Record<string, SavedTrack>;
   clipsById: Record<string, SavedClip>;
   recordingsById: Record<string, SavedRecording>;
+  referenceWaveformTrackId?: string | null;
   reverbWet: number;
 };
 
@@ -369,11 +370,15 @@ function parseSavedTracksDocument(raw: unknown): SavedTracksDocument | null {
     raw.recordingsById,
     parseSavedRecording,
   );
+  const referenceWaveformTrackId = raw.referenceWaveformTrackId;
   if (
     isStringArray(raw.trackOrder) === false ||
     tracksById == null ||
     clipsById == null ||
     recordingsById == null ||
+    (referenceWaveformTrackId !== undefined &&
+      referenceWaveformTrackId !== null &&
+      typeof referenceWaveformTrackId !== "string") ||
     isFiniteNumber(raw.reverbWet) === false
   ) {
     return null;
@@ -383,6 +388,10 @@ function parseSavedTracksDocument(raw: unknown): SavedTracksDocument | null {
     tracksById,
     clipsById,
     recordingsById,
+    referenceWaveformTrackId:
+      referenceWaveformTrackId === undefined
+        ? null
+        : (referenceWaveformTrackId as string | null),
     reverbWet: raw.reverbWet,
   };
 }

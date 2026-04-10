@@ -80,6 +80,7 @@ function makeDocument(
       tracksById,
       clipsById,
       recordingsById,
+      referenceWaveformTrackId: null,
       reverbWet: 0.2,
     },
     exportPreferences: {

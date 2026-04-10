@@ -3,6 +3,7 @@ import {
   createMonitorPlayer,
   decodeMonitorLanes,
   type EncodedMonitorSegment,
+  type MonitorLane,
   type MonitorPlayer,
 } from "../audio/monitorPlayer";
 import type { ArrangementVoice } from "../music/arrangementScore";
@@ -64,16 +65,25 @@ export type RecordingTransportInputs = {
 };
 
 export function selectReferenceWaveformLane<
-  T extends { segments: ArrayLike<unknown> },
->(lanes: readonly T[]): T | null {
-  for (let index = lanes.length - 1; index >= 0; index--) {
-    const lane = lanes[index];
-    if (lane != null && lane.segments.length > 0) {
-      return lane;
-    }
-  }
-  return null;
+  T extends { trackId: TrackId; segments: ArrayLike<unknown> },
+>(
+  lanes: readonly T[],
+  referenceWaveformTrackId: TrackId | null,
+): T | null {
+  if (referenceWaveformTrackId == null) return null;
+  return (
+    lanes.find(
+      (lane) =>
+        lane.trackId === referenceWaveformTrackId && lane.segments.length > 0,
+    ) ?? null
+  );
 }
+
+type EncodedMonitorLane = {
+  trackId: TrackId;
+  partIndex: number;
+  segments: EncodedMonitorSegment[];
+};
 
 type PendingTake = {
   blob: Blob;
@@ -471,16 +481,17 @@ export class RecordingTransportController {
 
   private async rebuildMonitorPlayer(): Promise<void> {
     const inputs = this.inputs;
-    if (inputs == null || inputs.ctx == null || inputs.partIndex === 0) return;
+    if (inputs == null || inputs.ctx == null) return;
 
     const buildVersion = this.monitorBuildVersion;
     const encodedLanes = this.buildEncodedMonitorLanes(
       inputs.orderedTrackIds,
       inputs.partIndex,
     );
-    if (encodedLanes.length === 0) return;
-
-    const lanes = await decodeMonitorLanes(inputs.ctx, encodedLanes);
+    const lanes =
+      encodedLanes.length > 0
+        ? await decodeMonitorLanes(inputs.ctx, encodedLanes)
+        : [];
     if (
       this.disposed ||
       this.monitorBuildVersion !== buildVersion ||
@@ -494,16 +505,25 @@ export class RecordingTransportController {
       inputs.chords,
       inputs.tempo,
     );
-    const referenceLane = selectReferenceWaveformLane(lanes);
-    this.updateSnapshot({
-      referenceWaveform:
-        referenceLane == null
-          ? null
-          : buildReferenceWaveform({
-              segments: referenceLane.segments,
-              maxDurationSec: arrangementDurationSec,
-            }),
+    const referenceWaveform = await this.resolveReferenceWaveform({
+      ctx: inputs.ctx,
+      arrangementDurationSec,
+      encodedLanes,
+      lanes,
+      referenceWaveformTrackId: inputs.tracksRevision.referenceWaveformTrackId,
     });
+    if (
+      this.disposed ||
+      this.monitorBuildVersion !== buildVersion ||
+      this.inputs?.ctx !== inputs.ctx
+    ) {
+      return;
+    }
+    this.updateSnapshot({
+      referenceWaveform,
+    });
+
+    if (encodedLanes.length === 0) return;
 
     const player = createMonitorPlayer(inputs.ctx, lanes, arrangementDurationSec);
     for (let laneIndex = 0; laneIndex < encodedLanes.length; laneIndex++) {
@@ -525,35 +545,93 @@ export class RecordingTransportController {
   private buildEncodedMonitorLanes(
     orderedTrackIds: TrackId[],
     partIndex: number,
-  ): Array<{ partIndex: number; segments: EncodedMonitorSegment[] }> {
-    const encodedLanes: Array<{
-      partIndex: number;
-      segments: EncodedMonitorSegment[];
-    }> = [];
+  ): EncodedMonitorLane[] {
+    const encodedLanes: EncodedMonitorLane[] = [];
 
     for (let index = 0; index < partIndex; index++) {
       const trackId = orderedTrackIds[index];
       if (trackId == null) continue;
 
-      const clips = model.tracksDocument.getOrderedClipsForTrack(trackId);
-      const segments: EncodedMonitorSegment[] = [];
-      for (const clip of clips) {
-        const blob = model.getRecordingBlob(clip.recordingId);
-        if (blob == null) continue;
-        segments.push({
-          recordingId: clip.recordingId,
-          blob,
-          timelineStartSec: clip.timelineStartSec,
-          sourceStartSec: clip.sourceStartSec,
-          durationSec: clip.durationSec,
-        });
-      }
-
-      if (segments.length === 0) continue;
-      encodedLanes.push({ partIndex: index, segments });
+      const lane = this.buildEncodedMonitorLane(trackId, index);
+      if (lane == null) continue;
+      encodedLanes.push(lane);
     }
 
     return encodedLanes;
+  }
+
+  private buildEncodedMonitorLane(
+    trackId: TrackId,
+    partIndex: number,
+  ): EncodedMonitorLane | null {
+    const clips = model.tracksDocument.getOrderedClipsForTrack(trackId);
+    const segments: EncodedMonitorSegment[] = [];
+    for (const clip of clips) {
+      const blob = model.getRecordingBlob(clip.recordingId);
+      if (blob == null) continue;
+      segments.push({
+        recordingId: clip.recordingId,
+        blob,
+        timelineStartSec: clip.timelineStartSec,
+        sourceStartSec: clip.sourceStartSec,
+        durationSec: clip.durationSec,
+      });
+    }
+
+    if (segments.length === 0) return null;
+    return {
+      trackId,
+      partIndex,
+      segments,
+    };
+  }
+
+  private async resolveReferenceWaveform(input: {
+    ctx: AudioContext;
+    arrangementDurationSec: number;
+    encodedLanes: EncodedMonitorLane[];
+    lanes: MonitorLane[];
+    referenceWaveformTrackId: TrackId | null;
+  }): Promise<ReferenceWaveform | null> {
+    const {
+      ctx,
+      arrangementDurationSec,
+      encodedLanes,
+      lanes,
+      referenceWaveformTrackId,
+    } = input;
+
+    const decodedReferenceLane = selectReferenceWaveformLane(
+      encodedLanes.map((lane, index) => ({
+        trackId: lane.trackId,
+        segments: lanes[index]?.segments ?? [],
+      })),
+      referenceWaveformTrackId,
+    );
+    if (decodedReferenceLane != null) {
+      return buildReferenceWaveform({
+        segments: decodedReferenceLane.segments,
+        maxDurationSec: arrangementDurationSec,
+      });
+    }
+
+    if (referenceWaveformTrackId == null) return null;
+
+    const encodedReferenceLane = this.buildEncodedMonitorLane(
+      referenceWaveformTrackId,
+      -1,
+    );
+    if (encodedReferenceLane == null) return null;
+
+    const [decodedLane] = await decodeMonitorLanes(ctx, [encodedReferenceLane]);
+    if (decodedLane == null || decodedLane.segments.length === 0) {
+      return null;
+    }
+
+    return buildReferenceWaveform({
+      segments: decodedLane.segments,
+      maxDurationSec: arrangementDurationSec,
+    });
   }
 
   private applyMutedParts(): void {

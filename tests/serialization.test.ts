@@ -50,6 +50,7 @@ function makeDraftSnapshot(
         tracksById: {},
         clipsById: {},
         recordingsById: {},
+        referenceWaveformTrackId: null,
         reverbWet: 0.2,
       },
       exportPreferences: {
@@ -104,5 +105,27 @@ describe("serializeHumDocument / deserializeHumDocument", () => {
       beatVolume: 0.7,
       priorHarmonyVolume: 0.2,
     });
+  });
+
+  it("round-trips the reference waveform track id and defaults missing values to null", () => {
+    const serialized = serializeHumDocument(makeDraftSnapshot("dynamic"));
+    serialized.tracks.trackOrder = ["track-1"];
+    serialized.tracks.tracksById = {
+      "track-1": {
+        id: "track-1",
+        role: "melody",
+        clipIds: [],
+        volume: 1,
+        muted: false,
+      },
+    };
+    serialized.tracks.referenceWaveformTrackId = "track-1";
+
+    const restored = deserializeHumDocument(serialized);
+    expect(restored.document.tracks.referenceWaveformTrackId).toBe("track-1");
+
+    delete serialized.tracks.referenceWaveformTrackId;
+    const restoredWithoutReference = deserializeHumDocument(serialized);
+    expect(restoredWithoutReference.document.tracks.referenceWaveformTrackId).toBeNull();
   });
 });

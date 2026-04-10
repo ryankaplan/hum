@@ -27,6 +27,7 @@ function makeSavedHumDocument(
       tracksById: {},
       clipsById: {},
       recordingsById: {},
+      referenceWaveformTrackId: null,
       reverbWet: 0.2,
     },
     exportPreferences: {
@@ -130,9 +131,12 @@ describe("parseSavedHumDocument", () => {
   });
 
   it("accepts current drafts without persisted workflow state", () => {
-    const parsed = parseSavedHumDocument(makeSavedHumDocument("lower two thirds"));
+    const saved = makeSavedHumDocument("lower two thirds");
+    delete saved.tracks.referenceWaveformTrackId;
+    const parsed = parseSavedHumDocument(saved);
 
     expect(parsed?.tracks.reverbWet).toBe(0.2);
+    expect(parsed?.tracks.referenceWaveformTrackId).toBeNull();
   });
 
   it("accepts persisted recording monitor preferences", () => {
@@ -143,5 +147,23 @@ describe("parseSavedHumDocument", () => {
       beatVolume: 1,
       priorHarmonyVolume: 1,
     });
+  });
+
+  it("accepts a persisted reference waveform track id", () => {
+    const saved = makeSavedHumDocument("lower two thirds");
+    saved.tracks.trackOrder = ["track-1"];
+    saved.tracks.tracksById = {
+      "track-1": {
+        id: "track-1",
+        role: "melody",
+        clipIds: [],
+        volume: 1,
+        muted: false,
+      },
+    };
+    saved.tracks.referenceWaveformTrackId = "track-1";
+
+    const parsed = parseSavedHumDocument(saved);
+    expect(parsed?.tracks.referenceWaveformTrackId).toBe("track-1");
   });
 });

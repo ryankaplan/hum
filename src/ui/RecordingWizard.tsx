@@ -7,30 +7,11 @@ import {
   Stack,
   Text,
 } from "@chakra-ui/react";
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useRef } from "react";
 import { useObservable } from "../observable";
 import { flattenArrangementLyrics } from "../state/arrangementModel";
 import { model } from "../state/model";
 import { getPartLabel } from "../music/types";
-import {
-  isRecordingCancelledError,
-  startRecordTake,
-  type RecordingSession,
-} from "../recording/recorder";
-import {
-  progressionDurationSec,
-  startRecordingPlayback,
-  stopAllPlayback,
-} from "../music/playback";
-import type { PlaybackSession } from "../music/playback";
-import {
-  createMonitorPlayer,
-  decodeMonitorLanes,
-} from "../audio/monitorPlayer";
-import type {
-  EncodedMonitorSegment,
-  MonitorPlayer,
-} from "../audio/monitorPlayer";
 import { resolveRecordingHarmonyGuidance } from "../recording/harmonyGuidance";
 import { CameraPreview } from "./CameraPreview";
 import {
@@ -45,17 +26,9 @@ import { NoteDisplay } from "./NoteDisplay";
 import { RecordingBeatIndicator } from "./RecordingBeatIndicator";
 import { RecordingMonitorPanel } from "./RecordingMonitorPanel";
 import {
-  buildReferenceWaveform,
-  type ReferenceWaveform,
-} from "./waveformRendering";
-
-// "listening" = playing guide tones without recording (pre-roll practice)
-type RecordPhase =
-  | "pre-roll"
-  | "listening"
-  | "counting-in"
-  | "recording"
-  | "review";
+  type RecordPhase,
+  useRecordingTransportController,
+} from "./RecordingTransportController";
 
 type RecordingListProps = {
   stream: MediaStream;
@@ -64,7 +37,6 @@ type RecordingListProps = {
   keptUrls: (string | null)[];
   phase: RecordPhase;
   reviewUrl: string | null;
-  reviewVideoRef: RefObject<HTMLVideoElement | null>;
   mutedParts: boolean[];
   onToggleMute: (index: number) => void;
   hideCurrentKeptPreview: boolean;
@@ -77,7 +49,6 @@ function RecordingList({
   keptUrls,
   phase,
   reviewUrl,
-  reviewVideoRef,
   mutedParts,
   onToggleMute,
   hideCurrentKeptPreview,
@@ -127,16 +98,7 @@ function RecordingList({
                 )}
 
                 {isCurrent && phase === "review" && reviewUrl != null && (
-                  <video
-                    ref={reviewVideoRef}
-                    playsInline
-                    style={{
-                      width: "100%",
-                      height: "100%",
-                      objectFit: "cover",
-                      display: "block",
-                    }}
-                  />
+                  <ReviewCell url={reviewUrl} />
                 )}
 
                 {showKeptPreview && keptUrl != null && (
@@ -179,6 +141,38 @@ function RecordingList({
         })}
       </Flex>
     </Box>
+  );
+}
+
+type ReviewCellProps = {
+  url: string;
+};
+
+function ReviewCell({ url }: ReviewCellProps) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const el = videoRef.current;
+    if (el == null) return;
+    el.src = url;
+    el.play().catch(() => {});
+    return () => {
+      el.pause();
+      el.src = "";
+    };
+  }, [url]);
+
+  return (
+    <video
+      ref={videoRef}
+      playsInline
+      style={{
+        width: "100%",
+        height: "100%",
+        objectFit: "cover",
+        display: "block",
+      }}
+    />
   );
 }
 
@@ -260,42 +254,15 @@ export function RecordingWizard() {
   const recordingMonitorPreferences = useObservable(
     model.recordingMonitorPreferences,
   );
-
-  const [phase, setPhase] = useState<RecordPhase>("pre-roll");
-  const [activeChordIndex, setActiveChordIndex] = useState(0);
-  const [countInBeat, setCountInBeat] = useState(0);
-  const [currentAbsoluteBeat, setCurrentAbsoluteBeat] = useState(-1);
-  const [reviewUrl, setReviewUrl] = useState<string | null>(null);
-  const [guideToneEnabled, setGuideToneEnabled] = useState(true);
-  const [mutedParts, setMutedParts] = useState<boolean[]>([]);
-  const [referenceWaveform, setReferenceWaveform] =
-    useState<ReferenceWaveform | null>(null);
-
-  const reviewVideoRef = useRef<HTMLVideoElement>(null);
-  const reviewUrlRef = useRef<string | null>(null);
-  const monitorPlayerRef = useRef<MonitorPlayer | null>(null);
-  const beatGainRef = useRef<GainNode | null>(null);
-  const guideToneGainRef = useRef<GainNode | null>(null);
-  const monitorLanePartIndicesRef = useRef<number[]>([]);
-  const currentBlobRef = useRef<Blob | null>(null);
-  const currentAlignmentOffsetRef = useRef<number>(0);
-  const listenSessionRef = useRef<PlaybackSession | null>(null);
-  const recordSessionRef = useRef<RecordingSession | null>(null);
-  // Incremented each time a new MonitorPlayer finishes decoding so the looping
-  // effect can fire even though monitorPlayerRef is a ref (not state).
-  const [monitorPlayerKey, setMonitorPlayerKey] = useState(0);
-
   const totalParts = tracksDocument.trackOrder.length;
   const harmonyPartCount = Math.max(1, totalParts - 1);
   const isLastPart = partIndex === totalParts - 1;
   const isMelodyPart = partIndex >= harmonyPartCount;
   const hasPriorHarmonyMonitorControl = partIndex > 0 && !isMelodyPart;
   const beatsPerBar = arrangement.meter[0];
-  const arrangementDurationSec = progressionDurationSec(chords, arrangement.tempo);
   const guideToneVolume = recordingMonitorPreferences.guideToneVolume;
   const beatVolume = recordingMonitorPreferences.beatVolume;
   const priorHarmonyLevel = recordingMonitorPreferences.priorHarmonyVolume;
-  const effectiveGuideToneLevel = guideToneEnabled ? guideToneVolume : 0;
 
   const { harmonyLine, countInCueMidi } = resolveRecordingHarmonyGuidance(
     voicing,
@@ -313,388 +280,45 @@ export function RecordingWizard() {
       model.tracksDocument.getPrimaryRecordingIdForTrack(trackId);
     return recordingId != null ? model.getRecordingUrl(recordingId) : null;
   });
+  const { controller, snapshot } = useRecordingTransportController({
+    ctx,
+    stream,
+    partIndex,
+    totalParts,
+    orderedTrackIds,
+    tracksRevision: tracksDocument,
+    chords,
+    harmonyLine,
+    melodyBackingLines,
+    countInCueMidi,
+    beatsPerBar,
+    tempo: arrangement.tempo,
+    alignmentCorrectionSec,
+    guideToneVolume,
+    beatVolume,
+    priorHarmonyLevel,
+  });
 
-  useEffect(() => {
-    beatGainRef.current?.disconnect();
-    guideToneGainRef.current?.disconnect();
-    beatGainRef.current = null;
-    guideToneGainRef.current = null;
-
-    if (ctx == null) return;
-
-    const beatGain = ctx.createGain();
-    beatGain.gain.value = beatVolume;
-    beatGain.connect(ctx.destination);
-    beatGainRef.current = beatGain;
-
-    const guideToneGain = ctx.createGain();
-    guideToneGain.gain.value = effectiveGuideToneLevel;
-    guideToneGain.connect(ctx.destination);
-    guideToneGainRef.current = guideToneGain;
-
-    return () => {
-      beatGain.disconnect();
-      guideToneGain.disconnect();
-    };
-  }, [ctx]);
-
-  useEffect(() => {
-    if (ctx == null) return;
-    beatGainRef.current?.gain.setValueAtTime(beatVolume, ctx.currentTime);
-  }, [beatVolume, ctx]);
-
-  useEffect(() => {
-    if (ctx == null) return;
-    guideToneGainRef.current?.gain.setValueAtTime(
-      effectiveGuideToneLevel,
-      ctx.currentTime,
-    );
-  }, [effectiveGuideToneLevel, ctx]);
-
-  // Rebuild the MonitorPlayer whenever we advance to a new part.
-  // Decoding is async; we use a cancelled flag to discard stale results.
-  useEffect(() => {
-    monitorPlayerRef.current?.dispose();
-    monitorPlayerRef.current = null;
-    monitorLanePartIndicesRef.current = [];
-    setReferenceWaveform(null);
-
-    if (ctx == null || partIndex === 0) return;
-
-    let cancelled = false;
-
-    const encodedLanes: Array<{
-      partIndex: number;
-      segments: EncodedMonitorSegment[];
-    }> = [];
-
-    for (let i = 0; i < partIndex; i++) {
-      const trackId = orderedTrackIds[i];
-      if (trackId == null) continue;
-      const clips = model.tracksDocument.getOrderedClipsForTrack(trackId);
-      const segments: EncodedMonitorSegment[] = [];
-
-      for (const clip of clips) {
-        const blob = model.getRecordingBlob(clip.recordingId);
-        if (blob == null) continue;
-        segments.push({
-          recordingId: clip.recordingId,
-          blob,
-          timelineStartSec: clip.timelineStartSec,
-          sourceStartSec: clip.sourceStartSec,
-          durationSec: clip.durationSec,
-        });
-      }
-
-      if (segments.length === 0) continue;
-      encodedLanes.push({ partIndex: i, segments });
-    }
-
-    if (encodedLanes.length === 0) return;
-
-    void decodeMonitorLanes(ctx, encodedLanes).then((lanes) => {
-      if (cancelled) return;
-
-      monitorLanePartIndicesRef.current = encodedLanes.map((lane) => lane.partIndex);
-      const referenceLane = lanes.find((lane) => lane.segments.length > 0) ?? null;
-      setReferenceWaveform(
-        referenceLane == null
-          ? null
-          : buildReferenceWaveform({
-              segments: referenceLane.segments,
-              maxDurationSec: arrangementDurationSec,
-            }),
-      );
-      const player = createMonitorPlayer(ctx, lanes, arrangementDurationSec);
-      // Apply current mute state
-      for (let laneIndex = 0; laneIndex < encodedLanes.length; laneIndex++) {
-        const lane = encodedLanes[laneIndex];
-        if (lane == null) continue;
-        player.setMuted(laneIndex, mutedParts[lane.partIndex] ?? false);
-      }
-      player.setLevel(priorHarmonyLevel);
-      monitorPlayerRef.current = player;
-      setMonitorPlayerKey((k) => k + 1);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [arrangementDurationSec, ctx, orderedTrackIds, partIndex, tracksDocument]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Sync mute state onto the MonitorPlayer when mutedParts changes
-  useEffect(() => {
-    const player = monitorPlayerRef.current;
-    if (player == null) return;
-    const lanePartIndices = monitorLanePartIndicesRef.current;
-    for (let laneIndex = 0; laneIndex < lanePartIndices.length; laneIndex++) {
-      const partI = lanePartIndices[laneIndex];
-      if (partI == null) continue;
-      player.setMuted(laneIndex, mutedParts[partI] ?? false);
-    }
-  }, [mutedParts]);
-
-  useEffect(() => {
-    const player = monitorPlayerRef.current;
-    if (player == null) return;
-    player.setLevel(priorHarmonyLevel);
-  }, [priorHarmonyLevel, monitorPlayerKey]);
-
-  useEffect(() => {
-    setMutedParts((prev) =>
-      Array.from({ length: totalParts }, (_, i) => prev[i] ?? false),
-    );
-  }, [totalParts]);
-
-  // Auto-play looping audio preview during pre-roll so kept parts are audible
-  // while the user decides whether to listen or record. Fires when the phase
-  // becomes "pre-roll" OR when a newly decoded MonitorPlayer becomes available
-  // (monitorPlayerKey bumps on each successful decode).
-  useEffect(() => {
-    if (phase !== "pre-roll") return;
-    const player = monitorPlayerRef.current;
-    if (player == null) return;
-    player.startLooping();
-    return () => {
-      player.stop();
-    };
-  }, [phase, monitorPlayerKey]);
-
-  useEffect(() => {
-    if (
-      phase === "review" &&
-      reviewVideoRef.current != null &&
-      reviewUrl != null
-    ) {
-      reviewVideoRef.current.src = reviewUrl;
-      reviewVideoRef.current.play().catch(() => {});
-    }
-  }, [phase, reviewUrl]);
-
-  useEffect(() => {
-    return () => {
-      const url = reviewUrlRef.current;
-      if (url != null) {
-        URL.revokeObjectURL(url);
-        reviewUrlRef.current = null;
-      }
-    };
-  }, []);
-
-  // Reset local phase state when partIndex changes (e.g. after keep)
-  useEffect(() => {
-    stopAllPlayback();
-    recordSessionRef.current?.stop();
-    recordSessionRef.current = null;
-    listenSessionRef.current = null;
-    setPhase("pre-roll");
-    if (reviewUrlRef.current != null) {
-      URL.revokeObjectURL(reviewUrlRef.current);
-      reviewUrlRef.current = null;
-    }
-    setReviewUrl(null);
-    setActiveChordIndex(0);
-    setCurrentAbsoluteBeat(-1);
-    setCountInBeat(0);
-    currentBlobRef.current = null;
-    currentAlignmentOffsetRef.current = 0;
-  }, [partIndex]);
-
-  // ─── Mute toggle ────────────────────────────────────────────────────────────
-
-  function handleToggleMute(index: number) {
-    setMutedParts((prev) => {
-      const next = [...prev];
-      next[index] = !(next[index] ?? false);
-      return next;
-    });
-  }
-
-  function stopTransportAudio() {
-    listenSessionRef.current?.stop();
-    listenSessionRef.current = null;
-    recordSessionRef.current?.stop();
-    recordSessionRef.current = null;
-    monitorPlayerRef.current?.stop();
-    stopAllPlayback();
-  }
-
-  // ─── Listen (no recording) ──────────────────────────────────────────────────
-
-  function handleListen() {
-    // Fully clear any previously scheduled transport audio before starting
-    // a fresh listen pass so clicks cannot overlap.
-    stopTransportAudio();
-
-    setPhase("listening");
-    setActiveChordIndex(0);
-    setCurrentAbsoluteBeat(-1);
-
-    if (ctx == null) return;
-    const session = startRecordingPlayback({
-      ctx,
-      chords,
-      harmonyLine: guideToneEnabled ? harmonyLine : null,
-      backingHarmonyLines: melodyBackingLines,
-      beatsPerBar,
-      tempo: arrangement.tempo,
-      beatLevel: 1,
-      guideToneLevel: 1,
-      beatDestination: beatGainRef.current,
-      guideToneDestination: guideToneGainRef.current,
-      monitorPlayer: monitorPlayerRef.current,
-      onBeat: (beat) => {
-        setCurrentAbsoluteBeat(beat);
-        let remaining = beat;
-        for (let i = 0; i < chords.length; i++) {
-          const chord = chords[i]!;
-          if (remaining < chord.beats) {
-            setActiveChordIndex(i);
-            break;
-          }
-          remaining -= chord.beats;
-        }
-      },
-      onChordChange: (i) => setActiveChordIndex(i),
-    });
-
-    listenSessionRef.current = session;
-
-    // Auto-stop after progression ends
-    const durationMs =
-      chords.reduce((sum, c) => sum + c.beats, 0) *
-        (60 / arrangement.tempo) *
-        1000 +
-      400;
-
-    setTimeout(() => {
-      // Only stop if we're still in the listening phase from this call
-      if (listenSessionRef.current === session) {
-        session.stop();
-        listenSessionRef.current = null;
-        setPhase("pre-roll");
-        setActiveChordIndex(0);
-        setCurrentAbsoluteBeat(-1);
-      }
-    }, durationMs);
-  }
-
-  function handleStopListening() {
-    stopTransportAudio();
-    setPhase("pre-roll");
-    setActiveChordIndex(0);
-    setCurrentAbsoluteBeat(-1);
-  }
-
-  // ─── Record ─────────────────────────────────────────────────────────────────
-
-  async function handleRecord() {
-    if (stream == null || recordSessionRef.current != null) return;
-
-    // Fully clear any practice/listen playback so record starts from a clean
-    // transport state with only one count-in/metronome.
-    stopTransportAudio();
-
-    setPhase("counting-in");
-    setActiveChordIndex(0);
-    setCountInBeat(0);
-    setCurrentAbsoluteBeat(-1);
-
-    if (ctx == null) return;
-
-    let session: RecordingSession | null = null;
-    try {
-      session = startRecordTake({
-        ctx,
-        stream,
-        chords,
-        harmonyLine: guideToneEnabled ? harmonyLine : null,
-        backingHarmonyLines: melodyBackingLines,
-        countInCueMidi,
-        beatsPerBar,
-        tempo: arrangement.tempo,
-        latencyCorrectionSec: alignmentCorrectionSec,
-        monitorPlayer: monitorPlayerRef.current,
-        beatLevel: 1,
-        guideToneLevel: 1,
-        beatDestination: beatGainRef.current,
-        guideToneDestination: guideToneGainRef.current,
-        callbacks: {
-          onCountInBeat: (beat) => setCountInBeat(beat + 1),
-          onRecordingStart: () => {
-            setPhase("recording");
-            setActiveChordIndex(0);
-          },
-          onBeat: (beat) => {
-            setCurrentAbsoluteBeat(beat);
-            let remaining = beat;
-            for (let i = 0; i < chords.length; i++) {
-              const chord = chords[i]!;
-              if (remaining < chord.beats) {
-                setActiveChordIndex(i);
-                break;
-              }
-              remaining -= chord.beats;
-            }
-          },
-        },
-      });
-      recordSessionRef.current = session;
-
-      const result = await session.promise;
-
-      currentBlobRef.current = result.blob;
-      currentAlignmentOffsetRef.current = result.alignmentOffsetSec;
-      if (reviewUrlRef.current != null) {
-        URL.revokeObjectURL(reviewUrlRef.current);
-      }
-      reviewUrlRef.current = result.url;
-      setReviewUrl(result.url);
-      setPhase("review");
-    } catch (err) {
-      if (isRecordingCancelledError(err)) {
-        setPhase("pre-roll");
-        setActiveChordIndex(0);
-        setCurrentAbsoluteBeat(-1);
-        setCountInBeat(0);
-        return;
-      }
-      console.error("Recording failed", err);
-      setPhase("pre-roll");
-    } finally {
-      if (session != null && recordSessionRef.current === session) {
-        recordSessionRef.current = null;
-      }
-    }
-  }
-
-  function handleStopRecording() {
-    const session = recordSessionRef.current;
-    if (session == null) return;
-    session.stop();
-    recordSessionRef.current = null;
-    setPhase("pre-roll");
-    setActiveChordIndex(0);
-    setCurrentAbsoluteBeat(-1);
-    setCountInBeat(0);
-  }
+  const phase = snapshot.phase;
+  const activeChordIndex = snapshot.activeChordIndex;
+  const countInBeat = snapshot.countInBeat;
+  const currentAbsoluteBeat = snapshot.currentAbsoluteBeat;
+  const reviewUrl = snapshot.reviewUrl;
+  const guideToneEnabled = snapshot.guideToneEnabled;
+  const mutedParts = snapshot.mutedParts;
+  const referenceWaveform = snapshot.referenceWaveform;
+  const effectiveGuideToneLevel = guideToneEnabled ? guideToneVolume : 0;
 
   function handleKeep() {
-    const blob = currentBlobRef.current;
+    const pendingTake = controller.getPendingTake();
     const trackId = currentTrackId;
-    if (blob == null || trackId == null) return;
+    if (pendingTake == null || trackId == null) return;
 
     model.keepRecordedTake({
       trackId,
-      blob,
-      alignmentOffsetSec: currentAlignmentOffsetRef.current,
+      blob: pendingTake.blob,
+      alignmentOffsetSec: pendingTake.alignmentOffsetSec,
     });
-
-    if (reviewUrlRef.current != null) {
-      URL.revokeObjectURL(reviewUrlRef.current);
-      reviewUrlRef.current = null;
-    }
-    setReviewUrl(null);
 
     const nextIncompletePartIndex =
       model.getNextIncompletePartIndex(partIndex + 1) ??
@@ -709,18 +333,11 @@ export function RecordingWizard() {
   }
 
   function handleRedo() {
-    stopTransportAudio();
-    setPhase("pre-roll");
-    if (reviewUrlRef.current != null) {
-      URL.revokeObjectURL(reviewUrlRef.current);
-      reviewUrlRef.current = null;
-    }
-    setReviewUrl(null);
-    currentBlobRef.current = null;
+    controller.discardTake();
   }
 
   function handleBack() {
-    stopTransportAudio();
+    controller.stopTransport();
     if (isRedoingCurrentPart) {
       model.cancelRedoPart();
       return;
@@ -750,8 +367,6 @@ export function RecordingWizard() {
       ? `Beat ${activeBeatInBar + 1}/${beatsPerBar}`
       : `Beat -/${beatsPerBar}`;
   const beatIsDownbeat = activeBeatInBar === 0;
-  const activeMicLabel =
-    stream.getAudioTracks()[0]?.label ?? "Selected microphone";
 
   return (
     <Flex {...dsScreenShell}>
@@ -813,9 +428,8 @@ export function RecordingWizard() {
             keptUrls={keptUrls}
             phase={phase}
             reviewUrl={reviewUrl}
-            reviewVideoRef={reviewVideoRef}
             mutedParts={mutedParts}
-            onToggleMute={handleToggleMute}
+            onToggleMute={(index) => controller.toggleMute(index)}
             hideCurrentKeptPreview={isRedoingCurrentPart}
           />
 
@@ -831,7 +445,7 @@ export function RecordingWizard() {
               onGuideToneVolumeChange={(next) => {
                 model.setRecordingMonitorPreferences({ guideToneVolume: next });
                 if (next > 0 && !guideToneEnabled) {
-                  setGuideToneEnabled(true);
+                  controller.setGuideToneEnabled(true);
                 }
               }}
               onBeatVolumeChange={(next) => {
@@ -854,7 +468,7 @@ export function RecordingWizard() {
               activeBeatInBar={activeBeatInBar}
               beatIsDownbeat={beatIsDownbeat}
               beatLabel={beatLabel}
-              onStopRecording={handleStopRecording}
+              onStopRecording={controller.stopRecording}
             />
           )}
 
@@ -867,7 +481,13 @@ export function RecordingWizard() {
                   size="lg"
                   borderColor={isListening ? dsColors.accent : dsColors.outline}
                   color={isListening ? dsColors.accent : dsColors.textMuted}
-                  onClick={isListening ? handleStopListening : handleListen}
+                  onClick={
+                    isListening
+                      ? controller.stopListening
+                      : () => {
+                          controller.listen();
+                        }
+                  }
                   gap={2}
                 >
                   {isListening ? (
@@ -885,7 +505,9 @@ export function RecordingWizard() {
                 <Button
                   {...dsPrimaryButton}
                   size="lg"
-                  onClick={handleRecord}
+                  onClick={() => {
+                    void controller.record();
+                  }}
                   disabled={isListening}
                 >
                   Record
@@ -900,7 +522,7 @@ export function RecordingWizard() {
                     color={
                       guideToneEnabled ? dsColors.accent : dsColors.textSubtle
                     }
-                    onClick={() => setGuideToneEnabled((v) => !v)}
+                    onClick={controller.toggleGuideToneEnabled}
                   >
                     Guide tones: {guideToneEnabled ? "on" : "off"}
                   </Button>

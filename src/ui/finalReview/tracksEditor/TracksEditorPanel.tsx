@@ -2,6 +2,7 @@ import { Box, Button, Flex, Text } from "@chakra-ui/react";
 import {
   memo,
   type PointerEvent as ReactPointerEvent,
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -9,6 +10,7 @@ import {
 import type { ReadOnlyObservable } from "../../../observable";
 import { useObservable } from "../../../observable";
 import {
+  createVolumePointId,
   evaluateClipVolumeAtTime,
   type ClipVolumeEnvelope,
 } from "../../../state/clipAutomation";
@@ -25,16 +27,8 @@ const TIMELINE_PX_PER_SEC = 110;
 const TIMELINE_RIGHT_PAD_PX = 48;
 const LANE_HEIGHT_PX = 72;
 const TRACK_RAIL_WIDTH_PX = 200;
-const VOLUME_BRUSH_RADIUS_SEC = 2;
-const VOLUME_BRUSH_GAIN_PER_PX = 1 / 180;
 const VOLUME_LINE_HIT_RADIUS_PX = 11;
-
-type VolumeBrushPreview = {
-  trackId: string;
-  clipId: string;
-  startSec: number;
-  endSec: number;
-};
+const VOLUME_HANDLE_HIT_RADIUS_PX = 12;
 
 type TracksEditorPanelProps = {
   view: TracksEditorStaticView;
@@ -50,8 +44,10 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
 
   const timelineViewportRef = useRef<HTMLDivElement>(null);
   const [timelineViewportWidth, setTimelineViewportWidth] = useState(0);
-  const [volumeBrushPreview, setVolumeBrushPreview] =
-    useState<VolumeBrushPreview | null>(null);
+  const [scrubPreviewSec, setScrubPreviewSec] = useState<number | null>(null);
+  const scrubPreviewRef = useRef<number | null>(null);
+  const scrubRafRef = useRef<number | null>(null);
+  const scrubQueuedSecRef = useRef<number | null>(null);
 
   const timelineContentWidthPx = Math.max(
     timelineViewportWidth,
@@ -72,41 +68,136 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
     return () => observer.disconnect();
   }, []);
 
-  useEffect(() => {
-    if (!view.isPlaying) {
-      setVolumeBrushPreview(null);
-    }
-  }, [view.isPlaying]);
+  const setScrubPreview = useCallback((valueSec: number | null) => {
+    scrubPreviewRef.current = valueSec;
+    setScrubPreviewSec(valueSec);
+  }, []);
 
-  function handleLaneClick(
-    e: ReactPointerEvent<HTMLDivElement>,
-    trackId: string,
-  ) {
-    if (view.exporting || view.isSyncingFrames || view.isPlaying) return;
-
+  const getTimelineSecForClientX = useCallback((clientX: number): number | null => {
     const viewport = timelineViewportRef.current;
-    if (viewport == null) return;
+    if (viewport == null) return null;
 
     const rect = viewport.getBoundingClientRect();
-    const contentX = e.clientX - rect.left + viewport.scrollLeft;
+    const contentX = clientX - rect.left + viewport.scrollLeft;
     const unclampedTime = contentX / TIMELINE_PX_PER_SEC;
-    const timelineSec = clamp(unclampedTime, 0, view.timelineEndSec);
+    return clamp(unclampedTime, 0, view.timelineEndSec);
+  }, [view.timelineEndSec]);
 
+  const flushQueuedSeek = useCallback(() => {
+    scrubRafRef.current = null;
+    const nextSec = scrubQueuedSecRef.current;
+    scrubQueuedSecRef.current = null;
+    if (nextSec == null) return;
+    onCommand({ type: "seek", valueSec: nextSec });
+  }, [onCommand]);
+
+  const queueSeek = useCallback((valueSec: number) => {
+    if (scrubQueuedSecRef.current != null && Math.abs(scrubQueuedSecRef.current - valueSec) < 1e-4) {
+      return;
+    }
+
+    scrubQueuedSecRef.current = valueSec;
+    if (scrubRafRef.current != null) return;
+    scrubRafRef.current = window.requestAnimationFrame(() => {
+      flushQueuedSeek();
+    });
+  }, [flushQueuedSeek]);
+
+  const flushSeekImmediately = useCallback((valueSec: number) => {
+    if (scrubRafRef.current != null) {
+      window.cancelAnimationFrame(scrubRafRef.current);
+      scrubRafRef.current = null;
+    }
+    scrubQueuedSecRef.current = null;
+    onCommand({ type: "seek", valueSec });
+  }, [onCommand]);
+
+  useEffect(() => {
+    return () => {
+      if (scrubRafRef.current != null) {
+        window.cancelAnimationFrame(scrubRafRef.current);
+      }
+    };
+  }, []);
+
+  const handleLanePointerDown = useCallback((
+    e: ReactPointerEvent<HTMLDivElement>,
+    trackId: string,
+  ) => {
+    if (view.exporting || view.isSyncingFrames || view.isPlaying) return;
+    const timelineSec = getTimelineSecForClientX(e.clientX);
+    if (timelineSec == null) return;
+
+    setScrubPreview(timelineSec);
     onCommand({ type: "select_lane", trackId, timelineSec });
-  }
 
-  function handleSegmentPointerDown(
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // Dragging still works through the window listeners below.
+    }
+
+    const updateScrub = (clientX: number, commitMode: "queued" | "final") => {
+      const nextSec = getTimelineSecForClientX(clientX);
+      if (nextSec == null) return;
+
+      if (scrubPreviewRef.current == null || Math.abs(scrubPreviewRef.current - nextSec) >= 1e-4) {
+        setScrubPreview(nextSec);
+      }
+
+      if (commitMode === "final") {
+        flushSeekImmediately(nextSec);
+      } else {
+        queueSeek(nextSec);
+      }
+    };
+
+    const onScrubMove = (event: PointerEvent) => {
+      if (event.pointerId !== e.pointerId) return;
+      updateScrub(event.clientX, "queued");
+    };
+
+    const finishScrub = (event: PointerEvent) => {
+      if (event.pointerId !== e.pointerId) return;
+
+      window.removeEventListener("pointermove", onScrubMove);
+      window.removeEventListener("pointerup", finishScrub);
+      window.removeEventListener("pointercancel", finishScrub);
+
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch {
+        // Ignore if capture was never acquired or already released.
+      }
+
+      updateScrub(event.clientX, "final");
+      setScrubPreview(null);
+    };
+
+    window.addEventListener("pointermove", onScrubMove);
+    window.addEventListener("pointerup", finishScrub);
+    window.addEventListener("pointercancel", finishScrub);
+  }, [
+    flushSeekImmediately,
+    getTimelineSecForClientX,
+    onCommand,
+    queueSeek,
+    setScrubPreview,
+    view.exporting,
+    view.isPlaying,
+    view.isSyncingFrames,
+  ]);
+
+  const handleSegmentPointerDown = useCallback((
     e: ReactPointerEvent<HTMLDivElement>,
     trackId: string,
     clipId: string,
     segmentStartSec: number,
     segmentDurationSec: number,
     segmentVolumeEnvelope: ClipVolumeEnvelope,
-  ) {
+  ) => {
     e.stopPropagation();
     if (view.exporting || view.isPlaying || view.isSyncingFrames) return;
-
-    onCommand({ type: "select_segment", trackId, clipId });
 
     const rect = e.currentTarget.getBoundingClientRect();
     const widthPx = Math.max(1, rect.width);
@@ -117,6 +208,11 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
       return ratio * segmentDurationSec;
     };
 
+    const toGainMultiplier = (clientY: number): number => {
+      const y = clamp(clientY - rect.top, 0, heightPx);
+      return clamp(2 - (y / heightPx) * 2, 0, 2);
+    };
+
     const pointerDownLocalSec = toLocalTimeSec(e.clientX);
     const pointerDownGainMultiplier = evaluateClipVolumeAtTime(
       segmentVolumeEnvelope,
@@ -124,59 +220,79 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
       segmentDurationSec,
     );
     const pointerDownY = e.clientY - rect.top;
+
+    const sortedPoints = [...segmentVolumeEnvelope.points].sort(
+      (a, b) => a.timeSec - b.timeSec,
+    );
+    const hitHandle = sortedPoints.find((point) => {
+      const pointX = (point.timeSec / Math.max(segmentDurationSec, 1e-6)) * widthPx;
+      const pointY = gainToLineYPx(point.gainMultiplier, heightPx);
+      const dx = pointX - (e.clientX - rect.left);
+      const dy = pointY - pointerDownY;
+      return Math.hypot(dx, dy) <= VOLUME_HANDLE_HIT_RADIUS_PX;
+    });
+
+    if (hitHandle != null) {
+      onCommand({ type: "select_volume_point", trackId, clipId, pointId: hitHandle.id });
+
+      const onMovePoint = (event: PointerEvent) => {
+        onCommand({
+          type: "move_volume_point",
+          trackId,
+          clipId,
+          pointId: hitHandle.id,
+          timeSec: toLocalTimeSec(event.clientX),
+          gainMultiplier: toGainMultiplier(event.clientY),
+        });
+      };
+
+      const onMovePointUp = () => {
+        window.removeEventListener("pointermove", onMovePoint);
+        window.removeEventListener("pointerup", onMovePointUp);
+      };
+
+      window.addEventListener("pointermove", onMovePoint);
+      window.addEventListener("pointerup", onMovePointUp);
+      return;
+    }
+
     const volumeLineY = gainToLineYPx(pointerDownGainMultiplier, heightPx);
     const isVolumeGesture =
       Math.abs(pointerDownY - volumeLineY) <= VOLUME_LINE_HIT_RADIUS_PX;
 
     if (isVolumeGesture) {
-      let lastClientY = e.clientY;
-
-      setVolumeBrushPreview({
+      const pointId = createVolumePointId();
+      onCommand({
+        type: "create_volume_point",
         trackId,
         clipId,
-        startSec: Math.max(0, pointerDownLocalSec - VOLUME_BRUSH_RADIUS_SEC),
-        endSec: Math.min(segmentDurationSec, pointerDownLocalSec + VOLUME_BRUSH_RADIUS_SEC),
+        pointId,
+        timeSec: pointerDownLocalSec,
+        gainMultiplier: pointerDownGainMultiplier,
       });
 
-      const onBrushMove = (event: PointerEvent) => {
-        const centerSec = toLocalTimeSec(event.clientX);
-        const deltaGainMultiplier =
-          (lastClientY - event.clientY) * VOLUME_BRUSH_GAIN_PER_PX;
-        lastClientY = event.clientY;
-
-        if (Math.abs(deltaGainMultiplier) > 1e-6) {
-          onCommand({
-            type: "apply_volume_brush",
-            trackId,
-            clipId,
-            centerSec,
-            deltaGainMultiplier,
-            radiusSec: VOLUME_BRUSH_RADIUS_SEC,
-          });
-        }
-
-        setVolumeBrushPreview({
+      const onMovePoint = (event: PointerEvent) => {
+        onCommand({
+          type: "move_volume_point",
           trackId,
           clipId,
-          startSec: Math.max(0, centerSec - VOLUME_BRUSH_RADIUS_SEC),
-          endSec: Math.min(segmentDurationSec, centerSec + VOLUME_BRUSH_RADIUS_SEC),
+          pointId,
+          timeSec: toLocalTimeSec(event.clientX),
+          gainMultiplier: toGainMultiplier(event.clientY),
         });
       };
 
-      const onBrushUp = () => {
-        window.removeEventListener("pointermove", onBrushMove);
-        window.removeEventListener("pointerup", onBrushUp);
-        setVolumeBrushPreview((prev) =>
-          prev != null && prev.clipId === clipId && prev.trackId === trackId
-            ? null
-            : prev,
-        );
+      const onMovePointUp = () => {
+        window.removeEventListener("pointermove", onMovePoint);
+        window.removeEventListener("pointerup", onMovePointUp);
       };
 
-      window.addEventListener("pointermove", onBrushMove);
-      window.addEventListener("pointerup", onBrushUp);
+      window.addEventListener("pointermove", onMovePoint);
+      window.addEventListener("pointerup", onMovePointUp);
       return;
     }
+
+    onCommand({ type: "select_segment", trackId, clipId });
 
     const startClientX = e.clientX;
 
@@ -200,7 +316,7 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
 
     window.addEventListener("pointermove", onMoveClip);
     window.addEventListener("pointerup", onMoveClipUp);
-  }
+  }, [onCommand, view.exporting, view.isPlaying, view.isSyncingFrames]);
 
   return (
     <Box overflow="hidden" h="100%" {...dsPanel}>
@@ -221,7 +337,11 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
         >
           Tracks
         </Text>
-        <PlayheadReadout playhead={playhead} timelineEndSec={view.timelineEndSec} />
+        <PlayheadReadout
+          playhead={playhead}
+          previewPlayheadSec={scrubPreviewSec}
+          timelineEndSec={view.timelineEndSec}
+        />
       </Flex>
 
       <Flex
@@ -369,11 +489,13 @@ export function TracksEditorPanel(props: TracksEditorPanelProps) {
               lanes={view.lanes}
               selection={view.selection}
               beatLineTimes={view.beatLineTimes}
-              volumeBrushPreview={volumeBrushPreview}
-              onLanePointerDown={handleLaneClick}
+              onLanePointerDown={handleLanePointerDown}
               onSegmentPointerDown={handleSegmentPointerDown}
             />
-            <TimelinePlayheadOverlay playhead={playhead} />
+            <TimelinePlayheadOverlay
+              playhead={playhead}
+              previewPlayheadSec={scrubPreviewSec}
+            />
           </Box>
         </Box>
       </Flex>
@@ -474,7 +596,6 @@ const TracksTimelineStatic = memo(function TracksTimelineStatic(input: {
   lanes: TracksEditorLaneView[];
   selection: TracksEditorStaticView["selection"];
   beatLineTimes: number[];
-  volumeBrushPreview: VolumeBrushPreview | null;
   onLanePointerDown: (
     e: ReactPointerEvent<HTMLDivElement>,
     trackId: string,
@@ -488,14 +609,8 @@ const TracksTimelineStatic = memo(function TracksTimelineStatic(input: {
     segmentVolumeEnvelope: ClipVolumeEnvelope,
   ) => void;
 }) {
-  const {
-    lanes,
-    selection,
-    beatLineTimes,
-    volumeBrushPreview,
-    onLanePointerDown,
-    onSegmentPointerDown,
-  } = input;
+  const { lanes, selection, beatLineTimes, onLanePointerDown, onSegmentPointerDown } =
+    input;
 
   return (
     <>
@@ -529,12 +644,8 @@ const TracksTimelineStatic = memo(function TracksTimelineStatic(input: {
                 laneTrackId={lane.trackId}
                 segment={segment}
                 isSelected={selection.clipId === segment.id}
-                activeBrush={
-                  volumeBrushPreview != null &&
-                  volumeBrushPreview.trackId === lane.trackId &&
-                  volumeBrushPreview.clipId === segment.id
-                    ? volumeBrushPreview
-                    : null
+                selectedVolumePointId={
+                  selection.clipId === segment.id ? selection.volumePointId : null
                 }
                 onPointerDown={onSegmentPointerDown}
               />
@@ -550,7 +661,7 @@ const TimelineSegmentBox = memo(function TimelineSegmentBox(input: {
   laneTrackId: string;
   segment: TracksEditorSegmentView;
   isSelected: boolean;
-  activeBrush: VolumeBrushPreview | null;
+  selectedVolumePointId: string | null;
   onPointerDown: (
     e: ReactPointerEvent<HTMLDivElement>,
     trackId: string,
@@ -560,15 +671,8 @@ const TimelineSegmentBox = memo(function TimelineSegmentBox(input: {
     segmentVolumeEnvelope: ClipVolumeEnvelope,
   ) => void;
 }) {
-  const { laneTrackId, segment, isSelected, activeBrush, onPointerDown } = input;
-  const brushLeftPercent =
-    activeBrush == null || segment.durationSec <= 0
-      ? 0
-      : (activeBrush.startSec / segment.durationSec) * 100;
-  const brushWidthPercent =
-    activeBrush == null || segment.durationSec <= 0
-      ? 0
-      : ((activeBrush.endSec - activeBrush.startSec) / segment.durationSec) * 100;
+  const { laneTrackId, segment, isSelected, selectedVolumePointId, onPointerDown } =
+    input;
 
   return (
     <Box
@@ -595,13 +699,6 @@ const TimelineSegmentBox = memo(function TimelineSegmentBox(input: {
           />
         ))}
       </Box>
-      {activeBrush != null && (
-        <Box
-          className="segment-volume-brush"
-          left={`${brushLeftPercent}%`}
-          w={`${Math.max(0, brushWidthPercent)}%`}
-        />
-      )}
       <svg
         className="segment-volume-svg"
         viewBox="0 0 100 100"
@@ -610,17 +707,36 @@ const TimelineSegmentBox = memo(function TimelineSegmentBox(input: {
         <polyline
           className="segment-volume-line"
           points={segment.renderAsset.volumeLinePoints}
+          vectorEffect="non-scaling-stroke"
         />
       </svg>
+      {segment.renderAsset.volumeHandles.map((handle) => (
+        <Box
+          key={handle.id}
+          className={`segment-volume-handle-hit ${
+            selectedVolumePointId === handle.id ? "is-selected" : ""
+          }`}
+          left={`${handle.leftPercent}%`}
+          top={`${handle.topPercent}%`}
+        >
+          <Box
+            className={`segment-volume-handle ${
+              handle.isBoundary ? "is-boundary" : "is-interior"
+            } ${selectedVolumePointId === handle.id ? "is-selected" : ""}`}
+          />
+        </Box>
+      ))}
     </Box>
   );
 });
 
 function PlayheadReadout(input: {
   playhead: ReadOnlyObservable<number>;
+  previewPlayheadSec?: number | null;
   timelineEndSec: number;
 }) {
-  const playheadSec = useObservable(input.playhead);
+  const observablePlayheadSec = useObservable(input.playhead);
+  const playheadSec = input.previewPlayheadSec ?? observablePlayheadSec;
 
   return (
     <Box
@@ -641,8 +757,10 @@ function PlayheadReadout(input: {
 
 function TimelinePlayheadOverlay(input: {
   playhead: ReadOnlyObservable<number>;
+  previewPlayheadSec?: number | null;
 }) {
-  const playheadSec = useObservable(input.playhead);
+  const observablePlayheadSec = useObservable(input.playhead);
+  const playheadSec = input.previewPlayheadSec ?? observablePlayheadSec;
 
   return (
     <Box

@@ -3,14 +3,23 @@ export type TracksEditorCommand =
   | { type: "delete_selected" }
   | { type: "select_lane"; trackId: string; timelineSec: number }
   | { type: "select_segment"; trackId: string; clipId: string }
+  | { type: "select_volume_point"; trackId: string; clipId: string; pointId: string }
   | { type: "move_segment"; trackId: string; clipId: string; desiredStartSec: number }
   | {
-      type: "apply_volume_brush";
+      type: "create_volume_point";
       trackId: string;
       clipId: string;
-      centerSec: number;
-      deltaGainMultiplier: number;
-      radiusSec: number;
+      pointId: string;
+      timeSec: number;
+      gainMultiplier: number;
+    }
+  | {
+      type: "move_volume_point";
+      trackId: string;
+      clipId: string;
+      pointId: string;
+      timeSec: number;
+      gainMultiplier: number;
     }
   | { type: "seek"; valueSec: number }
   | { type: "set_lane_volume"; trackId: string; value: number }

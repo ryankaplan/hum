@@ -63,6 +63,18 @@ export type RecordingTransportInputs = {
   priorHarmonyLevel: number;
 };
 
+export function selectReferenceWaveformLane<
+  T extends { segments: ArrayLike<unknown> },
+>(lanes: readonly T[]): T | null {
+  for (let index = lanes.length - 1; index >= 0; index--) {
+    const lane = lanes[index];
+    if (lane != null && lane.segments.length > 0) {
+      return lane;
+    }
+  }
+  return null;
+}
+
 type PendingTake = {
   blob: Blob;
   alignmentOffsetSec: number;
@@ -478,8 +490,11 @@ export class RecordingTransportController {
     }
 
     this.monitorLanePartIndices = encodedLanes.map((lane) => lane.partIndex);
-    const arrangementDurationSec = progressionDurationSec(inputs.chords, inputs.tempo);
-    const referenceLane = lanes.find((lane) => lane.segments.length > 0) ?? null;
+    const arrangementDurationSec = progressionDurationSec(
+      inputs.chords,
+      inputs.tempo,
+    );
+    const referenceLane = selectReferenceWaveformLane(lanes);
     this.updateSnapshot({
       referenceWaveform:
         referenceLane == null

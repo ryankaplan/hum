@@ -174,6 +174,7 @@ export function SetupScreen() {
     if (starting) return;
     setStarting(true);
     try {
+      model.clearRecordingTarget();
       await acquirePermissionsAndStart();
     } finally {
       setStarting(false);

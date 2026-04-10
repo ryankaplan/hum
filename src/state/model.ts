@@ -1,5 +1,5 @@
 import { Derived, Observable } from "../observable";
-import type { Chord, HarmonyVoicing, PartIndex } from "../music/types";
+import type { Chord, HarmonyVoicing } from "../music/types";
 import type { Mixer } from "../audio/mixer";
 import type { CompositorHandle } from "../video/compositor";
 import { buildWaveformPeaks } from "../ui/timeline";
@@ -8,7 +8,6 @@ import {
   createDefaultArrangementDocState,
 } from "./arrangementModel";
 import { createShortUuid } from "./id";
-import { findIncompletePartIndex } from "./recordingProgress";
 import type {
   ArrangementDocState,
   ArrangementInfo as DerivedArrangementInfo,
@@ -17,9 +16,11 @@ import type {
 import {
   TracksDocumentModel,
   TracksEditorModel,
-  type ApplyClipVolumeBrushInput,
   type ClipId,
+  type DeleteClipVolumePointInput,
+  type InsertClipVolumePointInput,
   type MediaAssetId,
+  type MoveClipVolumePointInput,
   type RecordingId,
   type RecordingRecord,
   type TrackClip,
@@ -34,9 +35,11 @@ import { DraftSessionController } from "./draftSessionController";
 type WaveformPeaks = number[];
 
 export type {
-  ApplyClipVolumeBrushInput,
   ClipId,
+  DeleteClipVolumePointInput,
+  InsertClipVolumePointInput,
   MediaAssetId,
+  MoveClipVolumePointInput,
   RecordingId,
   RecordingRecord,
   TrackClip,
@@ -180,7 +183,7 @@ class AppModel {
       this.recordingMonitorPreferences.set(
         input.document.recordingMonitorPreferences,
       );
-      this.returnToReviewAfterRecording.set(false);
+      this.recordingTargetTrackId.set(null);
       this.hasRestoredDraft.set(true);
       for (const mediaAsset of input.mediaAssets) {
         this.registerMediaAsset(mediaAsset.mediaAssetId, mediaAsset.blob);
@@ -212,8 +215,7 @@ class AppModel {
   readonly appScreen = new Observable<AppScreen>("setup");
   readonly mediaStream = new Observable<MediaStream | null>(null);
   readonly audioContext = new Observable<AudioContext | null>(null);
-  readonly currentPartIndex = new Observable<PartIndex>(0);
-  readonly returnToReviewAfterRecording = new Observable<boolean>(false);
+  readonly recordingTargetTrackId = new Observable<TrackId | null>(null);
   readonly permissionError = new Observable<string | null>(null);
   readonly latencyCorrectionSec = new Observable<number>(0);
   readonly isCalibrated = new Observable<boolean>(false);
@@ -330,14 +332,6 @@ class AppModel {
     };
   }
 
-  getTrackIdForPartIndex(index: number): TrackId | null {
-    return this.tracksDocument.getTrackIdAtIndex(index);
-  }
-
-  getNextIncompletePartIndex(startIndex = 0): PartIndex | null {
-    return findIncompletePartIndex(this.tracksDocument.document.get(), startIndex);
-  }
-
   keepRecordedTake(input: KeepTakeInput): void {
     const { trackId, blob, alignmentOffsetSec } = input;
     const recordingId = this.makeRecordingId();
@@ -369,12 +363,10 @@ class AppModel {
       this.tracksEditor.setSelection({
         trackId,
         clipId,
+        volumePointId: null,
       });
     }
-
-    if (this.returnToReviewAfterRecording.get()) {
-      this.returnToReviewAfterRecording.set(false);
-    }
+    this.recordingTargetTrackId.set(null);
 
     for (const removed of removedRecordings) {
       this.releaseRecording(removed);
@@ -491,6 +483,7 @@ class AppModel {
       this.tracksEditor.setSelection({
         trackId,
         clipId: result.rightClipId,
+        volumePointId: null,
       });
     }
   }
@@ -521,6 +514,7 @@ class AppModel {
       this.tracksEditor.setSelection({
         trackId,
         clipId: nextSelectionClipId,
+        volumePointId: null,
       });
       return;
     }
@@ -532,14 +526,31 @@ class AppModel {
     const document = this.tracksDocument.document.get();
     const selection = this.tracksEditor.editor.get().selection;
 
-    if (this.findClipBySelection(document, selection) != null) {
+    const selectedClip = this.findClipBySelection(document, selection);
+    if (selectedClip != null) {
+      if (
+        selection.volumePointId != null &&
+        selectedClip.volumeEnvelope.points.some(
+          (point) => point.id === selection.volumePointId,
+        ) === false
+      ) {
+        this.tracksEditor.setSelection({
+          trackId: selection.trackId,
+          clipId: selection.clipId,
+          volumePointId: null,
+        });
+      }
       return;
     }
 
     for (const trackId of document.trackOrder) {
       const firstClip = this.tracksDocument.getOrderedClipsForTrack(trackId)[0] ?? null;
       if (firstClip != null) {
-        this.tracksEditor.setSelection({ trackId, clipId: firstClip.id });
+        this.tracksEditor.setSelection({
+          trackId,
+          clipId: firstClip.id,
+          volumePointId: null,
+        });
         return;
       }
     }
@@ -614,19 +625,33 @@ class AppModel {
     });
   }
 
-  openRecordingForPart(index: number): void {
-    const trackId = this.tracksDocument.getTrackIdAtIndex(index);
-    if (trackId == null) return;
+  setRecordingTargetTrackId(trackId: TrackId | null): void {
+    if (trackId != null && this.tracksDocument.getTrack(trackId) == null) {
+      this.recordingTargetTrackId.set(null);
+      return;
+    }
+    this.recordingTargetTrackId.set(trackId);
+  }
 
-    this.returnToReviewAfterRecording.set(true);
-    this.currentPartIndex.set(index);
+  clearRecordingTarget(): void {
+    this.recordingTargetTrackId.set(null);
+  }
+
+  openRecordingForTrack(trackId: TrackId): void {
+    if (this.tracksDocument.getTrack(trackId) == null) return;
+    this.recordingTargetTrackId.set(trackId);
     this.appScreen.set("recording");
   }
 
+  openRecordingForPart(index: number): void {
+    const trackId = this.tracksDocument.getTrackIdAtIndex(index);
+    if (trackId == null) return;
+    this.openRecordingForTrack(trackId);
+  }
+
   cancelRecordingForPart(): void {
-    if (!this.returnToReviewAfterRecording.get()) return;
-    this.returnToReviewAfterRecording.set(false);
-    this.appScreen.set("review");
+    this.clearRecordingTarget();
+    this.appScreen.set(resolveRestoredAppScreen(this.getHumDocument()));
   }
 
   setCalibrationOffset(correctionSec: number): void {
@@ -647,10 +672,8 @@ class AppModel {
     this.draftSession.clearDraftAfter(() => {
       const totalParts = this.arrangementDocument.get().totalParts;
 
-      this.currentPartIndex.set(0);
-      this.returnToReviewAfterRecording.set(false);
+      this.recordingTargetTrackId.set(null);
       this.permissionError.set(null);
-      this.clearCalibration();
       this.appScreen.set("setup");
 
       const removedRecordings = this.tracksDocument.reset(totalParts);
@@ -722,12 +745,6 @@ class AppModel {
   }
 
   private resizePartCount(totalParts: number): void {
-    const clampedPartIndex = Math.min(
-      Math.max(0, this.currentPartIndex.get()),
-      Math.max(0, totalParts - 1),
-    );
-    this.currentPartIndex.set(clampedPartIndex);
-
     const removedRecordings = this.tracksDocument.resizeForPartCount(totalParts);
     for (const removed of removedRecordings) {
       this.releaseRecording(removed);
@@ -739,6 +756,14 @@ class AppModel {
       this.tracksDocument.getTrack(selection.trackId) == null
     ) {
       this.tracksEditor.clearSelection();
+    }
+
+    const recordingTargetTrackId = this.recordingTargetTrackId.get();
+    if (
+      recordingTargetTrackId != null &&
+      this.tracksDocument.getTrack(recordingTargetTrackId) == null
+    ) {
+      this.recordingTargetTrackId.set(null);
     }
   }
 
@@ -788,14 +813,19 @@ class AppModel {
   }
 
   private applyRestoredSessionState(document: HumDocument): void {
-    const nextPartIndex = findIncompletePartIndex(document.tracks) ?? 0;
-    this.currentPartIndex.set(nextPartIndex);
-    this.appScreen.set(hasAnyTake(document) ? "review" : "setup");
+    this.recordingTargetTrackId.set(null);
+    this.appScreen.set(resolveRestoredAppScreen(document));
   }
 }
 
-function hasAnyTake(document: HumDocument): boolean {
+export function hasAnyTake(document: Pick<HumDocument, "tracks">): boolean {
   return Object.keys(document.tracks.recordingsById).length > 0;
+}
+
+export function resolveRestoredAppScreen(
+  document: Pick<HumDocument, "tracks">,
+): AppScreen {
+  return hasAnyTake(document) ? "review" : "setup";
 }
 
 export function Model(): AppModel {

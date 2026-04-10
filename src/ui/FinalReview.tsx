@@ -1,6 +1,7 @@
 import { Box, Button, Flex, Progress, Text } from "@chakra-ui/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useObservable } from "../observable";
+import { acquirePermissionsAndStart } from "../recording/permissions";
 import {
   model,
   type RecordingRuntimeWaveform,
@@ -106,6 +107,10 @@ export function FinalReview() {
         model.tracksDocument.getPrimaryRecordingIdForTrack(trackId),
       ),
     [documentState.clipsById, documentState.trackOrder],
+  );
+  const primaryRecordingIdsKey = useMemo(
+    () => primaryRecordingIds.map((recordingId) => recordingId ?? "").join("|"),
+    [primaryRecordingIds],
   );
   const timelinesRef = useRef<TrackClip[][]>(timelines);
   const hasAnyTakes = primaryRecordingIds.some(
@@ -362,7 +367,7 @@ export function FinalReview() {
   }, [
     ctx,
     documentState.trackOrder,
-    primaryRecordingIds,
+    primaryRecordingIdsKey,
     stopPlaybackEngine,
     trackCount,
   ]);
@@ -395,6 +400,15 @@ export function FinalReview() {
     if (selected != null) return;
     model.ensureValidEditorSelection();
   }, [selection, timelines]);
+
+  useEffect(() => {
+    if (!isPlaying || selection.volumePointId == null) return;
+    model.tracksEditor.setSelection({
+      trackId: selection.trackId,
+      clipId: selection.clipId,
+      volumePointId: null,
+    });
+  }, [isPlaying, selection.clipId, selection.trackId, selection.volumePointId]);
 
   useEffect(() => {
     return () => {
@@ -461,7 +475,7 @@ export function FinalReview() {
     switch (command.type) {
       case "split_selected": {
         if (exporting || isSyncingFrames) return;
-        if (selection.trackId == null) return;
+        if (selection.trackId == null || selection.volumePointId != null) return;
         if (isPlaying) stopPlaybackEngine(true);
         model.splitSelectedClipAtPlayhead();
         return;
@@ -470,31 +484,57 @@ export function FinalReview() {
         if (exporting || isSyncingFrames) return;
         if (selection.trackId == null || selection.clipId == null) return;
         if (isPlaying) stopPlaybackEngine(true);
+        if (selection.volumePointId != null) {
+          const clip = documentState.clipsById[selection.clipId];
+          const pointIndex =
+            clip?.volumeEnvelope.points.findIndex(
+              (point) => point.id === selection.volumePointId,
+            ) ?? -1;
+          if (clip == null || pointIndex <= 0 || pointIndex >= clip.volumeEnvelope.points.length - 1) {
+            return;
+          }
+          const deleted = model.tracksDocument.deleteClipVolumePoint({
+            trackId: selection.trackId,
+            clipId: selection.clipId,
+            pointId: selection.volumePointId,
+          });
+          if (deleted) {
+            model.tracksEditor.setSelection({
+              trackId: selection.trackId,
+              clipId: selection.clipId,
+              volumePointId: null,
+            });
+          }
+          return;
+        }
         model.deleteSelectedClip();
         return;
       }
       case "select_lane": {
         if (exporting || isSyncingFrames || isPlaying) return;
-        const trackIndex = documentState.trackOrder.indexOf(command.trackId);
-        if (trackIndex >= 0) {
-          model.currentPartIndex.set(trackIndex);
-        }
         model.tracksEditor.setSelection({
           trackId: command.trackId,
-          clipId: selection.clipId,
+          clipId: selection.trackId === command.trackId ? selection.clipId : null,
+          volumePointId: null,
         });
         model.tracksEditor.setPlayhead(command.timelineSec);
         return;
       }
       case "select_segment": {
         if (exporting || isSyncingFrames || isPlaying) return;
-        const trackIndex = documentState.trackOrder.indexOf(command.trackId);
-        if (trackIndex >= 0) {
-          model.currentPartIndex.set(trackIndex);
-        }
         model.tracksEditor.setSelection({
           trackId: command.trackId,
           clipId: command.clipId,
+          volumePointId: null,
+        });
+        return;
+      }
+      case "select_volume_point": {
+        if (exporting || isSyncingFrames || isPlaying) return;
+        model.tracksEditor.setSelection({
+          trackId: command.trackId,
+          clipId: command.clipId,
+          volumePointId: command.pointId,
         });
         return;
       }
@@ -507,14 +547,30 @@ export function FinalReview() {
         );
         return;
       }
-      case "apply_volume_brush": {
+      case "create_volume_point": {
         if (exporting || isSyncingFrames || isPlaying) return;
-        model.tracksDocument.applyClipVolumeBrush({
+        model.tracksDocument.insertClipVolumePoint({
           trackId: command.trackId,
           clipId: command.clipId,
-          centerSec: command.centerSec,
-          deltaGainMultiplier: command.deltaGainMultiplier,
-          radiusSec: command.radiusSec,
+          pointId: command.pointId,
+          timeSec: command.timeSec,
+          gainMultiplier: command.gainMultiplier,
+        });
+        model.tracksEditor.setSelection({
+          trackId: command.trackId,
+          clipId: command.clipId,
+          volumePointId: command.pointId,
+        });
+        return;
+      }
+      case "move_volume_point": {
+        if (exporting || isSyncingFrames || isPlaying) return;
+        model.tracksDocument.moveClipVolumePoint({
+          trackId: command.trackId,
+          clipId: command.clipId,
+          pointId: command.pointId,
+          timeSec: command.timeSec,
+          gainMultiplier: command.gainMultiplier,
         });
         return;
       }
@@ -539,14 +595,55 @@ export function FinalReview() {
     }
   }
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Backspace" && event.key !== "Delete") return;
+
+      const target = event.target as HTMLElement | null;
+      if (
+        target != null &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      if (selection.trackId == null || selection.clipId == null) return;
+      if (exporting || isSyncingFrames || isPlaying) return;
+
+      event.preventDefault();
+      handleTracksCommand({ type: "delete_selected" });
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [
+    exporting,
+    isPlaying,
+    isSyncingFrames,
+    selection.clipId,
+    selection.trackId,
+    selection.volumePointId,
+  ]);
+
   function handleReverbChange(wet: number) {
     model.tracksDocument.setReverbWet(wet);
   }
 
-  function handleRedoPart(index: number) {
+  async function handleRedoPart(index: number) {
     if (isSyncingFrames) return;
+    const trackId = documentState.trackOrder[index] ?? null;
+    if (trackId == null) return;
     stopPlaybackEngine(false);
-    model.openRecordingForPart(index);
+    if (model.mediaStream.get() != null && model.isCalibrated.get()) {
+      model.openRecordingForTrack(trackId);
+      return;
+    }
+
+    model.setRecordingTargetTrackId(trackId);
+    await acquirePermissionsAndStart();
   }
 
   async function handleExport() {
@@ -634,13 +731,22 @@ export function FinalReview() {
     }
     stopPlaybackEngine(false);
     model.resetSession();
-    model.appScreen.set("setup");
   }
 
   const selectedSegment = findSegmentBySelection(selection);
-  const canDelete = selectedSegment != null;
+  const selectedPointIndex =
+    selectedSegment?.volumeEnvelope.points.findIndex(
+      (point) => point.id === selection.volumePointId,
+    ) ?? -1;
+  const canDelete =
+    selection.volumePointId != null
+      ? selectedPointIndex > 0 &&
+        selectedSegment != null &&
+        selectedPointIndex < selectedSegment.volumeEnvelope.points.length - 1
+      : selectedSegment != null;
   const canSplit =
     selection.trackId != null &&
+    selection.volumePointId == null &&
     getActiveSegmentAtTime(
       timelines[documentState.trackOrder.indexOf(selection.trackId)] ?? [],
       committedPlayheadSec,
@@ -910,7 +1016,7 @@ export function FinalReview() {
                   bg="transparent"
                   border="1px solid"
                   borderColor={dsColors.border}
-                  boxShadow="0 16px 36px color-mix(in srgb, var(--app-text) 12%, transparent)"
+                  boxShadow="0 10px 28px color-mix(in srgb, var(--app-text) 28%, transparent), 0 2px 10px color-mix(in srgb, var(--app-text) 16%, transparent)"
                 >
                   <canvas
                     ref={canvasRef}
@@ -919,16 +1025,6 @@ export function FinalReview() {
                   <PreviewOverlay
                     trackOrder={documentState.trackOrder}
                     primaryRecordingIds={primaryRecordingIds}
-                    selectedTrackId={selection.trackId}
-                    onSelectPart={(index) => {
-                      const trackId = documentState.trackOrder[index];
-                      if (trackId == null) return;
-                      const clipId =
-                        model.tracksDocument.getOrderedClipsForTrack(trackId)[0]
-                          ?.id ?? null;
-                      model.currentPartIndex.set(index);
-                      model.tracksEditor.setSelection({ trackId, clipId });
-                    }}
                     onRecordPart={handleRedoPart}
                     disabled={exporting || isSyncingFrames}
                   />
@@ -955,19 +1051,10 @@ export function FinalReview() {
 function PreviewOverlay(input: {
   trackOrder: string[];
   primaryRecordingIds: Array<string | null>;
-  selectedTrackId: string | null;
-  onSelectPart: (index: number) => void;
   onRecordPart: (index: number) => void;
   disabled: boolean;
 }) {
-  const {
-    trackOrder,
-    primaryRecordingIds,
-    selectedTrackId,
-    onSelectPart,
-    onRecordPart,
-    disabled,
-  } = input;
+  const { trackOrder, primaryRecordingIds, onRecordPart, disabled } = input;
 
   return (
     <>
@@ -975,7 +1062,7 @@ function PreviewOverlay(input: {
         const placement = PREVIEW_CELL_POSITIONS[index];
         if (placement == null) return null;
         const hasTake = primaryRecordingIds[index] != null;
-        const isSelected = selectedTrackId === trackId;
+        const previewLabel = getPreviewPartLabel(index, trackOrder.length);
 
         return (
           <Box
@@ -991,101 +1078,56 @@ function PreviewOverlay(input: {
             <Flex
               direction="column"
               justify="space-between"
+              align="stretch"
               w="100%"
               h="100%"
-              p={{ base: 2.5, md: 3 }}
+              p={{ base: 1.5, md: 2 }}
               borderRadius="2xl"
-              border="1px solid"
-              borderColor={
-                isSelected
-                  ? "color-mix(in srgb, var(--app-accent) 78%, white 22%)"
-                  : "color-mix(in srgb, var(--app-border) 55%, white 45%)"
-              }
-              bg={
-                hasTake
-                  ? "transparent"
-                  : "linear-gradient(180deg, rgba(250, 244, 236, 0.76), rgba(224, 212, 198, 0.66))"
-              }
-              boxShadow={
-                isSelected
-                  ? "0 0 0 1px color-mix(in srgb, var(--app-accent) 42%, transparent), 0 24px 44px rgba(93, 69, 48, 0.18)"
-                  : "0 18px 34px rgba(93, 69, 48, 0.14)"
-              }
-              backdropFilter={hasTake ? undefined : "blur(8px)"}
               pointerEvents="auto"
-              onClick={() => onSelectPart(index)}
-              style={{ cursor: "pointer" }}
             >
-              <Flex justify="space-between" align="flex-start" gap={2}>
-                <Box>
-                  <Text
-                    color={
-                      hasTake
-                        ? "white"
-                        : "color-mix(in srgb, var(--app-text) 90%, black 10%)"
-                    }
-                    fontSize={{ base: "sm", md: "md" }}
-                    fontWeight="semibold"
-                    letterSpacing="-0.01em"
-                  >
-                    {getPartLabel(index, trackOrder.length)}
-                  </Text>
-                  <Text
-                    color={
-                      hasTake
-                        ? "rgba(255,255,255,0.72)"
-                        : "color-mix(in srgb, var(--app-text-muted) 88%, black 12%)"
-                    }
-                    fontSize="10px"
-                    fontWeight="semibold"
-                    letterSpacing="0.08em"
-                    textTransform="uppercase"
-                    mt={0.5}
-                  >
-                    {hasTake ? "Take ready" : "No take yet"}
-                  </Text>
-                </Box>
-                <Box />
-              </Flex>
-
-              <Flex justify="flex-start">
-                <Button
-                  size="sm"
-                  borderRadius="full"
-                  bg={
-                    hasTake
-                      ? "rgba(255, 250, 245, 0.2)"
-                      : "rgba(255,255,255,0.88)"
-                  }
-                  color={
-                    hasTake
-                      ? "white"
-                      : "color-mix(in srgb, var(--app-text) 90%, black 10%)"
-                  }
-                  border="1px solid"
-                  borderColor={
-                    hasTake
-                      ? "rgba(255,255,255,0.2)"
-                      : "color-mix(in srgb, var(--app-border) 45%, white 55%)"
-                  }
-                  backdropFilter={hasTake ? "blur(6px)" : undefined}
-                  boxShadow="0 10px 20px rgba(93, 69, 48, 0.16)"
-                  px={4}
-                  h={9}
-                  fontSize="sm"
+              <Flex justify="space-between" align="center" gap={2}>
+                <Text
+                  color="white"
+                  fontSize={{ base: "xs", md: "sm" }}
                   fontWeight="semibold"
+                  letterSpacing="-0.01em"
+                  lineHeight="1.15"
+                  textShadow="0 2px 8px rgba(0, 0, 0, 0.45)"
+                  pt="1px"
+                >
+                  {previewLabel}
+                </Text>
+                <Button
+                  size="xs"
+                  minW="0"
+                  w={7}
+                  h={7}
+                  p={0}
+                  borderRadius="full"
+                  bg="rgba(20, 20, 24, 0.42)"
+                  color="white"
+                  border="1px solid"
+                  borderColor="rgba(255,255,255,0.18)"
+                  boxShadow="0 4px 10px rgba(0, 0, 0, 0.16)"
+                  backdropFilter="blur(6px)"
+                  fontWeight="semibold"
+                  aria-label={hasTake ? "Redo take" : "Record take"}
                   onClick={(event) => {
                     event.stopPropagation();
                     onRecordPart(index);
                   }}
                   disabled={disabled}
                   _hover={{
-                    bg: hasTake
-                      ? "rgba(255, 250, 245, 0.3)"
-                      : "rgba(255,255,255,0.96)",
+                    bg: "rgba(20, 20, 24, 0.56)",
                   }}
                 >
-                  {hasTake ? "Redo" : "Record"}
+                  <Box
+                    w="10px"
+                    h="10px"
+                    borderRadius="full"
+                    bg="#FF5A54"
+                    boxShadow="0 0 0 1px rgba(255,255,255,0.18)"
+                  />
                 </Button>
               </Flex>
             </Flex>
@@ -1094,6 +1136,13 @@ function PreviewOverlay(input: {
       })}
     </>
   );
+}
+
+function getPreviewPartLabel(index: number, totalParts: number): string {
+  if (totalParts === 4) {
+    return ["Low", "Mid", "High", "Melody"][index] ?? `Part ${index + 1}`;
+  }
+  return getPartLabel(index, totalParts);
 }
 
 function getCachedSegmentRenderAsset(input: {
@@ -1157,6 +1206,7 @@ function getCachedSegmentRenderAsset(input: {
       clip.volumeEnvelope,
       clip.durationSec,
     ),
+    volumeHandles: buildVolumeHandleAssets(clip.volumeEnvelope, clip.durationSec),
   };
   cache.set(clip.id, { cacheKey, asset });
   return asset;
@@ -1177,6 +1227,29 @@ function buildVolumePolylinePoints(
       return `${x},${y}`;
     })
     .join(" ");
+}
+
+function buildVolumeHandleAssets(
+  volumeEnvelope: ClipVolumeEnvelope,
+  durationSec: number,
+): TracksEditorSegmentRenderAsset["volumeHandles"] {
+  if (durationSec <= 0) {
+    return volumeEnvelope.points.map((point, index) => ({
+      id: point.id,
+      leftPercent: 0,
+      topPercent: 50,
+      isBoundary:
+        index === 0 || index === Math.max(0, volumeEnvelope.points.length - 1),
+    }));
+  }
+
+  const sorted = [...volumeEnvelope.points].sort((a, b) => a.timeSec - b.timeSec);
+  return sorted.map((point, index) => ({
+    id: point.id,
+    leftPercent: clamp((point.timeSec / durationSec) * 100, 0, 100),
+    topPercent: clamp((1 - point.gainMultiplier / 2) * 100, 2, 98),
+    isBoundary: index === 0 || index === sorted.length - 1,
+  }));
 }
 
 function scheduleClipVolumeGain(input: {

@@ -240,10 +240,7 @@ function KeptCell({ url, muted, onToggleMute }: KeptCellProps) {
 
 export function RecordingWizard() {
   const stream = useObservable(model.mediaStream);
-  const partIndex = useObservable(model.currentPartIndex);
-  const returnToReviewAfterRecording = useObservable(
-    model.returnToReviewAfterRecording,
-  );
+  const recordingTargetTrackId = useObservable(model.recordingTargetTrackId);
   const tracksDocument = useObservable(model.tracksDocument.document);
   const arrangement = useObservable(model.arrangementDocument);
   const arrangementInfo = useObservable(model.derivedArrangementInfo);
@@ -256,10 +253,17 @@ export function RecordingWizard() {
   );
   const arrangementVoices =
     arrangementInfo.effectiveCustomArrangement?.voices ?? [];
+  const orderedTrackIds = tracksDocument.trackOrder;
+  const partIndex =
+    recordingTargetTrackId == null
+      ? -1
+      : orderedTrackIds.indexOf(recordingTargetTrackId);
+  const resolvedPartIndex = partIndex >= 0 ? partIndex : 0;
+  const currentTrackId =
+    partIndex >= 0 ? orderedTrackIds[partIndex] ?? null : null;
   const totalParts = tracksDocument.trackOrder.length;
   const harmonyPartCount = Math.max(1, totalParts - 1);
-  const isLastPart = partIndex === totalParts - 1;
-  const isMelodyPart = partIndex >= harmonyPartCount;
+  const isMelodyPart = resolvedPartIndex >= harmonyPartCount;
   const hasPriorHarmonyMonitorControl = partIndex > 0 && !isMelodyPart;
   const beatsPerBar = arrangement.meter[0];
   const guideToneVolume = recordingMonitorPreferences.guideToneVolume;
@@ -268,16 +272,13 @@ export function RecordingWizard() {
 
   const { harmonyLine, arrangementVoice, countInCueMidi } =
     resolveRecordingHarmonyGuidance(
-    voicing,
-    arrangementVoices,
-    partIndex,
-    totalParts,
-  );
+      voicing,
+      arrangementVoices,
+      resolvedPartIndex,
+      totalParts,
+    );
 
   const ctx = useObservable(model.audioContext);
-  const orderedTrackIds = tracksDocument.trackOrder;
-  const currentTrackId = orderedTrackIds[partIndex] ?? null;
-  const launchedFromReview = returnToReviewAfterRecording;
   const hasExistingTake =
     currentTrackId != null
       ? model.tracksDocument.getPrimaryRecordingIdForTrack(currentTrackId) != null
@@ -292,7 +293,7 @@ export function RecordingWizard() {
   const { controller, snapshot } = useRecordingTransportController({
     ctx,
     stream,
-    partIndex,
+    partIndex: resolvedPartIndex,
     totalParts,
     orderedTrackIds,
     tracksRevision: tracksDocument,
@@ -320,6 +321,14 @@ export function RecordingWizard() {
   const referenceWaveform = snapshot.referenceWaveform;
   const effectiveGuideToneLevel = guideToneEnabled ? guideToneVolume : 0;
 
+  useEffect(() => {
+    if (currentTrackId != null) return;
+    model.clearRecordingTarget();
+    model.appScreen.set(
+      Object.keys(tracksDocument.recordingsById).length > 0 ? "review" : "setup",
+    );
+  }, [currentTrackId, tracksDocument.recordingsById]);
+
   function handleKeep() {
     const pendingTake = controller.getPendingTake();
     const trackId = currentTrackId;
@@ -330,21 +339,6 @@ export function RecordingWizard() {
       blob: pendingTake.blob,
       alignmentOffsetSec: pendingTake.alignmentOffsetSec,
     });
-
-    if (launchedFromReview) {
-      model.appScreen.set("review");
-      return;
-    }
-
-    const nextIncompletePartIndex =
-      model.getNextIncompletePartIndex(partIndex + 1) ??
-      model.getNextIncompletePartIndex(0);
-
-    if (nextIncompletePartIndex != null) {
-      model.currentPartIndex.set(nextIncompletePartIndex);
-      return;
-    }
-
     model.appScreen.set("review");
   }
 
@@ -354,18 +348,11 @@ export function RecordingWizard() {
 
   function handleBack() {
     controller.stopTransport();
-    if (launchedFromReview) {
-      model.cancelRecordingForPart();
-      return;
-    }
-    if (partIndex > 0) {
-      model.currentPartIndex.set(partIndex - 1);
-    } else {
-      model.appScreen.set("calibration");
-    }
+    model.clearRecordingTarget();
+    model.appScreen.set("review");
   }
 
-  if (stream == null) return null;
+  if (stream == null || currentTrackId == null || partIndex < 0) return null;
 
   const partLabel = getPartLabel(partIndex, totalParts);
   const busy = phase === "counting-in" || phase === "recording";
@@ -397,7 +384,7 @@ export function RecordingWizard() {
               onClick={handleBack}
               disabled={busy}
             >
-              {launchedFromReview ? "← Review" : "← Back"}
+              ← Review
             </Button>
             <Text color={dsColors.textMuted} fontSize="sm">
               Part {partIndex + 1} of {totalParts}
@@ -412,10 +399,8 @@ export function RecordingWizard() {
             <Text color={dsColors.textMuted} fontSize="sm" mt={1}>
               {isMelodyPart
                 ? "Sing the melody — harmonies play quietly in your headphones"
-                : launchedFromReview && hasExistingTake
+                : hasExistingTake
                   ? "Record a replacement take for this part"
-                : launchedFromReview
-                  ? "Record the first take for this part"
                 : partIndex === 0
                   ? "Listen first, then record when ready"
                   : "Prior parts play quietly in your headphones"}
@@ -448,7 +433,7 @@ export function RecordingWizard() {
             reviewUrl={reviewUrl}
             mutedParts={mutedParts}
             onToggleMute={(index) => controller.toggleMute(index)}
-            hideCurrentKeptPreview={launchedFromReview}
+            hideCurrentKeptPreview
           />
 
           {phase !== "review" && (
@@ -555,13 +540,7 @@ export function RecordingWizard() {
                 Redo
               </Button>
               <Button {...dsPrimaryButton} size="lg" onClick={handleKeep}>
-                {launchedFromReview
-                  ? hasExistingTake
-                    ? "Replace"
-                    : "Keep"
-                  : isLastPart
-                    ? "Finish"
-                    : "Keep"}
+                {hasExistingTake ? "Replace" : "Keep"}
               </Button>
             </Grid>
           )}

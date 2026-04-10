@@ -256,6 +256,7 @@ export function LatencyCalibrationScreen() {
   const ctx = useObservable(model.audioContext);
   const arrangement = useObservable(model.arrangementDocument);
   const persistedSelectedMicId = useObservable(model.selectedMicId);
+  const recordingTargetTrackId = useObservable(model.recordingTargetTrackId);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -274,6 +275,7 @@ export function LatencyCalibrationScreen() {
   }, [micDevices, selectedMicId]);
 
   const correctionSec = manualShiftToCorrectionSec(manualShiftSec);
+  const launchedFromReview = recordingTargetTrackId != null;
   const rightEdgeWarning = useMemo(() => {
     if (capture == null) return false;
     return shouldWarnDraggedRightEdgeBeat(capture, manualShiftSec);
@@ -426,11 +428,16 @@ export function LatencyCalibrationScreen() {
     if (capture == null) return;
     stopPreview();
     model.setCalibrationOffset(correctionSec);
-    model.appScreen.set("review");
+    model.appScreen.set(launchedFromReview ? "recording" : "review");
   }
 
   function handleBack() {
     stopPreview();
+    if (launchedFromReview) {
+      model.clearRecordingTarget();
+      model.appScreen.set("review");
+      return;
+    }
     model.appScreen.set("setup");
   }
 
@@ -446,7 +453,7 @@ export function LatencyCalibrationScreen() {
               onClick={handleBack}
               disabled={busy}
             >
-              ← Back
+              {launchedFromReview ? "← Review" : "← Back"}
             </Button>
             <Text color={dsColors.textMuted} fontSize="sm">
               Calibration

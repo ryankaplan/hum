@@ -2,6 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HumDocument } from "../src/state/model";
 
 const persistenceMocks = vi.hoisted(() => ({
+  InvalidSavedDraftError: class InvalidSavedDraftError extends Error {
+    constructor(message: string) {
+      super(message);
+      this.name = "InvalidSavedDraftError";
+    }
+  },
   clearDraftFromIndexedDb: vi.fn<() => Promise<void>>(),
   deleteMediaAssetFromIndexedDb: vi.fn<(mediaAssetId: string) => Promise<void>>(),
   loadDraftFromIndexedDb: vi.fn<() => Promise<null>>(),
@@ -353,5 +359,30 @@ describe("DraftSessionController", () => {
     }
 
     expect(persistenceMocks.saveDraftDocumentToIndexedDb).toHaveBeenCalledTimes(1);
+  });
+
+  it("silently discards unreadable saved drafts and clears persistence", async () => {
+    const listeners = { windowListeners: {}, documentListeners: {} } as {
+      windowListeners: Record<string, Listener>;
+      documentListeners: Record<string, Listener>;
+    };
+    const controller = makeController(() => makeDocument(), listeners);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    persistenceMocks.loadDraftFromIndexedDb.mockRejectedValue(
+      new Error("Saved draft document is invalid"),
+    );
+
+    await expect(controller.restoreOnBoot()).resolves.toBeNull();
+
+    expect(warnSpy).toHaveBeenCalledWith("Discarding unreadable saved draft.");
+    expect(errorSpy).not.toHaveBeenCalled();
+    expect(persistenceMocks.clearDraftFromIndexedDb).toHaveBeenCalledTimes(1);
+
+    warnSpy.mockRestore();
+    errorSpy.mockRestore();
   });
 });

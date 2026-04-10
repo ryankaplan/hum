@@ -136,8 +136,8 @@ function serializeRecordingMonitorPreferences(
   recordingMonitorPreferences: RecordingMonitorPreferences | undefined,
 ): SavedRecordingMonitorPreferences {
   const safePreferences = {
-    guideToneVolume: recordingMonitorPreferences?.guideToneVolume ?? 1,
-    beatVolume: recordingMonitorPreferences?.beatVolume ?? 1,
+    guideToneVolume: recordingMonitorPreferences?.guideToneVolume ?? 0.9,
+    beatVolume: recordingMonitorPreferences?.beatVolume ?? 0.9,
     priorHarmonyVolume: recordingMonitorPreferences?.priorHarmonyVolume ?? 1,
   };
   return {

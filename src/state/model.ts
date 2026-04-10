@@ -121,8 +121,8 @@ function createDefaultExportPreferences(): ExportPreferences {
 
 function createDefaultRecordingMonitorPreferences(): RecordingMonitorPreferences {
   return {
-    guideToneVolume: 1,
-    beatVolume: 1,
+    guideToneVolume: 0.9,
+    beatVolume: 0.9,
     priorHarmonyVolume: 1,
   };
 }
@@ -351,13 +351,14 @@ class AppModel {
       alignmentOffsetSec,
       arrangement.progressionDurationSec,
     );
-    const { removedRecordings, clipId } = this.tracksDocument.stageCommittedRecording({
-      trackId,
-      recording,
-      timelineStartSec: clipTiming.timelineStartSec,
-      sourceStartSec: clipTiming.sourceStartSec,
-      durationSec: clipTiming.durationSec,
-    });
+    const { removedRecordings, clipId } =
+      this.tracksDocument.stageCommittedRecording({
+        trackId,
+        recording,
+        timelineStartSec: clipTiming.timelineStartSec,
+        sourceStartSec: clipTiming.sourceStartSec,
+        durationSec: clipTiming.durationSec,
+      });
 
     if (clipId != null) {
       this.tracksEditor.setSelection({
@@ -394,7 +395,8 @@ class AppModel {
     const decoded = await ctx.decodeAudioData(raw);
 
     const recording = this.tracksDocument.getRecording(recordingId);
-    if (recording == null || recording.mediaAssetId !== mediaAssetId) return false;
+    if (recording == null || recording.mediaAssetId !== mediaAssetId)
+      return false;
     const durationSec = Math.max(0, decoded.duration);
 
     this.audioBuffersByRecordingId.set(recordingId, decoded);
@@ -440,7 +442,9 @@ class AppModel {
     return this.waveformPeaksByRecordingId.get(recordingId) ?? null;
   }
 
-  getRecordingSourceWindow(recordingId: RecordingId): RecordingSourceWindow | null {
+  getRecordingSourceWindow(
+    recordingId: RecordingId,
+  ): RecordingSourceWindow | null {
     return this.recordingSourceWindowByRecordingId.get(recordingId) ?? null;
   }
 
@@ -544,7 +548,8 @@ class AppModel {
     }
 
     for (const trackId of document.trackOrder) {
-      const firstClip = this.tracksDocument.getOrderedClipsForTrack(trackId)[0] ?? null;
+      const firstClip =
+        this.tracksDocument.getOrderedClipsForTrack(trackId)[0] ?? null;
       if (firstClip != null) {
         this.tracksEditor.setSelection({
           trackId,
@@ -665,7 +670,9 @@ class AppModel {
   }
 
   setSelectedMicId(deviceId: string | null): void {
-    this.selectedMicId.set(deviceId == null || deviceId === "" ? null : deviceId);
+    this.selectedMicId.set(
+      deviceId == null || deviceId === "" ? null : deviceId,
+    );
   }
 
   resetSession(): void {
@@ -745,7 +752,8 @@ class AppModel {
   }
 
   private resizePartCount(totalParts: number): void {
-    const removedRecordings = this.tracksDocument.resizeForPartCount(totalParts);
+    const removedRecordings =
+      this.tracksDocument.resizeForPartCount(totalParts);
     for (const removed of removedRecordings) {
       this.releaseRecording(removed);
     }

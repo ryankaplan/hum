@@ -2,6 +2,8 @@
 // ratio.
 
 export type CompositorHandle = {
+  drawFrame: () => void;
+  setAutoRender: (enabled: boolean) => void;
   stop: () => void;
 };
 
@@ -45,9 +47,10 @@ export function startCompositor(
     };
   });
 
-  let rafId: number;
+  let rafId: number | null = null;
+  let autoRenderEnabled = true;
 
-  function draw() {
+  function renderFrame() {
     ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
@@ -72,14 +75,41 @@ export function startCompositor(
       }
     }
 
-    rafId = requestAnimationFrame(draw);
   }
 
-  draw();
+  function scheduleNextFrame(): void {
+    if (!autoRenderEnabled || rafId != null) return;
+    rafId = requestAnimationFrame(() => {
+      rafId = null;
+      renderFrame();
+      scheduleNextFrame();
+    });
+  }
+
+  scheduleNextFrame();
 
   return {
+    drawFrame() {
+      renderFrame();
+    },
+    setAutoRender(enabled) {
+      autoRenderEnabled = enabled;
+      if (!enabled && rafId != null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+        return;
+      }
+      if (enabled) {
+        renderFrame();
+        scheduleNextFrame();
+      }
+    },
     stop() {
-      cancelAnimationFrame(rafId);
+      autoRenderEnabled = false;
+      if (rafId != null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
     },
   };
 }

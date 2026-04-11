@@ -18,6 +18,7 @@ export type Mixer = {
   setTrackVolume(index: number, value: number): void;
   setTrackMuted(index: number, muted: boolean): void;
   setReverbWet(wet: number): void;
+  setOutputEnabled(enabled: boolean): void;
   connectForExport(dest: MediaStreamAudioDestinationNode): void;
   disconnectExport(dest: MediaStreamAudioDestinationNode): void;
   dispose(): void;
@@ -36,6 +37,7 @@ export function createMixer(
   const masterGain = ctx.createGain();
   masterGain.gain.value = 1.0;
   masterGain.connect(ctx.destination);
+  let outputEnabled = true;
 
   // Dry path
   const dryGain = ctx.createGain();
@@ -87,6 +89,16 @@ export function createMixer(
     setReverbWet(wet) {
       wetGain.gain.value = wet;
       dryGain.gain.value = 1 - wet;
+    },
+
+    setOutputEnabled(enabled) {
+      if (enabled === outputEnabled) return;
+      outputEnabled = enabled;
+      if (enabled) {
+        masterGain.connect(ctx.destination);
+      } else {
+        masterGain.disconnect(ctx.destination);
+      }
     },
 
     connectForExport(dest) {

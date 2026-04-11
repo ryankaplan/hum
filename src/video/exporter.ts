@@ -1,7 +1,6 @@
-// Exports the 4-panel canvas + mixed audio as a single video file.
-// Audio mixing (per-track gain, reverb) is owned by the Mixer; the exporter
-// just connects the mixer's master output to a MediaStreamDestination for the
-// duration of the recording pass.
+// Records the composed canvas plus mixed audio into a downloadable video file.
+// Rendering cadence is controlled by the caller so export can run on a stable,
+// deterministic clock instead of mirroring the live preview loop.
 
 import type { Mixer } from "../audio/mixer";
 
@@ -11,8 +10,9 @@ export type ExportOpts = {
   canvas: HTMLCanvasElement;
   audioContext: AudioContext;
   mixer: Mixer;
-  durationMs: number;
-  onProgress?: (ratio: number) => void;
+  preferredFormat?: ExportFormat | null;
+  videoBitsPerSecond?: number;
+  frameRate?: number;
 };
 
 export type ExportResult = {
@@ -21,9 +21,19 @@ export type ExportResult = {
   format: ExportFormat;
 };
 
+export type ExportSession = {
+  requestFrame: () => void;
+  finish: () => Promise<ExportResult>;
+  abort: () => void;
+};
+
 type ExportProfile = {
   mimeType: string;
   format: ExportFormat;
+};
+
+type CanvasCaptureTrack = MediaStreamTrack & {
+  requestFrame?: () => void;
 };
 
 const EXPORT_MIME_CANDIDATES: ExportProfile[] = [
@@ -39,6 +49,9 @@ const FALLBACK_EXPORT_PROFILE: ExportProfile = {
   mimeType: "video/webm",
   format: "webm",
 };
+
+const DEFAULT_EXPORT_FRAME_RATE = 30;
+const DEFAULT_VIDEO_BITS_PER_SECOND = 4_000_000;
 
 export function getPreferredExportProfile(
   preferredFormat?: ExportFormat | null,
@@ -74,77 +87,117 @@ export function getPreferredExportFormat(
   return getPreferredExportProfile(preferredFormat).format;
 }
 
-export async function exportVideo(opts: ExportOpts): Promise<ExportResult> {
-  const { canvas, audioContext, mixer, durationMs } = opts;
-  const profile = getPreferredExportProfile();
-  const { mimeType, format } = profile;
-
+export function startVideoExport(opts: ExportOpts): ExportSession {
+  const { canvas, audioContext, mixer } = opts;
+  const profile = getPreferredExportProfile(opts.preferredFormat);
+  const frameRate = Math.max(1, opts.frameRate ?? DEFAULT_EXPORT_FRAME_RATE);
+  const {
+    stream: canvasStream,
+    videoTrack,
+  } = createCanvasCaptureStream(canvas, frameRate);
   const dest = audioContext.createMediaStreamDestination();
-  mixer.connectForExport(dest);
 
-  const canvasStream = canvas.captureStream(30);
-  const videoTrack = canvasStream.getVideoTracks()[0];
-  const audioTrack = dest.stream.getAudioTracks()[0];
+  mixer.connectForExport(dest);
 
   if (videoTrack == null) {
     mixer.disconnectExport(dest);
+    dest.disconnect();
     throw new Error("Canvas produced no video track");
   }
 
+  const audioTrack = dest.stream.getAudioTracks()[0];
   const tracks: MediaStreamTrack[] = [videoTrack];
   if (audioTrack != null) {
     tracks.push(audioTrack);
   }
 
   const combinedStream = new MediaStream(tracks);
-  try {
-    const recorder = new MediaRecorder(combinedStream, {
-      mimeType,
-      videoBitsPerSecond: 4_000_000,
-    });
+  const recorder = new MediaRecorder(combinedStream, {
+    mimeType: profile.mimeType,
+    videoBitsPerSecond:
+      opts.videoBitsPerSecond ?? DEFAULT_VIDEO_BITS_PER_SECOND,
+  });
 
-    const chunks: Blob[] = [];
-    recorder.ondataavailable = (e) => {
-      if (e.data.size > 0) chunks.push(e.data);
-    };
+  const chunks: Blob[] = [];
+  let cleanedUp = false;
 
-    const done = new Promise<Blob>((resolve, reject) => {
-      recorder.onstop = () => {
-        resolve(new Blob(chunks, { type: mimeType }));
-      };
-      recorder.onerror = () => {
-        reject(new Error("MediaRecorder export failed"));
-      };
-    });
-
-    recorder.start(100);
-
-    // Wait for the full duration + small buffer
-    const startMs = performance.now();
-    await new Promise<void>((resolve) => {
-      const tick = () => {
-        const elapsed = performance.now() - startMs;
-        opts.onProgress?.(Math.min(elapsed / durationMs, 1));
-        if (elapsed >= durationMs + 500) {
-          resolve();
-        } else {
-          setTimeout(tick, 200);
-        }
-      };
-      tick();
-    });
-
-    if (recorder.state !== "inactive") {
-      recorder.stop();
+  recorder.ondataavailable = (event) => {
+    if (event.data.size > 0) {
+      chunks.push(event.data);
     }
+  };
 
-    const blob = await done;
-    return { blob, mimeType, format };
-  } finally {
+  const result = new Promise<ExportResult>((resolve, reject) => {
+    recorder.onstop = () => {
+      cleanup();
+      resolve({
+        blob: new Blob(chunks, { type: profile.mimeType }),
+        mimeType: profile.mimeType,
+        format: profile.format,
+      });
+    };
+    recorder.onerror = () => {
+      cleanup();
+      reject(new Error("MediaRecorder export failed"));
+    };
+  });
+
+  recorder.start(Math.max(100, Math.round(1000 / frameRate)));
+
+  return {
+    requestFrame() {
+      videoTrack.requestFrame?.();
+    },
+    async finish() {
+      if (recorder.state !== "inactive") {
+        recorder.stop();
+      }
+      return result;
+    },
+    abort() {
+      if (recorder.state !== "inactive") {
+        recorder.stop();
+      } else {
+        cleanup();
+      }
+    },
+  };
+
+  function cleanup(): void {
+    if (cleanedUp) return;
+    cleanedUp = true;
     mixer.disconnectExport(dest);
     dest.disconnect();
     for (const track of combinedStream.getTracks()) {
       track.stop();
     }
   }
+}
+
+function createCanvasCaptureStream(
+  canvas: HTMLCanvasElement,
+  frameRate: number,
+): {
+  stream: MediaStream;
+  videoTrack: CanvasCaptureTrack | undefined;
+} {
+  const manualStream = canvas.captureStream(0);
+  const manualTrack = manualStream.getVideoTracks()[0] as CanvasCaptureTrack | undefined;
+
+  if (manualTrack?.requestFrame != null) {
+    return {
+      stream: manualStream,
+      videoTrack: manualTrack,
+    };
+  }
+
+  for (const track of manualStream.getTracks()) {
+    track.stop();
+  }
+
+  const fallbackStream = canvas.captureStream(frameRate);
+  return {
+    stream: fallbackStream,
+    videoTrack: fallbackStream.getVideoTracks()[0] as CanvasCaptureTrack | undefined,
+  };
 }

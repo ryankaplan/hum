@@ -4,9 +4,13 @@ import { model, type TrackClip, type TrackId } from "../state/model";
 import {
   AUDIO_SCHEDULE_LEAD_SEC,
   FRAME_READY_TIMEOUT_MS,
+  mapTimelineToSource,
 } from "../transport/core";
-import { startCompositor } from "../video/compositor";
-import { exportVideo } from "../video/exporter";
+import {
+  startCompositor,
+  type CompositorHandle,
+} from "../video/compositor";
+import { startVideoExport, type ExportSession } from "../video/exporter";
 import {
   createReviewTransport,
   type ReviewTransport,
@@ -17,6 +21,11 @@ import {
 } from "../state/clipAutomation";
 import type { EditorSelection } from "./timeline";
 import { FINAL_REVIEW_WAVEFORM_BUCKETS_PER_SEC } from "./waveformRendering";
+
+const EXPORT_FRAME_RATE = 30;
+const EXPORT_START_DELAY_MS = 120;
+const EXPORT_STATUS_INTERVAL_MS = 100;
+const EXPORT_FRAME_SYNC_BUDGET_MS = 14;
 
 export type FinalReviewRuntimeStatus =
   | "idle"
@@ -193,7 +202,14 @@ export class FinalReviewRuntimeController {
     const inputs = this.inputs;
     const canvas = inputs?.canvasRef.current;
     const mixer = model.mixer;
-    if (inputs == null || inputs.ctx == null || canvas == null || mixer == null) {
+    const compositor = model.compositor;
+    if (
+      inputs == null ||
+      inputs.ctx == null ||
+      canvas == null ||
+      mixer == null ||
+      compositor == null
+    ) {
       return;
     }
     if (inputs.timelineEndSec <= 0) return;
@@ -238,37 +254,67 @@ export class FinalReviewRuntimeController {
 
       this.updateSnapshot({ unavailableLanes });
 
-      const startCtxTime = ctx.currentTime + AUDIO_SCHEDULE_LEAD_SEC;
-      this.startAudioFromTimeline(startCtxTime, 0, endTimelineSec);
-      transport.startRun({
-        mode: "export",
-        startCtxTimeSec: startCtxTime,
-        startTimelineSec: 0,
-        endTimelineSec,
-        onTick: (timelineSec) => {
-          model.tracksEditor.setPlaybackPlayhead(timelineSec);
-        },
-        onEnded: () => {
-          model.tracksEditor.setPlayhead(endTimelineSec);
-        },
-      });
-      this.setStatus("exporting");
-
-      const result = await exportVideo({
-        canvas,
-        audioContext: ctx,
-        mixer: exportMixer,
-        durationMs: endTimelineSec * 1000,
-        onProgress: (progress) => model.updateExportProgress(progress),
-      });
+      await this.syncVideosForExportFrame(0, requestToken, FRAME_READY_TIMEOUT_MS);
       if (this.requestToken !== requestToken) return;
 
-      const nextUrl = URL.createObjectURL(result.blob);
-      model.completeExport({
-        url: nextUrl,
-        format: result.format,
-        mimeType: result.mimeType,
-      });
+      compositor.setAutoRender(false);
+      compositor.drawFrame();
+      model.tracksEditor.setPlaybackPlayhead(0);
+
+      let exportSession: ExportSession | null = null;
+      let exportFinished = false;
+      let outputMuted = false;
+
+      try {
+        exportSession = startVideoExport({
+          canvas,
+          audioContext: ctx,
+          mixer: exportMixer,
+          preferredFormat: model.exportPreferences.get().preferredFormat,
+          frameRate: EXPORT_FRAME_RATE,
+        });
+        const activeExportSession = exportSession;
+        exportMixer.setOutputEnabled(false);
+        outputMuted = true;
+
+        const exportStartCtxTime =
+          ctx.currentTime + EXPORT_START_DELAY_MS / 1000;
+        const exportStartWallClockMs = performance.now() + EXPORT_START_DELAY_MS;
+
+        this.startAudioFromTimeline(exportStartCtxTime, 0, endTimelineSec);
+        this.setStatus("exporting");
+
+        await waitUntil(exportStartWallClockMs, () => this.requestToken !== requestToken);
+        if (this.requestToken !== requestToken) return;
+
+        await this.runDeterministicExport({
+          requestToken,
+          compositor,
+          exportSession: activeExportSession,
+          exportStartWallClockMs,
+          endTimelineSec,
+        });
+        if (this.requestToken !== requestToken) return;
+
+        const result = await activeExportSession.finish();
+        exportFinished = true;
+        if (this.requestToken !== requestToken) return;
+
+        const nextUrl = URL.createObjectURL(result.blob);
+        model.completeExport({
+          url: nextUrl,
+          format: result.format,
+          mimeType: result.mimeType,
+        });
+      } finally {
+        if (exportSession != null && !exportFinished) {
+          exportSession.abort();
+        }
+        if (outputMuted) {
+          exportMixer.setOutputEnabled(true);
+        }
+        compositor.setAutoRender(true);
+      }
     } catch (error) {
       console.error("Export failed", error);
       if (this.requestToken === requestToken) {
@@ -460,6 +506,115 @@ export class FinalReviewRuntimeController {
     this.activeSources = [];
   }
 
+  private async runDeterministicExport(input: {
+    requestToken: number;
+    compositor: CompositorHandle;
+    exportSession: ExportSession;
+    exportStartWallClockMs: number;
+    endTimelineSec: number;
+  }): Promise<void> {
+    const { requestToken, compositor, exportSession, exportStartWallClockMs, endTimelineSec } =
+      input;
+    const frameDurationMs = 1000 / EXPORT_FRAME_RATE;
+    const frameCount = Math.max(1, Math.ceil(endTimelineSec * EXPORT_FRAME_RATE));
+    let lastStatusUpdateMs = -Infinity;
+
+    for (let frameIndex = 0; frameIndex <= frameCount; frameIndex++) {
+      if (this.requestToken !== requestToken) {
+        return;
+      }
+
+      const timelineSec = Math.min(frameIndex / EXPORT_FRAME_RATE, endTimelineSec);
+      const targetWallClockMs = exportStartWallClockMs + timelineSec * 1000;
+      await waitUntil(targetWallClockMs, () => this.requestToken !== requestToken);
+      if (this.requestToken !== requestToken) {
+        return;
+      }
+
+      const syncBudgetMs = Math.min(
+        FRAME_READY_TIMEOUT_MS,
+        Math.max(
+          EXPORT_FRAME_SYNC_BUDGET_MS,
+          targetWallClockMs +
+            frameDurationMs -
+            performance.now() -
+            2,
+        ),
+      );
+      await this.syncVideosForExportFrame(
+        timelineSec,
+        requestToken,
+        syncBudgetMs,
+      );
+      if (this.requestToken !== requestToken) {
+        return;
+      }
+
+      compositor.drawFrame();
+      exportSession.requestFrame();
+
+      const nowMs = performance.now();
+      if (
+        frameIndex === frameCount ||
+        nowMs - lastStatusUpdateMs >= EXPORT_STATUS_INTERVAL_MS
+      ) {
+        lastStatusUpdateMs = nowMs;
+        model.tracksEditor.setPlaybackPlayhead(timelineSec);
+        model.updateExportProgress(
+          endTimelineSec <= 0 ? 1 : timelineSec / endTimelineSec,
+        );
+      }
+    }
+  }
+
+  private async syncVideosForExportFrame(
+    timelineSec: number,
+    requestToken: number,
+    timeoutMs: number,
+  ): Promise<void> {
+    const inputs = this.inputs;
+    const transport = this.reviewTransport;
+    if (inputs == null || transport == null) return;
+
+    const laneAvailability = transport.getLaneAvailability();
+    const nextActiveMask = Array.from(
+      { length: inputs.trackOrder.length },
+      () => false,
+    );
+    const deadlineMs = performance.now() + Math.max(0, timeoutMs);
+    const tasks: Promise<void>[] = [];
+
+    for (let lane = 0; lane < inputs.trackOrder.length; lane++) {
+      const video = this.videos[lane];
+      if (video == null) continue;
+
+      const available = laneAvailability[lane] ?? false;
+      if (!available) {
+        pauseAndResetRate(video);
+        continue;
+      }
+
+      const mapping = mapTimelineToSource(inputs.timelines[lane] ?? [], timelineSec);
+      if (mapping == null) {
+        pauseAndResetRate(video);
+        continue;
+      }
+
+      nextActiveMask[lane] = true;
+      tasks.push(
+        primeVideoForExportFrame(
+          video,
+          mapping.sourceTimeSec,
+          Math.max(0, deadlineMs - performance.now()),
+          () => this.requestToken !== requestToken,
+        ).then(() => undefined),
+      );
+    }
+
+    this.activeVideoMask = nextActiveMask;
+    await Promise.all(tasks);
+  }
+
   private startAudioFromTimeline(
     startCtxTime: number,
     startTimelineSec: number,
@@ -617,4 +772,210 @@ function scheduleClipVolumeGain({
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function waitUntil(
+  targetMs: number,
+  isCancelled: () => boolean,
+): Promise<void> {
+  if (isCancelled()) return Promise.resolve();
+
+  const remainingMs = targetMs - performance.now();
+  if (remainingMs <= 1) return Promise.resolve();
+
+  return new Promise<void>((resolve) => {
+    const timeoutId = window.setTimeout(() => finish(), remainingMs);
+
+    function finish(): void {
+      clearTimeout(timeoutId);
+      resolve();
+    }
+  });
+}
+
+async function primeVideoForExportFrame(
+  video: HTMLVideoElement,
+  desiredSourceTimeSec: number,
+  timeoutMs: number,
+  isCancelled: () => boolean,
+): Promise<boolean> {
+  if (!Number.isFinite(desiredSourceTimeSec) || isCancelled()) return false;
+
+  if (!(await waitForVideoMetadata(video, timeoutMs, isCancelled))) {
+    return false;
+  }
+
+  const targetTime = clampVideoTime(video, desiredSourceTimeSec);
+  if (
+    Math.abs(video.currentTime - targetTime) <= 0.008 &&
+    video.readyState >= 2
+  ) {
+    return true;
+  }
+
+  const seeked = await seekVideoForFrame(
+    video,
+    targetTime,
+    timeoutMs,
+    isCancelled,
+  );
+  if (!seeked) {
+    return false;
+  }
+
+  return waitForDecodedVideoFrame(video, timeoutMs, isCancelled);
+}
+
+function waitForVideoMetadata(
+  video: HTMLVideoElement,
+  timeoutMs: number,
+  isCancelled: () => boolean,
+): Promise<boolean> {
+  if (isCancelled()) return Promise.resolve(false);
+  if (video.readyState >= 1) return Promise.resolve(true);
+  if (timeoutMs <= 0) return Promise.resolve(false);
+
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    const timeoutId = window.setTimeout(
+      () => finish(video.readyState >= 1),
+      timeoutMs,
+    );
+
+    function finish(value: boolean): void {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      video.removeEventListener("loadedmetadata", onLoadedMetadata);
+      video.removeEventListener("error", onError);
+      resolve(value && !isCancelled());
+    }
+
+    function onLoadedMetadata(): void {
+      finish(true);
+    }
+
+    function onError(): void {
+      finish(false);
+    }
+
+    video.addEventListener("loadedmetadata", onLoadedMetadata, { once: true });
+    video.addEventListener("error", onError, { once: true });
+  });
+}
+
+function seekVideoForFrame(
+  video: HTMLVideoElement,
+  timeSec: number,
+  timeoutMs: number,
+  isCancelled: () => boolean,
+): Promise<boolean> {
+  if (isCancelled()) return Promise.resolve(false);
+  if (timeoutMs <= 0) return Promise.resolve(false);
+
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    const timeoutId = window.setTimeout(
+      () =>
+        finish(
+          Math.abs(video.currentTime - timeSec) <= 0.06 && video.readyState >= 2,
+        ),
+      timeoutMs,
+    );
+
+    function finish(value: boolean): void {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      video.removeEventListener("seeked", onSeeked);
+      video.removeEventListener("error", onError);
+      resolve(value && !isCancelled());
+    }
+
+    function onSeeked(): void {
+      finish(true);
+    }
+
+    function onError(): void {
+      finish(false);
+    }
+
+    video.addEventListener("seeked", onSeeked, { once: true });
+    video.addEventListener("error", onError, { once: true });
+
+    try {
+      video.currentTime = timeSec;
+    } catch {
+      finish(false);
+    }
+  });
+}
+
+function waitForDecodedVideoFrame(
+  video: HTMLVideoElement,
+  timeoutMs: number,
+  isCancelled: () => boolean,
+): Promise<boolean> {
+  if (isCancelled()) return Promise.resolve(false);
+  if (video.readyState >= 2) return Promise.resolve(true);
+  if (timeoutMs <= 0) return Promise.resolve(false);
+
+  const frameVideo = video as HTMLVideoElement & {
+    requestVideoFrameCallback?: (
+      callback: (now: number, metadata: unknown) => void,
+    ) => number;
+    cancelVideoFrameCallback?: (handle: number) => void;
+  };
+
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    let frameHandle: number | null = null;
+    const timeoutId = window.setTimeout(
+      () => finish(video.readyState >= 2),
+      timeoutMs,
+    );
+
+    function finish(value: boolean): void {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      if (frameHandle != null && frameVideo.cancelVideoFrameCallback != null) {
+        frameVideo.cancelVideoFrameCallback(frameHandle);
+      }
+      video.removeEventListener("loadeddata", onLoadedData);
+      video.removeEventListener("canplay", onLoadedData);
+      video.removeEventListener("error", onError);
+      resolve(value && !isCancelled());
+    }
+
+    function onLoadedData(): void {
+      finish(true);
+    }
+
+    function onError(): void {
+      finish(false);
+    }
+
+    if (frameVideo.requestVideoFrameCallback != null) {
+      frameHandle = frameVideo.requestVideoFrameCallback(() => finish(true));
+    }
+
+    video.addEventListener("loadeddata", onLoadedData, { once: true });
+    video.addEventListener("canplay", onLoadedData, { once: true });
+    video.addEventListener("error", onError, { once: true });
+  });
+}
+
+function clampVideoTime(video: HTMLVideoElement, sourceTimeSec: number): number {
+  const duration = video.duration;
+  if (!Number.isFinite(duration)) {
+    return Math.max(0, sourceTimeSec);
+  }
+
+  return clamp(sourceTimeSec, 0, Math.max(0, duration - 0.001));
+}
+
+function pauseAndResetRate(video: HTMLVideoElement): void {
+  video.playbackRate = 1;
+  video.pause();
 }

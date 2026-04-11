@@ -11,23 +11,23 @@ export type CompositorOpts = {
   isVideoActive?: (index: number) => boolean;
 };
 
-const CANVAS_WIDTH = 540;
-const CANVAS_HEIGHT = 960;
+export const COMPOSITOR_CANVAS_WIDTH = 540;
+export const COMPOSITOR_CANVAS_HEIGHT = 960;
 
 export function startCompositor(
   canvas: HTMLCanvasElement,
   videos: HTMLVideoElement[],
   opts?: CompositorOpts,
 ): CompositorHandle {
-  canvas.width = CANVAS_WIDTH;
-  canvas.height = CANVAS_HEIGHT;
+  canvas.width = COMPOSITOR_CANVAS_WIDTH;
+  canvas.height = COMPOSITOR_CANVAS_HEIGHT;
 
   const ctx2d = canvas.getContext("2d");
   if (ctx2d == null) throw new Error("Could not get canvas 2D context");
   const ctx = ctx2d;
 
-  const cellW = CANVAS_WIDTH / 2;
-  const cellH = CANVAS_HEIGHT / 2;
+  const cellW = COMPOSITOR_CANVAS_WIDTH / 2;
+  const cellH = COMPOSITOR_CANVAS_HEIGHT / 2;
 
   const positions: [number, number][] = [
     [0, 0],
@@ -51,30 +51,15 @@ export function startCompositor(
   let autoRenderEnabled = true;
 
   function renderFrame() {
-    ctx.fillStyle = "#000";
-    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-
-    for (let i = 0; i < 4; i++) {
-      const video = videos[i];
-      const pos = positions[i]!;
-      const active = opts?.isVideoActive?.(i) ?? true;
-      const cache = frameCache[i];
-
-      if (video != null && active && video.readyState >= 2) {
-        // Cover-fit: center-crop the video into the cell.
-        drawCoverFit(ctx, video, pos[0], pos[1], cellW, cellH);
-        if (cache?.ctx != null) {
-          drawCoverFit(cache.ctx, video, 0, 0, cellW, cellH);
-          cache.hasFrame = true;
-        }
-      } else if (cache?.hasFrame) {
-        ctx.drawImage(cache.canvas, pos[0], pos[1], cellW, cellH);
-      } else {
-        ctx.fillStyle = "#111";
-        ctx.fillRect(pos[0], pos[1], cellW, cellH);
-      }
-    }
-
+    drawCompositeGridFrame({
+      ctx,
+      sources: videos,
+      isSourceActive: (index) => opts?.isVideoActive?.(index) ?? true,
+      getCachedFrame: (index) => frameCache[index] ?? null,
+      cellWidth: cellW,
+      cellHeight: cellH,
+      positions,
+    });
   }
 
   function scheduleNextFrame(): void {
@@ -114,16 +99,69 @@ export function startCompositor(
   };
 }
 
+type CachedFrame = {
+  canvas: HTMLCanvasElement;
+  ctx: CanvasRenderingContext2D | null;
+  hasFrame: boolean;
+};
+
+type DrawCompositeGridFrameInput = {
+  ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+  sources: Array<CanvasImageSource | null | undefined>;
+  isSourceActive?: (index: number) => boolean;
+  getCachedFrame?: (index: number) => CachedFrame | null;
+  cellWidth?: number;
+  cellHeight?: number;
+  positions?: [number, number][];
+};
+
+export function drawCompositeGridFrame({
+  ctx,
+  sources,
+  isSourceActive,
+  getCachedFrame,
+  cellWidth = COMPOSITOR_CANVAS_WIDTH / 2,
+  cellHeight = COMPOSITOR_CANVAS_HEIGHT / 2,
+  positions = [
+    [0, 0],
+    [cellWidth, 0],
+    [0, cellHeight],
+    [cellWidth, cellHeight],
+  ],
+}: DrawCompositeGridFrameInput): void {
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, COMPOSITOR_CANVAS_WIDTH, COMPOSITOR_CANVAS_HEIGHT);
+
+  for (let i = 0; i < 4; i++) {
+    const source = sources[i];
+    const [x, y] = positions[i] ?? [0, 0];
+    const active = isSourceActive?.(i) ?? true;
+    const cache = getCachedFrame?.(i) ?? null;
+
+    if (source != null && active && isCanvasSourceReady(source)) {
+      drawCoverFit(ctx, source, x, y, cellWidth, cellHeight);
+      if (cache?.ctx != null) {
+        drawCoverFit(cache.ctx, source, 0, 0, cellWidth, cellHeight);
+        cache.hasFrame = true;
+      }
+    } else if (cache?.hasFrame) {
+      ctx.drawImage(cache.canvas, x, y, cellWidth, cellHeight);
+    } else {
+      ctx.fillStyle = "#111";
+      ctx.fillRect(x, y, cellWidth, cellHeight);
+    }
+  }
+}
+
 function drawCoverFit(
-  ctx: CanvasRenderingContext2D,
-  video: HTMLVideoElement,
+  ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+  video: CanvasImageSource,
   x: number,
   y: number,
   w: number,
   h: number,
 ) {
-  const vw = video.videoWidth || w;
-  const vh = video.videoHeight || h;
+  const { width: vw, height: vh } = getSourceDimensions(video, w, h);
   const vAspect = vw / vh;
   const cAspect = w / h;
 
@@ -143,4 +181,38 @@ function drawCoverFit(
   }
 
   ctx.drawImage(video, sx, sy, sw, sh, x, y, w, h);
+}
+
+function getSourceDimensions(
+  source: CanvasImageSource,
+  fallbackWidth: number,
+  fallbackHeight: number,
+): { width: number; height: number } {
+  if ("videoWidth" in source && "videoHeight" in source) {
+    return {
+      width: source.videoWidth || fallbackWidth,
+      height: source.videoHeight || fallbackHeight,
+    };
+  }
+  if ("naturalWidth" in source && "naturalHeight" in source) {
+    return {
+      width: source.naturalWidth || fallbackWidth,
+      height: source.naturalHeight || fallbackHeight,
+    };
+  }
+  if ("width" in source && "height" in source) {
+    return {
+      width: Number(source.width) || fallbackWidth,
+      height: Number(source.height) || fallbackHeight,
+    };
+  }
+  return { width: fallbackWidth, height: fallbackHeight };
+}
+
+function isCanvasSourceReady(source: CanvasImageSource): boolean {
+  if ("readyState" in source) {
+    return source.readyState >= 2;
+  }
+  const { width, height } = getSourceDimensions(source, 0, 0);
+  return width > 0 && height > 0;
 }

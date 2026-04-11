@@ -24,20 +24,70 @@ export type Mixer = {
   dispose(): void;
 };
 
+export type MixerGraph = {
+  connectSource(index: number, node: AudioNode): void;
+  setTrackVolume(index: number, value: number): void;
+  setTrackMuted(index: number, muted: boolean): void;
+  setReverbWet(wet: number): void;
+  setOutputEnabled(enabled: boolean): void;
+  masterGain: GainNode;
+  dispose(): void;
+};
+
+type CreateMixerGraphInput = {
+  ctx: AudioContext | OfflineAudioContext;
+  trackCount: number;
+  connectToDestination: boolean;
+};
+
 export function createMixer(
   ctx: AudioContext,
   trackCount: number,
 ): Mixer {
+  const graph = createMixerGraph({
+    ctx,
+    trackCount,
+    connectToDestination: true,
+  });
+
+  return {
+    ...graph,
+    connectForExport(dest) {
+      graph.masterGain.connect(dest);
+    },
+
+    disconnectExport(dest) {
+      graph.masterGain.disconnect(dest);
+    },
+  };
+}
+
+export function createReviewMixerGraph(
+  ctx: AudioContext | OfflineAudioContext,
+  trackCount: number,
+): MixerGraph {
+  return createMixerGraph({
+    ctx,
+    trackCount,
+    connectToDestination: true,
+  });
+}
+
+function createMixerGraph({
+  ctx,
+  trackCount,
+  connectToDestination,
+}: CreateMixerGraphInput): MixerGraph {
   const trackGains: GainNode[] = [];
   const volumes: number[] = [];
   const mutedFlags: boolean[] = [];
 
-  // Master: always connected to ctx.destination; also connected to
-  // MediaStreamDestination during export.
   const masterGain = ctx.createGain();
   masterGain.gain.value = 1.0;
-  masterGain.connect(ctx.destination);
-  let outputEnabled = true;
+  if (connectToDestination) {
+    masterGain.connect(ctx.destination);
+  }
+  let outputEnabled = connectToDestination;
 
   // Dry path
   const dryGain = ctx.createGain();
@@ -101,14 +151,7 @@ export function createMixer(
       }
     },
 
-    connectForExport(dest) {
-      masterGain.connect(dest);
-    },
-
-    // Disconnects only the export destination, leaving ctx.destination intact.
-    disconnectExport(dest) {
-      masterGain.disconnect(dest);
-    },
+    masterGain,
 
     dispose() {
       masterGain.disconnect();
@@ -119,23 +162,33 @@ export function createMixer(
         g.disconnect();
       }
     },
-  };
+  } satisfies MixerGraph;
 }
 
 // Generates a simple exponentially-decaying white noise impulse response,
 // which produces a convincing small-room reverb without any async work.
 function buildImpulseBuffer(
-  ctx: AudioContext,
+  ctx: AudioContext | OfflineAudioContext,
   durationSec: number,
   decay: number,
 ): AudioBuffer {
   const length = Math.floor(ctx.sampleRate * durationSec);
   const buffer = ctx.createBuffer(2, length, ctx.sampleRate);
+  const prng = createPrng(0x5f3759df);
   for (let channel = 0; channel < 2; channel++) {
     const data = buffer.getChannelData(channel);
     for (let i = 0; i < length; i++) {
-      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, decay);
+      data[i] =
+        (prng() * 2 - 1) * Math.pow(1 - i / length, decay);
     }
   }
   return buffer;
+}
+
+function createPrng(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    return state / 0xffffffff;
+  };
 }

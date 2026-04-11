@@ -30,6 +30,7 @@ import {
   selectMonitorTrackIndices,
   useRecordingTransportController,
 } from "./RecordingTransportController";
+import type { HarmonyTakeScores } from "../recording/takeScoring";
 
 type RecordingListProps = {
   stream: MediaStream;
@@ -174,6 +175,42 @@ function ReviewCell({ url }: ReviewCellProps) {
         display: "block",
       }}
     />
+  );
+}
+
+function ReviewScores({ scores }: { scores: HarmonyTakeScores | null }) {
+  if (scores == null) return null;
+
+  const metrics = [
+    scores.timing != null ? { label: "Timing", score: scores.timing.score100 } : null,
+    scores.pitch != null ? { label: "Pitch", score: scores.pitch.score100 } : null,
+  ].filter((metric): metric is { label: string; score: number } => metric != null);
+
+  if (metrics.length === 0) return null;
+
+  return (
+    <Flex
+      gap={2}
+      justify="center"
+      wrap="wrap"
+      borderRadius="lg"
+      border="1px solid"
+      borderColor={dsColors.border}
+      bg={dsColors.surfaceSubtle}
+      px={3}
+      py={2}
+    >
+      {metrics.map((metric) => (
+        <Text
+          key={metric.label}
+          color={dsColors.textMuted}
+          fontSize="sm"
+          fontWeight="semibold"
+        >
+          {metric.label} {metric.score}
+        </Text>
+      ))}
+    </Flex>
   );
 }
 
@@ -332,6 +369,7 @@ export function RecordingWizard() {
   const countInBeat = snapshot.countInBeat;
   const currentAbsoluteBeat = snapshot.currentAbsoluteBeat;
   const reviewUrl = snapshot.reviewUrl;
+  const reviewScores = snapshot.reviewScores;
   const guideToneEnabled = snapshot.guideToneEnabled;
   const mutedParts = snapshot.mutedParts;
   const referenceWaveform = snapshot.referenceWaveform;
@@ -431,11 +469,13 @@ export function RecordingWizard() {
               lyricsByChord={lyricsByChord}
               harmonyLine={harmonyLine}
               referenceWaveform={referenceWaveform}
+              stream={stream}
               activeChordIndex={activeChordIndex}
               currentAbsoluteBeat={currentAbsoluteBeat}
               beatsPerBar={beatsPerBar}
               tempo={arrangement.tempo}
               transportActive={transportActive}
+              recordingActive={phase === "recording"}
             />
           )}
 
@@ -548,14 +588,17 @@ export function RecordingWizard() {
           )}
 
           {phase === "review" && (
-            <Grid templateColumns="1fr 1fr" gap={3}>
-              <Button {...dsOutlineButton} size="lg" onClick={handleRedo}>
-                Redo
-              </Button>
-              <Button {...dsPrimaryButton} size="lg" onClick={handleKeep}>
-                {hasExistingTake ? "Replace" : "Keep"}
-              </Button>
-            </Grid>
+            <Stack gap={3}>
+              <ReviewScores scores={reviewScores} />
+              <Grid templateColumns="1fr 1fr" gap={3}>
+                <Button {...dsOutlineButton} size="lg" onClick={handleRedo}>
+                  Redo
+                </Button>
+                <Button {...dsPrimaryButton} size="lg" onClick={handleKeep}>
+                  {hasExistingTake ? "Replace" : "Keep"}
+                </Button>
+              </Grid>
+            </Stack>
           )}
         </Stack>
       </Box>

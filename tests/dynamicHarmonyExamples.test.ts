@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { generateHarmony, generateHarmonyDynamic } from "../src/music/harmony";
+import { generateHarmony } from "../src/music/harmony";
 import { midiToNoteName } from "../src/music/types";
 import { parseChordText } from "../src/music/parse";
 
 function renderProgressionVoicings(
   tokens: readonly string[],
   beats: readonly number[] = tokens.map(() => 4),
-  generator: typeof generateHarmonyDynamic | typeof generateHarmony = generateHarmonyDynamic,
+  generator: typeof generateHarmony = generateHarmony,
 ): string[] {
   const chords = tokens.map((token, index) => {
     const chord = parseChordText(token, beats[index] ?? 4);
@@ -89,11 +89,10 @@ describe("dynamic harmony chord examples", () => {
       `);
   });
 
-  it("differs from legacy on an extended suspended progression", () => {
+  it("renders an extended suspended progression", () => {
     const tokens = ["Am6", "E(b9)/G#", "Gm7", "C9sus4", "Fdim", "F6"] as const;
     const beats = [4, 4, 2, 2, 2, 2] as const;
-    const dynamic = renderProgressionVoicings(tokens, beats, generateHarmonyDynamic);
-    const legacy = renderProgressionVoicings(tokens, beats, generateHarmony);
+    const dynamic = renderProgressionVoicings(tokens, beats, generateHarmony);
 
     expect(dynamic).toMatchInlineSnapshot(`
       [
@@ -105,6 +104,5 @@ describe("dynamic harmony chord examples", () => {
         "F6 -> F3 A3 D4",
       ]
     `);
-    expect(dynamic).not.toEqual(legacy);
   });
 });

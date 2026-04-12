@@ -18,7 +18,6 @@ export function SetupCard({
   onMeterLabelChange,
   onRangePresetChange,
   onHarmonyCoverageChange,
-  onSelectedHarmonyGeneratorChange,
   onPartCountChange,
   onPreviewSelected,
   onPreviewCustom,
@@ -33,9 +32,7 @@ export function SetupCard({
     parsedChords: parsed,
     invalidChordIds,
     parseIssues,
-    harmonyVoicingLegacy: legacyVoicing,
-    harmonyVoicingDynamic: dynamicVoicing,
-    selectedHarmonyVoicing,
+    harmonyVoicing,
     effectiveHarmonyVoicing,
     hasCustomHarmony,
     isValid,
@@ -45,10 +42,8 @@ export function SetupCard({
     vocalRangeLow: rangeLow,
     vocalRangeHigh: rangeHigh,
     harmonyRangeCoverage,
-    selectedHarmonyGenerator,
     totalParts,
   } = input;
-  const chordPreviewItems = measures.flatMap((measure) => measure.chords);
   const selectedRangeValue =
     RANGE_OPTIONS.find(
       (option) => option.low === rangeLow && option.high === rangeHigh,
@@ -84,7 +79,7 @@ export function SetupCard({
           onPartCountChange={onPartCountChange}
         />
 
-        {parsed.length > 0 && legacyVoicing != null && dynamicVoicing != null && (
+        {parsed.length > 0 && harmonyVoicing != null && (
           <>
             <ChordInputField
               chordsInput={chordsInput}
@@ -93,14 +88,10 @@ export function SetupCard({
             <ArrangementPreviewPanel
               measures={measures}
               parsed={parsed}
-              legacyVoicing={legacyVoicing}
-              selectedHarmonyGenerator={selectedHarmonyGenerator}
-              selectedHarmonyVoicing={selectedHarmonyVoicing}
+              harmonyVoicing={harmonyVoicing}
               effectiveHarmonyVoicing={effectiveHarmonyVoicing}
               hasCustomHarmony={hasCustomHarmony}
               previewingMode={previewingMode}
-              chordPreviewItems={chordPreviewItems}
-              onSelectedHarmonyGeneratorChange={onSelectedHarmonyGeneratorChange}
               onPreviewSelected={onPreviewSelected}
               onPreviewCustom={onPreviewCustom}
               onStopPreview={onStopPreview}
@@ -110,7 +101,7 @@ export function SetupCard({
           </>
         )}
 
-        {parsed.length === 0 || legacyVoicing == null || dynamicVoicing == null ? (
+        {parsed.length === 0 || harmonyVoicing == null ? (
           <ChordInputField
             chordsInput={chordsInput}
             onChordsChange={onChordsChange}

@@ -6,11 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { useObservable } from "../observable";
 import { acquirePermissionsAndStart } from "../recording/permissions";
 import type { CustomArrangement } from "../music/arrangementScore";
-import { resolveHarmonyVoicingForGenerator } from "../state/arrangementModel";
-import type {
-  HarmonyRangeCoverage,
-  SelectedHarmonyGenerator,
-} from "../music/types";
+import type { HarmonyRangeCoverage } from "../music/types";
 import {
   playHarmonyPreview,
   progressionDurationSec,
@@ -79,7 +75,7 @@ export function SetupScreen() {
     const voicing =
       mode === "custom"
         ? arrangement.effectiveHarmonyVoicing
-        : resolveHarmonyVoicingForGenerator(mode, arrangement);
+        : arrangement.harmonyVoicing;
     const tempo = arrangement.input.tempo;
 
     if (voicing == null || parsed.length === 0) return;
@@ -223,14 +219,8 @@ export function SetupScreen() {
         harmonyRangeCoverage: value,
       });
     },
-    onSelectedHarmonyGeneratorChange: (value: SelectedHarmonyGenerator) => {
-      model.setArrangementInput({
-        selectedHarmonyGenerator: value,
-      });
-    },
     onPartCountChange: handlePartCountChange,
-    onPreviewSelected: () =>
-      handlePreview(arrangement.input.selectedHarmonyGenerator),
+    onPreviewSelected: () => handlePreview("generated"),
     onPreviewCustom: () => handlePreview("custom"),
     onStopPreview: handleStopPreview,
     onCustomizeHarmony: handleCustomizeHarmony,

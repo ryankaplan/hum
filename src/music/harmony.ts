@@ -1,5 +1,4 @@
-export { generateHarmony } from "./harmonyLegacy";
-export { generateHarmonyDynamic } from "./harmonyDynamic";
+export { generateHarmony } from "./harmonyDynamic";
 export {
   generateDynamicHarmonyRecipes,
   generateHarmonyCandidates,

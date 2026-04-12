@@ -38,10 +38,8 @@ export const isCalibrated = model.isCalibrated;
 export const arrangementDocument = model.arrangementDocument;
 export const arrangementInfo = model.derivedArrangementInfo;
 export const parsedChords = model.parsedChords;
-export const harmonyVoicingLegacy = model.harmonyVoicingLegacy;
 export const effectiveHarmonyVoicing = model.effectiveHarmonyVoicing;
-export const harmonyVoicingDynamic = model.harmonyVoicingDynamic;
-export const selectedHarmonyVoicing = model.selectedHarmonyVoicing;
+export const harmonyVoicing = model.harmonyVoicing;
 export const exportPreferences = model.exportPreferences;
 export const recordingMonitorPreferences = model.recordingMonitorPreferences;
 

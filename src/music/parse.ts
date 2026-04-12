@@ -1,52 +1,6 @@
 import type { Chord, ChordQuality, NoteName } from "./types";
 import { NOTE_NAMES } from "./types";
 
-// Parses a chord progression string like "A A F#m F#m D D E E"
-// Each token is one bar (beatsPerBar beats). Separate by spaces and/or commas.
-// Group syntax: "[A E]" means both chords share one bar evenly.
-export function parseChordProgression(
-  input: string,
-  beatsPerBar: number,
-): Chord[] {
-  const chords: Chord[] = [];
-  const tokens = tokenizeProgression(input);
-
-  for (const token of tokens) {
-    if (token === "") continue;
-    if (token.startsWith("[") && token.endsWith("]")) {
-      const grouped = parseGroupedBarToken(token, beatsPerBar);
-      for (const chord of grouped) {
-        chords.push(chord);
-      }
-      continue;
-    }
-    const parsed = parseChordText(token, beatsPerBar);
-    if (parsed != null) {
-      chords.push(parsed);
-    }
-  }
-
-  return chords;
-}
-
-function parseGroupedBarToken(token: string, beatsPerBar: number): Chord[] {
-  const inner = token.slice(1, -1).trim();
-  if (inner === "") return [];
-  const parts = inner.split(/[\s,]+/).filter((part) => part.length > 0);
-  if (parts.length === 0) return [];
-  const beatsPerChord = beatsPerBar / parts.length;
-  if (!Number.isFinite(beatsPerChord) || beatsPerChord <= 0) return [];
-
-  const grouped: Chord[] = [];
-  for (const part of parts) {
-    const parsed = parseChordText(part, beatsPerChord);
-    // If any chord in the grouped bar is invalid, discard the whole group.
-    if (parsed == null) return [];
-    grouped.push(parsed);
-  }
-  return grouped;
-}
-
 export function parseChordText(token: string, beats: number): Chord | null {
   const match = token.match(
     /^([A-G][#b]?)(maj7|M7|add9|m7b9|-7b9|7b9|\(b9\)|m9|-9|9sus2|9sus4|9|sus2|sus4|m7|-7|m6|-6|6|dim|o|m|-|7)?(?:\/([A-G][#b]?))?$/,
@@ -116,46 +70,6 @@ function parseChordQualitySuffix(raw: string): ChordQuality | null {
     default:
       return null;
   }
-}
-
-function tokenizeProgression(input: string): string[] {
-  const tokens: string[] = [];
-  let current = "";
-  let inGroup = false;
-
-  for (const char of input) {
-    if (inGroup) {
-      current += char;
-      if (char === "]") {
-        const trimmed = current.trim();
-        if (trimmed !== "") tokens.push(trimmed);
-        current = "";
-        inGroup = false;
-      }
-      continue;
-    }
-
-    if (char === "[") {
-      const trimmed = current.trim();
-      if (trimmed !== "") tokens.push(trimmed);
-      current = "[";
-      inGroup = true;
-      continue;
-    }
-
-    if (/\s|,/.test(char)) {
-      const trimmed = current.trim();
-      if (trimmed !== "") tokens.push(trimmed);
-      current = "";
-      continue;
-    }
-
-    current += char;
-  }
-
-  const tail = current.trim();
-  if (tail !== "") tokens.push(tail);
-  return tokens;
 }
 
 // Valid note names after normalizing flats to sharps

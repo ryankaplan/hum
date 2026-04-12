@@ -6,7 +6,6 @@ import {
 
 function makeSavedHumDocument(
   harmonyRangeCoverage: string,
-  selectedHarmonyGenerator?: "legacy" | "dynamic",
 ) {
   return {
     schemaVersion: SAVED_HUM_DOCUMENT_SCHEMA_VERSION,
@@ -18,7 +17,6 @@ function makeSavedHumDocument(
       vocalRangeLow: "C3",
       vocalRangeHigh: "A4",
       harmonyRangeCoverage,
-      selectedHarmonyGenerator,
       totalParts: 4,
       customArrangement: null,
     },
@@ -49,17 +47,6 @@ describe("parseSavedHumDocument", () => {
     for (const coverage of coverages) {
       const parsed = parseSavedHumDocument(makeSavedHumDocument(coverage));
       expect(parsed?.arrangement.harmonyRangeCoverage).toBe(coverage);
-    }
-  });
-
-  it("accepts supported selected harmony generators", () => {
-    const generators = ["legacy", "dynamic"] as const;
-
-    for (const generator of generators) {
-      const parsed = parseSavedHumDocument(
-        makeSavedHumDocument("lower two thirds", generator),
-      );
-      expect(parsed?.arrangement.selectedHarmonyGenerator).toBe(generator);
     }
   });
 

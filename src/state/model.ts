@@ -51,8 +51,9 @@ export type {
 } from "./tracksModel";
 
 export type {
-  ArrangementChord,
-  HarmonySpan,
+  ArrangementEditorSpan,
+  ArrangementMeasureSlice,
+  ChordEvent,
   ArrangementDocState,
   ArrangementInfo,
   ArrangementMeasure,
@@ -291,26 +292,14 @@ class AppModel {
     { checkForEqualityOnNotify: false },
   );
 
-  readonly harmonyVoicingLegacy = new Derived<HarmonyVoicing | null>(
-    () => this.derivedArrangementInfo.get().harmonyVoicingLegacy,
-    [this.derivedArrangementInfo],
-    { checkForEqualityOnNotify: false },
-  );
-
   readonly effectiveHarmonyVoicing = new Derived<HarmonyVoicing | null>(
     () => this.derivedArrangementInfo.get().effectiveHarmonyVoicing,
     [this.derivedArrangementInfo],
     { checkForEqualityOnNotify: false },
   );
 
-  readonly harmonyVoicingDynamic = new Derived<HarmonyVoicing | null>(
-    () => this.derivedArrangementInfo.get().harmonyVoicingDynamic,
-    [this.derivedArrangementInfo],
-    { checkForEqualityOnNotify: false },
-  );
-
-  readonly selectedHarmonyVoicing = new Derived<HarmonyVoicing | null>(
-    () => this.derivedArrangementInfo.get().selectedHarmonyVoicing,
+  readonly harmonyVoicing = new Derived<HarmonyVoicing | null>(
+    () => this.derivedArrangementInfo.get().harmonyVoicing,
     [this.derivedArrangementInfo],
     { checkForEqualityOnNotify: false },
   );

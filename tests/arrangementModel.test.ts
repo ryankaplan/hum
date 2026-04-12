@@ -15,11 +15,10 @@ function makeArrangementDocState(
     meter: [4, 4],
     vocalRangeLow: "C3",
     vocalRangeHigh: "A4",
-        harmonyRangeCoverage: "lower two thirds",
-        selectedHarmonyGenerator: "dynamic",
-        totalParts: 4,
-        customArrangement: null,
-        ...overrides,
+    harmonyRangeCoverage: "lower two thirds",
+    totalParts: 4,
+    customArrangement: null,
+    ...overrides,
   };
 }
 
@@ -36,30 +35,8 @@ describe("computeArrangementInfo", () => {
       }),
     );
 
-    expect(lowerTwoThirds.harmonyVoicingLegacy?.harmonyTop).toBe(62);
-    expect(wholeRange.harmonyVoicingLegacy?.harmonyTop).toBe(69);
-  });
-
-  it("defaults new arrangements to dynamic harmony selection", () => {
-    expect(createDefaultArrangementDocState().selectedHarmonyGenerator).toBe(
-      "dynamic",
-    );
-
-    const info = computeArrangementInfo(makeArrangementDocState("A9"));
-
-    expect(info.selectedHarmonyVoicing).toBe(info.harmonyVoicingDynamic);
-    expect(info.selectedHarmonyVoicing).not.toBe(info.harmonyVoicingLegacy);
-  });
-
-  it("can explicitly select the legacy harmony voicing", () => {
-    const info = computeArrangementInfo(
-      makeArrangementDocState("A9", {
-        selectedHarmonyGenerator: "legacy",
-      }),
-    );
-
-    expect(info.selectedHarmonyVoicing).toBe(info.harmonyVoicingLegacy);
-    expect(info.selectedHarmonyVoicing).not.toBe(info.harmonyVoicingDynamic);
+    expect(lowerTwoThirds.harmonyVoicing?.harmonyTop).toBe(62);
+    expect(wholeRange.harmonyVoicing?.harmonyTop).toBe(69);
   });
 
   it("recomputes chord annotations when custom harmony adds non-chord tones", () => {
@@ -84,7 +61,7 @@ describe("computeArrangementInfo", () => {
       }),
     );
 
-    expect(info.selectedHarmonyVoicing?.annotations[0]?.chordTones).toBe(
+    expect(info.harmonyVoicing?.annotations[0]?.chordTones).toBe(
       "R b3 5",
     );
     expect(info.hasCustomHarmony).toBe(true);
@@ -129,5 +106,12 @@ describe("computeArrangementInfo", () => {
     expect(info.effectiveHarmonyVoicing?.annotations[1]?.chordTones).toBe(
       "R 5",
     );
+  });
+
+  it("builds editor spans from beat-based chord events", () => {
+    const info = computeArrangementInfo(makeArrangementDocState("A. B"));
+
+    expect(info.chordEvents.map((event) => event.startBeat)).toEqual([0, 2]);
+    expect(info.editorSpans.map((span) => span.startTick)).toEqual([0, 8]);
   });
 });

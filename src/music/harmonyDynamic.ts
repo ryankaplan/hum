@@ -34,7 +34,7 @@ import {
 
 const MAX_DYNAMIC_CANDIDATES_PER_CHORD = 40;
 
-export function generateHarmonyDynamic(
+export function generateHarmony(
   chords: Chord[],
   range: VocalRange,
   harmonyPartCount: number,
@@ -70,7 +70,6 @@ export function generateHarmonyDynamic(
     const candidate = bestPath[i]!;
     annotations.push(
       makeAnnotation(
-        "dynamic",
         candidate.strategy,
         chord,
         describeHarmonyCandidateChordTones(chord, candidate),

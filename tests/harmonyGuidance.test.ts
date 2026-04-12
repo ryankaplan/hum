@@ -5,46 +5,29 @@ import {
   createDefaultArrangementDocState,
 } from "../src/state/arrangementModel";
 
-function makeArrangementInfo(selectedHarmonyGenerator: "legacy" | "dynamic") {
+function makeArrangementInfo() {
   return computeArrangementInfo({
     ...createDefaultArrangementDocState(),
     chordsInput: "A9",
-    selectedHarmonyGenerator,
   });
 }
 
 describe("resolveRecordingHarmonyGuidance", () => {
-  it("uses the selected arrangement's guide tones and count-in cue", () => {
-    const legacyInfo = makeArrangementInfo("legacy");
-    const dynamicInfo = makeArrangementInfo("dynamic");
+  it("uses the generated arrangement's guide tones and count-in cue", () => {
+    const info = makeArrangementInfo();
 
-    const legacyGuidance = resolveRecordingHarmonyGuidance(
-      legacyInfo.selectedHarmonyVoicing,
-      legacyInfo.effectiveCustomArrangement?.voices ?? [],
-      0,
-      4,
-    );
-    const dynamicGuidance = resolveRecordingHarmonyGuidance(
-      dynamicInfo.selectedHarmonyVoicing,
-      dynamicInfo.effectiveCustomArrangement?.voices ?? [],
+    const guidance = resolveRecordingHarmonyGuidance(
+      info.harmonyVoicing,
+      info.effectiveCustomArrangement?.voices ?? [],
       0,
       4,
     );
 
-    expect(legacyGuidance.harmonyLine).toEqual(
-      legacyInfo.harmonyVoicingLegacy?.lines[0] ?? null,
+    expect(guidance.harmonyLine).toEqual(
+      info.harmonyVoicing?.lines[0] ?? null,
     );
-    expect(dynamicGuidance.harmonyLine).toEqual(
-      dynamicInfo.harmonyVoicingDynamic?.lines[0] ?? null,
-    );
-    expect(legacyGuidance.countInCueMidi).toBe(
-      legacyInfo.harmonyVoicingLegacy?.lines[0]?.[0] ?? null,
-    );
-    expect(dynamicGuidance.countInCueMidi).toBe(
-      dynamicInfo.harmonyVoicingDynamic?.lines[0]?.[0] ?? null,
-    );
-    expect(dynamicGuidance.countInCueMidi).not.toBe(
-      legacyGuidance.countInCueMidi,
+    expect(guidance.countInCueMidi).toBe(
+      info.effectiveCustomArrangement?.voices[0]?.events[0]?.midi ?? null,
     );
   });
 });

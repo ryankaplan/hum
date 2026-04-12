@@ -17,7 +17,6 @@ import type {
   HarmonyChordAnnotation,
   HarmonyLine,
   HarmonyVoicing,
-  HarmonyVoicingGenerator,
   HarmonyVoicingStrategy,
   MidiNote,
   VocalRange,
@@ -133,13 +132,11 @@ export function buildHarmonyVoicing(
 }
 
 export function makeAnnotation(
-  generator: HarmonyVoicingGenerator,
   strategy: HarmonyVoicingStrategy,
   chord: Chord,
   chordTones: HarmonyChordAnnotation["chordTones"] = chordToneFormula(chord),
 ): HarmonyChordAnnotation {
   return {
-    generator,
     strategy,
     chordTones,
   };

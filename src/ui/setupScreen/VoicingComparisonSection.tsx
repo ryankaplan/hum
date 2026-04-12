@@ -9,8 +9,10 @@ export function VoicingComparisonSection({
   title,
   parsed,
   voicing,
-  chordPreviewItems,
+  measures,
 }: VoicingComparisonSectionProps) {
+  const slices = measures.flatMap((measure) => measure.slices);
+
   return (
     <Stack gap={2}>
       {title ? (
@@ -29,7 +31,9 @@ export function VoicingComparisonSection({
             .map((note) => midiToNoteName(note))
             .join(" ");
           const tooltipText = `${degrees} - ${pitchClasses} - ${voicedNotes}`;
-          const previewItem = chordPreviewItems[index];
+          const previewSlices = slices.filter((slice) => slice.chordEventIndex === index);
+          const previewItem = previewSlices[0];
+          const isContinuation = previewSlices.length > 1;
 
           return (
             <Tooltip.Root
@@ -61,6 +65,7 @@ export function VoicingComparisonSection({
                     bg: dsColors.surfaceRaised,
                   }}
                   aria-label={tooltipText}
+                  boxShadow={isContinuation ? "inset 0 0 0 1px rgba(77,68,227,0.22)" : undefined}
                 >
                   <Text as="span" fontWeight="semibold">
                     {previewItem?.chordText ?? formatChordSymbol(chord)}

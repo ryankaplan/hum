@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { getHarmonyLineNote, midiToNoteName } from "../music/types";
 import type { Chord, HarmonyLine, MidiNote } from "../music/types";
 import { playNotePreview } from "../music/playback";
+import type { HarmonyTakeScores } from "../recording/takeScoring";
 import { dsColors, dsPanel } from "./designSystem";
 import { useLivePitchTrace, type LivePitchSample } from "./livePitchTrace";
 import {
@@ -23,6 +24,7 @@ type Props = {
   tempo: number;
   transportActive: boolean;
   recordingActive: boolean;
+  reviewScores: HarmonyTakeScores | null;
 };
 
 const NOTE_ROW_HEIGHT_PX = 22;
@@ -89,6 +91,7 @@ export function NoteDisplay({
   tempo,
   transportActive,
   recordingActive,
+  reviewScores,
 }: Props) {
   const lyricSegments = chords.map((chord, index) => ({
     chordIndex: index,
@@ -299,6 +302,8 @@ export function NoteDisplay({
           w={`${trackWidthPx}px`}
           h={`${trackHeightPx}px`}
         >
+          <ReviewScoreOverlay scores={reviewScores} />
+
           {Array.from({ length: pitchRows }).map((_, row) => {
             const y = noteGridTopPx + NOTE_TRACK_PAD_TOP_PX + row * NOTE_ROW_HEIGHT_PX;
             return (
@@ -627,6 +632,40 @@ function ReferenceWaveformStrip(input: {
           />
         ))}
       </Box>
+    </Box>
+  );
+}
+
+function ReviewScoreOverlay({ scores }: { scores: HarmonyTakeScores | null }) {
+  if (scores == null) return null;
+
+  const metrics = [
+    scores.timing != null ? `Timing ${scores.timing.score100}` : null,
+    scores.pitch != null ? `Pitch ${scores.pitch.score100}` : null,
+  ].filter((metric): metric is string => metric != null);
+  if (metrics.length === 0) return null;
+
+  return (
+    <Box
+      position="absolute"
+      top="10px"
+      left="50%"
+      transform="translateX(-50%)"
+      px={3}
+      py={1.5}
+      borderRadius="full"
+      className="record-note-review-score"
+      zIndex={6}
+      pointerEvents="none"
+    >
+      <Text
+        color={dsColors.text}
+        fontSize="sm"
+        fontWeight="bold"
+        whiteSpace="nowrap"
+      >
+        {metrics.join("  •  ")}
+      </Text>
     </Box>
   );
 }

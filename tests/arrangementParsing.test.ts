@@ -198,10 +198,11 @@ describe("parseArrangementText", () => {
     );
   });
 
-  it("parses ninth, suspended, and slash chords", () => {
+  it("parses add9, ninth, suspended, and slash chords", () => {
     checkParseArrangement(
-      ["C9 Cm9 C7b9 C(b9) Cm7b9 Csus2 Csus4 C9sus2 C9sus4 E/G# Fm6/Ab"],
+      ["Cadd9 C9 Cm9 C7b9 C(b9) Cm7b9 Csus2 Csus4 C9sus2 C9sus4 E/G# Fm6/Ab"],
       [
+        [{ chordText: "Cadd9" }],
         [{ chordText: "C9" }],
         [{ chordText: "Cm9" }],
         [{ chordText: "C7b9" }],
@@ -242,9 +243,10 @@ describe("parseArrangementText", () => {
   });
 
   it("accepts slash chords whose bass is a non-reduced chord tone", () => {
-    checkParseArrangement(["D7/A C7/G"], [
+    checkParseArrangement(["D7/A C7/G Cadd9/G"], [
       [{ chordText: "D7/A" }],
       [{ chordText: "C7/G" }],
+      [{ chordText: "Cadd9/G" }],
     ]);
   });
 

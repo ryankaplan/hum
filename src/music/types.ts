@@ -15,6 +15,7 @@ export type NoteName =
 export type ChordQuality =
   | "major"
   | "minor"
+  | "add9"
   | "diminished"
   | "major6"
   | "minor6"

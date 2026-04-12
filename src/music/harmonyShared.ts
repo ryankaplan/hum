@@ -153,6 +153,8 @@ export function chordToneFormula(
       return "R 3 5";
     case "minor":
       return "R b3 5";
+    case "add9":
+      return "R 3 9";
     case "diminished":
       return "R b3 b5";
     case "major6":
@@ -799,6 +801,12 @@ function dynamicRecipeIntervalPreferences(
       return [[0, 4, 7]];
     case "minor":
       return [[0, 3, 7]];
+    case "add9":
+      return [
+        [0, 4, 2],
+        [4, 7, 2],
+        [0, 4, 7],
+      ];
     case "diminished":
       return [[0, 3, 6]];
     case "major6":
@@ -890,6 +898,8 @@ function dynamicPriorityIntervalPreferences(quality: Chord["quality"]): number[]
       return [0, 4, 7];
     case "minor":
       return [0, 3, 7];
+    case "add9":
+      return [0, 4, 2, 7];
     case "diminished":
       return [0, 3, 6];
     case "major6":
@@ -927,6 +937,8 @@ function dynamicFormulaIntervals(quality: Chord["quality"]): number[] {
       return [0, 4, 7];
     case "minor":
       return [0, 3, 7];
+    case "add9":
+      return [0, 4, 7, 2];
     case "diminished":
       return [0, 3, 6];
     case "major6":

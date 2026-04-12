@@ -22,6 +22,10 @@ describe("harmony note labeling", () => {
     expect(labelHarmonyNoteForChord(parse("Asus2"), 59)).toBe("2");
   });
 
+  it("labels add9 extensions as 9", () => {
+    expect(labelHarmonyNoteForChord(parse("Cadd9"), 62)).toBe("9");
+  });
+
   it("labels the augmented fifth as #5", () => {
     expect(labelHarmonyNoteForChord(parse("C"), 68)).toBe("#5");
   });

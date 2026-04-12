@@ -55,6 +55,12 @@ function greedyTopLine(
 }
 
 describe("dynamic harmony recipe generation", () => {
+  it("prefers R-3-9 for add9 chords", () => {
+    expect(generateDynamicHarmonyRecipes(parse("Aadd9"))[0]?.chordTones).toBe(
+      "R 3 9",
+    );
+  });
+
   it("prefers 3-b7-9 for dominant 9 chords", () => {
     expect(generateDynamicHarmonyRecipes(parse("A9"))[0]?.chordTones).toBe(
       "3 b7 9",

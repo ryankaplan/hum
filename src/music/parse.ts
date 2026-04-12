@@ -49,7 +49,7 @@ function parseGroupedBarToken(token: string, beatsPerBar: number): Chord[] {
 
 export function parseChordText(token: string, beats: number): Chord | null {
   const match = token.match(
-    /^([A-G][#b]?)(maj7|M7|m7b9|-7b9|7b9|\(b9\)|m9|-9|9sus2|9sus4|9|sus2|sus4|m7|-7|m6|-6|6|dim|o|m|-|7)?(?:\/([A-G][#b]?))?$/,
+    /^([A-G][#b]?)(maj7|M7|add9|m7b9|-7b9|7b9|\(b9\)|m9|-9|9sus2|9sus4|9|sus2|sus4|m7|-7|m6|-6|6|dim|o|m|-|7)?(?:\/([A-G][#b]?))?$/,
   );
   if (match == null) return null;
 
@@ -76,6 +76,8 @@ function parseChordQualitySuffix(raw: string): ChordQuality | null {
     case "m":
     case "-":
       return "minor";
+    case "add9":
+      return "add9";
     case "dim":
     case "o":
       return "diminished";
@@ -223,6 +225,8 @@ export function chordSemitones(
       return [r, r + 4, r + 7];
     case "minor":
       return [r, r + 3, r + 7];
+    case "add9":
+      return [r, r + 4, r + 14];
     case "diminished":
       return [r, r + 3, r + 6];
     case "major6":
@@ -298,6 +302,8 @@ export function fullChordSemitones(
       return [r, r + 4, r + 7];
     case "minor":
       return [r, r + 3, r + 7];
+    case "add9":
+      return [r, r + 4, r + 7, r + 14];
     case "diminished":
       return [r, r + 3, r + 6];
     case "major6":
@@ -335,6 +341,8 @@ function chordQualitySuffix(quality: ChordQuality): string {
       return "";
     case "minor":
       return "m";
+    case "add9":
+      return "add9";
     case "diminished":
       return "dim";
     case "major6":

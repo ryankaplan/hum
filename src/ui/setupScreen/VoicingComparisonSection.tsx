@@ -1,4 +1,5 @@
 import { Box, Flex, Stack, Text, Tooltip } from "@chakra-ui/react";
+import { chordToneFormula } from "../../music/harmonyShared";
 import { chordPitchClassNames, formatChordSymbol } from "../../music/parse";
 import { midiToNoteName } from "../../music/types";
 import { dsColors } from "../designSystem";
@@ -20,17 +21,7 @@ export function VoicingComparisonSection({
       <Flex gap={2} flexWrap="wrap">
         {parsed.map((chord, index) => {
           const annotation = voicing.annotations[index];
-          const degrees =
-            annotation?.chordTones ??
-            (chord.quality === "minor"
-              ? "R b3 5"
-              : chord.quality === "diminished"
-                ? "R b3 b5"
-                : chord.quality === "major6"
-                  ? "R 3 6"
-                  : chord.quality === "minor6"
-                    ? "R b3 6"
-                    : "R 3 5");
+          const degrees = annotation?.chordTones ?? chordToneFormula(chord);
           const pitchClasses = chordPitchClassNames(chord);
           const voicedNotes = voicing.lines
             .map((line) => line[index])

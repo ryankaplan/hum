@@ -334,7 +334,7 @@ function isChordLine(parsed: ParsedChordLine): boolean {
 
 function parseChordLine(line: string, lineIndex: number): ParsedChordLine {
   const tokenPattern =
-    /[A-G][#b]?(?:maj7|M7|m7b9|-7b9|7b9|\(b9\)|m9|-9|9sus2|9sus4|9|sus2|sus4|m7|-7|m6|-6|6|dim|o|m|-|7)?(?:\/[A-G][#b]?)?\.{0,2}/g;
+    /[A-G][#b]?(?:maj7|M7|add9|m7b9|-7b9|7b9|\(b9\)|m9|-9|9sus2|9sus4|9|sus2|sus4|m7|-7|m6|-6|6|dim|o|m|-|7)?(?:\/[A-G][#b]?)?\.{0,2}/g;
   const tokens: ParsedChordToken[] = [];
   const invalidChordIds: string[] = [];
   const parseIssues: string[] = [];

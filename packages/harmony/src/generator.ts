@@ -10,7 +10,6 @@ import type {
   GenerateHarmonyOptions,
   GeneratedHarmony,
   HarmonyAnnotation,
-  HarmonyCoverage,
   HarmonyLine,
   MidiNote,
 } from "./types";
@@ -27,7 +26,7 @@ export function generateHarmony(
   },
   options: GenerateHarmonyOptions,
 ): GeneratedHarmony {
-  const { range, coverage = "lowerTwoThirds", voices } = options;
+  const { range, voices } = options;
   if (range.high <= range.low) {
     throw new RangeError("Harmony range must have high > low.");
   }
@@ -42,19 +41,18 @@ export function generateHarmony(
     };
   }
 
-  const { harmonyRange, harmonyTop } = resolveHarmonyRange(range, coverage);
   const candidateSets = chords.map((chord) => {
-    const candidates = generateHarmonyCandidates(chord, harmonyRange).slice(
+    const candidates = generateHarmonyCandidates(chord, range).slice(
       0,
       MAX_CANDIDATES_PER_CHORD,
     );
     if (candidates.length > 0) return candidates;
     return [
-      buildFallbackCandidate(chord, harmonyRange, null),
+      buildFallbackCandidate(chord, range, null),
     ] satisfies HarmonyVoicingCandidate[];
   });
 
-  const bestPath = chooseBestHarmonyPath(chords, candidateSets, harmonyRange);
+  const bestPath = chooseBestHarmonyPath(chords, candidateSets, range);
   const lines = createHarmonyLines(voices);
   const annotations: HarmonyAnnotation[] = [];
 
@@ -62,7 +60,6 @@ export function generateHarmony(
     const chord = chords[i]!;
     const candidate = bestPath[i]!;
     annotations.push({
-      strategy: candidate.strategy,
       chordTones: describeHarmonyNotesForChord(chord, candidate.notes),
     });
     appendVoicesToLines(lines, candidate.notes, voices);
@@ -80,23 +77,7 @@ export function generateHarmony(
     lines,
     annotations,
     timedVoices,
-    harmonyTop,
-  };
-}
-
-function resolveHarmonyRange(
-  range: GenerateHarmonyOptions["range"],
-  coverage: HarmonyCoverage,
-): {
-  harmonyRange: GenerateHarmonyOptions["range"];
-  harmonyTop: MidiNote;
-} {
-  const rangeSpan = range.high - range.low;
-  const harmonyTop =
-    range.low + Math.round(rangeSpan * harmonyCoverageRatio(coverage));
-  return {
-    harmonyRange: { low: range.low, high: harmonyTop },
-    harmonyTop,
+    harmonyTop: range.high,
   };
 }
 
@@ -116,13 +97,4 @@ function appendVoicesToLines(
   lines[0]?.push(voices[0]);
   lines[1]?.push(voices[1]);
   lines[2]?.push(voices[2]);
-}
-
-function harmonyCoverageRatio(coverage: HarmonyCoverage): number {
-  switch (coverage) {
-    case "lowerTwoThirds":
-      return 2 / 3;
-    case "wholeRange":
-      return 1;
-  }
 }

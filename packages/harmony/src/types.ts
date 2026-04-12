@@ -46,12 +46,7 @@ export type VocalRange = {
   high: MidiNote;
 };
 
-export type HarmonyCoverage = "lowerTwoThirds" | "wholeRange";
-
-export type HarmonyVoicingStrategy = "drop2" | "closed" | "open" | "spread";
-
 export type HarmonyAnnotation = {
-  strategy: HarmonyVoicingStrategy;
   chordTones: string;
 };
 
@@ -121,7 +116,6 @@ export type ParseResult =
 export type GenerateHarmonyOptions = {
   range: VocalRange;
   voices: 1 | 3;
-  coverage?: HarmonyCoverage;
 };
 
 export type GeneratedHarmonyVoice = {

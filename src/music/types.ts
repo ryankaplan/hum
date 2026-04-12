@@ -3,16 +3,14 @@ import type {
   ChordSymbol,
   GeneratedHarmony,
   HarmonyAnnotation,
-  HarmonyCoverage,
   HarmonyLine as PackageHarmonyLine,
-  HarmonyVoicingStrategy,
   MidiNote,
   NoteName,
   VocalRange,
 } from "@hum/harmony";
 import { NOTE_NAMES } from "@hum/harmony";
 
-export type { MidiNote, NoteName, VocalRange, HarmonyVoicingStrategy };
+export type { MidiNote, NoteName, VocalRange };
 export type ChordQuality = PackageChordQuality;
 
 export type Chord = ChordSymbol & {

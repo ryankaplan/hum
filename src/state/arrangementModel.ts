@@ -204,10 +204,13 @@ export function computeArrangementInfo(
     if (high > low && parsedChords.length > 0) {
       const harmonyPartCount = Math.max(1, input.totalParts - 1);
       const harmonyInput = toHarmonyInput(parsedArrangement.chordEvents, input.meter[0]);
+      const harmonyRange = resolveHarmonyRange(
+        { low, high },
+        input.harmonyRangeCoverage,
+      );
       const generated = generateHarmony(harmonyInput, {
-        range: { low, high },
+        range: harmonyRange,
         voices: harmonyPartCount === 1 ? 1 : 3,
-        coverage: toPackageHarmonyCoverage(input.harmonyRangeCoverage),
       });
       harmonyVoicing = {
         ...generated,
@@ -379,8 +382,13 @@ function toHarmonyInput(
   };
 }
 
-function toPackageHarmonyCoverage(
+function resolveHarmonyRange(
+  range: { low: number; high: number },
   coverage: HarmonyRangeCoverage,
-): "lowerTwoThirds" | "wholeRange" {
-  return coverage === "whole-range" ? "wholeRange" : "lowerTwoThirds";
+): { low: number; high: number } {
+  const ratio = coverage === "whole-range" ? 1 : 2 / 3;
+  return {
+    low: range.low,
+    high: range.low + Math.round((range.high - range.low) * ratio),
+  };
 }

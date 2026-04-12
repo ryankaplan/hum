@@ -1,16 +1,12 @@
 import { formatChordIntervals, recipeIntervalPreferences } from "./annotation";
 import { chordSemitones, fullChordSemitones, rootSemitone } from "./parse";
-import type {
-  ChordQuality,
-  ChordSymbol,
-  HarmonyVoicingStrategy,
-  MidiNote,
-  VocalRange,
-} from "./types";
+import type { ChordQuality, ChordSymbol, MidiNote, VocalRange } from "./types";
+
+type CandidateStrategy = "drop2" | "closed" | "open" | "spread";
 
 export type HarmonyVoicingCandidate = {
   notes: [MidiNote, MidiNote, MidiNote];
-  strategy: HarmonyVoicingStrategy;
+  strategy: CandidateStrategy;
   recipePriority?: number;
 };
 
@@ -21,7 +17,7 @@ export type HarmonyRecipe = {
 
 type VoicedChord = {
   notes: [MidiNote, MidiNote, MidiNote];
-  strategy: HarmonyVoicingStrategy;
+  strategy: CandidateStrategy;
 };
 
 const HARMONY_RECIPE_PRIORITY_PENALTY = 3;
@@ -713,7 +709,7 @@ function isBassAnchoredCandidateSpacingAllowed(
 
 function classifyCandidateStrategy(
   notes: [MidiNote, MidiNote, MidiNote],
-): HarmonyVoicingStrategy {
+): CandidateStrategy {
   const [low, middle, top] = notes;
   const lowerGap = middle - low;
   const upperGap = top - middle;

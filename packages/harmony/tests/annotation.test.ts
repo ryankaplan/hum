@@ -26,7 +26,7 @@ describe("harmony annotation", () => {
     if (!parsed.ok) throw new Error("Expected parse success");
 
     const harmony = generateHarmony(parsed.value, {
-      range: { low: 48, high: 72 },
+      range: { low: 48, high: 64 },
       voices: 3,
     });
 

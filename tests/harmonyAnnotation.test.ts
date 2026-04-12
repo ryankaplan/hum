@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   describeHarmonyNotesForChord,
   labelHarmonyNoteForChord,
-} from "../src/music/harmonyShared";
+} from "../src/music/harmony";
 import { parseChordText } from "../src/music/parse";
 
 function parse(token: string) {
@@ -13,7 +13,7 @@ function parse(token: string) {
   return chord;
 }
 
-describe("harmony note labeling", () => {
+describe("harmony annotation", () => {
   it("labels D over Em as b7", () => {
     expect(labelHarmonyNoteForChord(parse("Em"), 62)).toBe("b7");
   });

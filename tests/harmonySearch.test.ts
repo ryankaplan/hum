@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  generateDynamicHarmonyRecipes,
+  generateHarmonyRecipes,
   generateHarmonyCandidates,
   scoreHarmonyCandidate,
   type HarmonyVoicingCandidate,
 } from "../src/music/harmony";
-import { chooseBestDynamicPath } from "../src/music/harmonyShared";
+import { chooseBestHarmonyPath } from "../src/music/harmony";
 import { parseChordText } from "../src/music/parse";
 
 function parse(token: string) {
@@ -54,29 +54,29 @@ function greedyTopLine(
   return tops;
 }
 
-describe("dynamic harmony recipe generation", () => {
+describe("harmony recipe generation", () => {
   it("prefers R-3-9 for add9 chords", () => {
-    expect(generateDynamicHarmonyRecipes(parse("Aadd9"))[0]?.chordTones).toBe(
+    expect(generateHarmonyRecipes(parse("Aadd9"))[0]?.chordTones).toBe(
       "R 3 9",
     );
   });
 
   it("prefers 3-b7-9 for dominant 9 chords", () => {
-    expect(generateDynamicHarmonyRecipes(parse("A9"))[0]?.chordTones).toBe(
+    expect(generateHarmonyRecipes(parse("A9"))[0]?.chordTones).toBe(
       "3 b7 9",
     );
   });
 
   it("prefers 3-b7-b9 for flat-9 dominant chords", () => {
-    expect(generateDynamicHarmonyRecipes(parse("A7b9"))[0]?.chordTones).toBe(
+    expect(generateHarmonyRecipes(parse("A7b9"))[0]?.chordTones).toBe(
       "3 b7 b9",
     );
   });
 
   it("keeps the seventh in preferred major- and minor-seventh recipes", () => {
-    expect(generateDynamicHarmonyRecipes(parse("Amaj7")).map((recipe) => recipe.chordTones))
+    expect(generateHarmonyRecipes(parse("Amaj7")).map((recipe) => recipe.chordTones))
       .toContain("R 3 7");
-    expect(generateDynamicHarmonyRecipes(parse("Am7")).map((recipe) => recipe.chordTones))
+    expect(generateHarmonyRecipes(parse("Am7")).map((recipe) => recipe.chordTones))
       .toContain("R b3 b7");
   });
 
@@ -92,7 +92,7 @@ describe("dynamic harmony recipe generation", () => {
   });
 });
 
-describe("chooseBestDynamicPath", () => {
+describe("chooseBestHarmonyPath", () => {
   it("can prefer a smoother top line than local voice-leading alone", () => {
     const chords = ["A", "A", "A", "A"].map(parse);
     const range = { low: 48, high: 72 };
@@ -104,17 +104,17 @@ describe("chooseBestDynamicPath", () => {
     ];
 
     const greedy = greedyTopLine(chords, candidateSets, range);
-    const dynamic = chooseBestDynamicPath(chords, candidateSets, range).map(
+    const beamSearch = chooseBestHarmonyPath(chords, candidateSets, range).map(
       (choice) => choice.notes[2],
     );
 
     expect(greedy).toEqual([60, 62, 60, 57]);
-    expect(dynamic).toEqual([60, 62, 64, 65]);
+    expect(beamSearch).toEqual([60, 62, 64, 65]);
   });
 
   it("penalizes unrecovered leaps in the top line", () => {
     const chords = ["A", "A", "A"].map(parse);
-    const path = chooseBestDynamicPath(
+    const path = chooseBestHarmonyPath(
       chords,
       [
         [candidate(48, 55, 60)],

@@ -38,7 +38,7 @@ function renderDynamicChordVoicing(token: string): string {
   return renderProgressionVoicings([token])[0]!;
 }
 
-describe("dynamic harmony chord examples", () => {
+describe("harmony chord examples", () => {
   const examples = [
     "A",
     "Am",
@@ -56,7 +56,7 @@ describe("dynamic harmony chord examples", () => {
     "Fm6/Ab",
   ] as const;
 
-  it("shows one-chord dynamic voicings", () => {
+  it("shows one-chord harmony voicings", () => {
     expect(examples.map((token) => renderDynamicChordVoicing(token)))
       .toMatchInlineSnapshot(`
         [
@@ -78,7 +78,7 @@ describe("dynamic harmony chord examples", () => {
       `);
   });
 
-  it("shows a 4-5-1 dynamic progression", () => {
+  it("shows a 4-5-1 harmony progression", () => {
     expect(renderProgressionVoicings(["D", "E", "A"]))
       .toMatchInlineSnapshot(`
         [
@@ -92,9 +92,9 @@ describe("dynamic harmony chord examples", () => {
   it("renders an extended suspended progression", () => {
     const tokens = ["Am6", "E(b9)/G#", "Gm7", "C9sus4", "Fdim", "F6"] as const;
     const beats = [4, 4, 2, 2, 2, 2] as const;
-    const dynamic = renderProgressionVoicings(tokens, beats, generateHarmony);
+    const harmony = renderProgressionVoicings(tokens, beats, generateHarmony);
 
-    expect(dynamic).toMatchInlineSnapshot(`
+    expect(harmony).toMatchInlineSnapshot(`
       [
         "Am6 -> F#3 A3 C4",
         "E(b9)/G# -> G#3 B3 D4",

@@ -20,7 +20,7 @@ import {
 import {
   describeHarmonyNotesForChord,
   labelHarmonyNoteForChord,
-} from "../music/harmonyShared";
+} from "../music/harmony";
 import {
   playHarmonyPreview,
   playNotePreview,

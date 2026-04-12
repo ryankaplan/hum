@@ -15,8 +15,10 @@ import {
   type ChordEvent,
   type ParsedChordToken,
 } from "../music/arrangementTimeline";
-import { generateHarmony } from "../music/harmony";
-import { describeHarmonyNotesForChord } from "../music/harmonyShared";
+import {
+  describeHarmonyNotesForChord,
+  generateHarmony,
+} from "../music/harmony";
 import { parseChordText } from "../music/parse";
 import { progressionDurationSec } from "../music/playback";
 import { getHarmonyLineNote, noteNameToMidi } from "../music/types";

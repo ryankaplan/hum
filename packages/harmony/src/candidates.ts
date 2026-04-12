@@ -1,12 +1,12 @@
-import { chordSemitones, fullChordSemitones, rootSemitone } from "../parse";
+import { formatChordIntervals, recipeIntervalPreferences } from "./annotation";
+import { chordSemitones, fullChordSemitones, rootSemitone } from "./parse";
 import type {
-  Chord,
-  HarmonyChordAnnotation,
+  ChordQuality,
+  ChordSymbol,
   HarmonyVoicingStrategy,
   MidiNote,
   VocalRange,
-} from "../types";
-import { formatChordIntervals, recipeIntervalPreferences } from "./annotation";
+} from "./types";
 
 export type HarmonyVoicingCandidate = {
   notes: [MidiNote, MidiNote, MidiNote];
@@ -16,18 +16,18 @@ export type HarmonyVoicingCandidate = {
 
 export type HarmonyRecipe = {
   pitchClasses: [number, number, number];
-  chordTones: HarmonyChordAnnotation["chordTones"];
+  chordTones: string;
 };
 
 type VoicedChord = {
   notes: [MidiNote, MidiNote, MidiNote];
-  strategy: HarmonyChordAnnotation["strategy"];
+  strategy: HarmonyVoicingStrategy;
 };
 
 const HARMONY_RECIPE_PRIORITY_PENALTY = 3;
 
 export function generateHarmonyCandidates(
-  chord: Chord,
+  chord: ChordSymbol,
   range: VocalRange,
 ): HarmonyVoicingCandidate[] {
   const candidates = new Map<string, HarmonyVoicingCandidate>();
@@ -49,7 +49,7 @@ export function scoreHarmonyCandidate(
   candidate: HarmonyVoicingCandidate,
   previousCandidate: HarmonyVoicingCandidate | null,
   range: VocalRange,
-  chord?: Chord,
+  chord?: ChordSymbol,
 ): number {
   const notes = candidate.notes;
   const [low, middle, top] = notes;
@@ -152,7 +152,7 @@ export function scoreHarmonySearchCandidate(
   candidate: HarmonyVoicingCandidate,
   previousCandidate: HarmonyVoicingCandidate | null,
   range: VocalRange,
-  chord?: Chord,
+  chord?: ChordSymbol,
 ): number {
   return (
     scoreHarmonyCandidate(candidate, previousCandidate, range, chord) +
@@ -161,7 +161,7 @@ export function scoreHarmonySearchCandidate(
 }
 
 export function buildFallbackCandidate(
-  chord: Chord,
+  chord: ChordSymbol,
   range: VocalRange,
   prevSoprano: MidiNote | null,
 ): HarmonyVoicingCandidate {
@@ -172,7 +172,7 @@ export function buildFallbackCandidate(
   };
 }
 
-export function generateHarmonyRecipes(chord: Chord): HarmonyRecipe[] {
+export function generateHarmonyRecipes(chord: ChordSymbol): HarmonyRecipe[] {
   const rootPitchClass = normalizePitchClass(rootSemitone(chord.root));
   const availableIntervals = new Set(fullChordIntervals(chord));
   const seen = new Set<string>();
@@ -207,7 +207,7 @@ export function generateHarmonyRecipes(chord: Chord): HarmonyRecipe[] {
   return recipes;
 }
 
-function chordClasses(chord: Chord): [number, number, number] {
+function chordClasses(chord: ChordSymbol): [number, number, number] {
   const [r, t, f] = chordSemitones(chord.root, chord.quality);
   return [
     normalizePitchClass(r),
@@ -216,7 +216,7 @@ function chordClasses(chord: Chord): [number, number, number] {
   ];
 }
 
-function fullChordPitchClasses(chord: Chord): number[] {
+function fullChordPitchClasses(chord: ChordSymbol): number[] {
   return [
     ...new Set(
       fullChordSemitones(chord.root, chord.quality).map((tone) =>
@@ -226,7 +226,7 @@ function fullChordPitchClasses(chord: Chord): number[] {
   ];
 }
 
-function fullChordIntervals(chord: Chord): number[] {
+function fullChordIntervals(chord: ChordSymbol): number[] {
   const rootPitchClass = normalizePitchClass(rootSemitone(chord.root));
   return uniquePitchClasses(
     fullChordSemitones(chord.root, chord.quality).map((tone) =>
@@ -236,7 +236,7 @@ function fullChordIntervals(chord: Chord): number[] {
 }
 
 function generateRecipeBasedCandidates(
-  chord: Chord,
+  chord: ChordSymbol,
   range: VocalRange,
 ): HarmonyVoicingCandidate[] {
   if (chord.bass != null) {
@@ -250,7 +250,7 @@ function generateRecipeBasedCandidates(
 }
 
 function generateRecipeBasedNonSlashCandidates(
-  chord: Chord,
+  chord: ChordSymbol,
   range: VocalRange,
 ): HarmonyVoicingCandidate[] {
   const candidates = new Map<string, HarmonyVoicingCandidate>();
@@ -284,7 +284,7 @@ function generateRecipeBasedNonSlashCandidates(
 }
 
 function generateRecipeBasedSlashCandidates(
-  chord: Chord,
+  chord: ChordSymbol,
   range: VocalRange,
 ): HarmonyVoicingCandidate[] {
   if (chord.bass == null) return [];
@@ -326,7 +326,7 @@ function generateRecipeBasedSlashCandidates(
 }
 
 function voiceChord(
-  chord: Chord,
+  chord: ChordSymbol,
   range: VocalRange,
   prevSoprano: MidiNote | null,
 ): VoicedChord {
@@ -370,7 +370,7 @@ function voiceChord(
 }
 
 function chooseBassAnchoredCandidate(
-  chord: Chord,
+  chord: ChordSymbol,
   range: VocalRange,
   sopranoTarget: MidiNote,
 ): VoicedChord | null {
@@ -520,7 +520,7 @@ function pitchClassNotesInRange(
 }
 
 function preferredSlashUpperPairs(
-  chord: Chord,
+  chord: ChordSymbol,
   bassClass: number,
 ): Array<[number, number]> {
   const priorityClasses = preferredPitchClasses(chord).filter(
@@ -545,7 +545,7 @@ function preferredSlashUpperPairs(
   return pairs;
 }
 
-function preferredPitchClasses(chord: Chord): number[] {
+function preferredPitchClasses(chord: ChordSymbol): number[] {
   const rootPitchClass = normalizePitchClass(rootSemitone(chord.root));
   return uniquePitchClasses(
     preferredIntervals(chord).map((interval) =>
@@ -554,14 +554,14 @@ function preferredPitchClasses(chord: Chord): number[] {
   );
 }
 
-function preferredIntervals(chord: Chord): number[] {
+function preferredIntervals(chord: ChordSymbol): number[] {
   const availableIntervals = new Set(fullChordIntervals(chord));
   return preferredIntervalPreferences(chord.quality).filter((interval) =>
     availableIntervals.has(normalizePitchClass(interval)),
   );
 }
 
-function preferredIntervalPreferences(quality: Chord["quality"]): number[] {
+function preferredIntervalPreferences(quality: ChordQuality): number[] {
   switch (quality) {
     case "major":
       return [0, 4, 7];
@@ -603,7 +603,7 @@ function preferredIntervalPreferences(quality: Chord["quality"]): number[] {
 function compareHarmonySearchCandidates(
   left: HarmonyVoicingCandidate,
   right: HarmonyVoicingCandidate,
-  chord: Chord,
+  chord: ChordSymbol,
   range: VocalRange,
 ): number {
   const leftScore = scoreHarmonySearchCandidate(left, null, range, chord);
@@ -613,7 +613,7 @@ function compareHarmonySearchCandidates(
 }
 
 function generateBassAnchoredCandidates(
-  chord: Chord,
+  chord: ChordSymbol,
   range: VocalRange,
 ): HarmonyVoicingCandidate[] {
   if (chord.bass == null) return [];
@@ -758,6 +758,6 @@ function normalizePitchClass(note: number): number {
   return ((note % 12) + 12) % 12;
 }
 
-function normalizePitchClassFromNoteName(note: Chord["root"]): number {
+function normalizePitchClassFromNoteName(note: ChordSymbol["root"]): number {
   return normalizePitchClass(chordSemitones(note, "major")[0]);
 }

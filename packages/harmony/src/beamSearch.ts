@@ -1,8 +1,8 @@
-import type { Chord, MidiNote, VocalRange } from "../types";
 import {
   scoreHarmonySearchCandidate,
   type HarmonyVoicingCandidate,
 } from "./candidates";
+import type { ChordSymbol, MidiNote, VocalRange } from "./types";
 
 type TopDirection = -1 | 0 | 1;
 
@@ -28,7 +28,7 @@ const TOP_LINE_SPAN_EXCESS_PENALTY = 0.8;
 const TOP_LINE_COMMON_TONE_REWARD = 0.45;
 
 export function chooseBestHarmonyPath(
-  chords: Chord[],
+  chords: ChordSymbol[],
   candidateSets: HarmonyVoicingCandidate[][],
   range: VocalRange,
 ): HarmonyVoicingCandidate[] {

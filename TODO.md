@@ -1,5 +1,8 @@
 To fix asap:
 
+- Lines must add up, ugh
+- Add 9 support
+
 - [ ] Move stuff like volume out of document
 - [ ] Controller change for final review
 - [ ] Make it possible to re-record part of a take

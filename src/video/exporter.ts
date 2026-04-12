@@ -1,5 +1,7 @@
 import {
-  ALL_FORMATS,
+  MP4,
+  QTFF,
+  WEBM,
   AudioBufferSource,
   BlobSource,
   BufferTarget,
@@ -69,6 +71,7 @@ type LaneRenderer = {
 const EXPORT_FRAME_RATE = 30;
 const EXPORT_VIDEO_BITRATE = QUALITY_HIGH;
 const EXPORT_AUDIO_BITRATE = 192_000;
+const RECORDING_INPUT_FORMATS = [MP4, QTFF, WEBM];
 
 const OFFLINE_EXPORT_CANDIDATES: OfflineExportProfile[] = [
   {
@@ -310,7 +313,7 @@ async function getRecordingVideoResource(
 
   const input = new Input({
     source: new BlobSource(blob),
-    formats: ALL_FORMATS,
+    formats: RECORDING_INPUT_FORMATS,
   });
   const videoTrack = await input.getPrimaryVideoTrack();
   if (videoTrack == null) {

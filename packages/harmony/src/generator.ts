@@ -4,6 +4,12 @@ import {
   generateHarmonyCandidates,
   type HarmonyVoicingCandidate,
 } from "./candidates";
+import { chooseBestDyadPath } from "./dyadBeamSearch";
+import {
+  buildFallbackDyadCandidate,
+  generateDyadCandidates,
+  type HarmonyDyadCandidate,
+} from "./dyadCandidates";
 import { describeHarmonyNotesForChord } from "./annotation";
 import type {
   ChordSymbol,
@@ -27,18 +33,75 @@ export function generateHarmony(
   options: GenerateHarmonyOptions,
 ): GeneratedHarmony {
   const { range, voices } = options;
+  if (voices !== 2 && voices !== 3) {
+    throw new RangeError("Harmony voices must be 2 or 3.");
+  }
   if (range.high <= range.low) {
     throw new RangeError("Harmony range must have high > low.");
   }
 
+  return voices === 2
+    ? generateTwoVoiceHarmony(input, range)
+    : generateThreeVoiceHarmony(input, range);
+}
+
+function generateTwoVoiceHarmony(
+  input: {
+    events: Array<{
+      symbol: ChordSymbol;
+      startBeat: number;
+      durationBeats: number;
+    }>;
+  },
+  range: GenerateHarmonyOptions["range"],
+): GeneratedHarmony {
   const chords = input.events.map((event) => event.symbol);
   if (chords.length === 0) {
-    return {
-      lines: Array.from({ length: voices }, () => []),
-      annotations: [],
-      timedVoices: Array.from({ length: voices }, () => ({ events: [] })),
-      harmonyTop: range.low,
-    };
+    return createEmptyHarmonyResult(input, 2, range.low);
+  }
+
+  const candidateSets = chords.map((chord) =>
+    {
+      const candidates = generateDyadCandidates(chord, range).slice(
+        0,
+        MAX_CANDIDATES_PER_CHORD,
+      );
+      if (candidates.length > 0) return candidates;
+      return [
+        buildFallbackDyadCandidate(chord, range),
+      ] satisfies HarmonyDyadCandidate[];
+    },
+  );
+  const bestPath = chooseBestDyadPath(chords, candidateSets, range);
+  const lines = createHarmonyLines(2);
+  const annotations: HarmonyAnnotation[] = [];
+
+  for (let i = 0; i < chords.length; i++) {
+    const chord = chords[i]!;
+    const candidate = bestPath[i]!;
+    annotations.push({
+      chordTones: describeHarmonyNotesForChord(chord, candidate.notes),
+    });
+    lines[0]?.push(candidate.notes[0]);
+    lines[1]?.push(candidate.notes[1]);
+  }
+
+  return buildGeneratedHarmony(input, lines, annotations, range.high);
+}
+
+function generateThreeVoiceHarmony(
+  input: {
+    events: Array<{
+      symbol: ChordSymbol;
+      startBeat: number;
+      durationBeats: number;
+    }>;
+  },
+  range: GenerateHarmonyOptions["range"],
+): GeneratedHarmony {
+  const chords = input.events.map((event) => event.symbol);
+  if (chords.length === 0) {
+    return createEmptyHarmonyResult(input, 3, range.low);
   }
 
   const candidateSets = chords.map((chord) => {
@@ -53,7 +116,7 @@ export function generateHarmony(
   });
 
   const bestPath = chooseBestHarmonyPath(chords, candidateSets, range);
-  const lines = createHarmonyLines(voices);
+  const lines = createHarmonyLines(3);
   const annotations: HarmonyAnnotation[] = [];
 
   for (let i = 0; i < chords.length; i++) {
@@ -62,9 +125,39 @@ export function generateHarmony(
     annotations.push({
       chordTones: describeHarmonyNotesForChord(chord, candidate.notes),
     });
-    appendVoicesToLines(lines, candidate.notes, voices);
+    appendThreeVoicesToLines(lines, candidate.notes);
   }
 
+  return buildGeneratedHarmony(input, lines, annotations, range.high);
+}
+
+function createEmptyHarmonyResult(
+  input: {
+    events: Array<{
+      symbol: ChordSymbol;
+      startBeat: number;
+      durationBeats: number;
+    }>;
+  },
+  voices: 2 | 3,
+  harmonyTop: MidiNote,
+): GeneratedHarmony {
+  const lines = createHarmonyLines(voices);
+  return buildGeneratedHarmony(input, lines, [], harmonyTop);
+}
+
+function buildGeneratedHarmony(
+  input: {
+    events: Array<{
+      symbol: ChordSymbol;
+      startBeat: number;
+      durationBeats: number;
+    }>;
+  },
+  lines: HarmonyLine[],
+  annotations: HarmonyAnnotation[],
+  harmonyTop: MidiNote,
+): GeneratedHarmony {
   const timedVoices = lines.map((line) => ({
     events: input.events.map((event, index) => ({
       startBeat: event.startBeat,
@@ -77,23 +170,18 @@ export function generateHarmony(
     lines,
     annotations,
     timedVoices,
-    harmonyTop: range.high,
+    harmonyTop,
   };
 }
 
-function createHarmonyLines(voices: 1 | 3): HarmonyLine[] {
+function createHarmonyLines(voices: 2 | 3): HarmonyLine[] {
   return Array.from({ length: voices }, () => []);
 }
 
-function appendVoicesToLines(
+function appendThreeVoicesToLines(
   lines: HarmonyLine[],
   voices: [MidiNote, MidiNote, MidiNote],
-  requestedVoices: 1 | 3,
 ) {
-  if (requestedVoices === 1) {
-    lines[0]?.push(voices[1]);
-    return;
-  }
   lines[0]?.push(voices[0]);
   lines[1]?.push(voices[1]);
   lines[2]?.push(voices[2]);

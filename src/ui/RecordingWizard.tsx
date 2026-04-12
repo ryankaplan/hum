@@ -10,7 +10,7 @@ import {
 import { useEffect, useRef } from "react";
 import { useObservable } from "../observable";
 import { model } from "../state/model";
-import { getPartLabel } from "../music/types";
+import { getHarmonyPartCount, getPartLabel } from "../music/types";
 import { resolveRecordingHarmonyGuidance } from "../recording/harmonyGuidance";
 import { CameraPreview } from "./CameraPreview";
 import {
@@ -262,7 +262,7 @@ export function RecordingWizard() {
   const currentTrackId =
     partIndex >= 0 ? orderedTrackIds[partIndex] ?? null : null;
   const totalParts = tracksDocument.trackOrder.length;
-  const harmonyPartCount = Math.max(1, totalParts - 1);
+  const harmonyPartCount = getHarmonyPartCount(totalParts);
   const isMelodyPart = resolvedPartIndex >= harmonyPartCount;
   const beatsPerBar = arrangement.meter[0];
   const guideToneVolume = recordingMonitorPreferences.guideToneVolume;

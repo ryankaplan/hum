@@ -54,6 +54,12 @@ export type ProjectConfig = {
 
 export type PartIndex = number;
 
+const THREE_PART_LABELS = [
+  "Harmony Low",
+  "Harmony High",
+  "Melody",
+] as const;
+
 const FOUR_PART_LABELS = [
   "Harmony Low",
   "Harmony Mid",
@@ -61,9 +67,13 @@ const FOUR_PART_LABELS = [
   "Melody",
 ] as const;
 
+export function getHarmonyPartCount(totalParts: number): 2 | 3 {
+  return totalParts === 3 ? 2 : 3;
+}
+
 export function getPartLabel(index: number, totalParts: number): string {
-  if (totalParts === 2) {
-    return index === 0 ? "Harmony" : "Melody";
+  if (totalParts === 3) {
+    return THREE_PART_LABELS[index] ?? `Part ${index + 1}`;
   }
   return FOUR_PART_LABELS[index] ?? `Part ${index + 1}`;
 }

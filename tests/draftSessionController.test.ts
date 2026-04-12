@@ -72,7 +72,7 @@ function makeDocument(
       vocalRangeHigh: "A4",
       harmonyRangeCoverage: "lower two thirds",
       selectedHarmonyGenerator: "dynamic",
-      totalParts: 2,
+      totalParts: 3,
       customArrangement: null,
     },
     tracks: {

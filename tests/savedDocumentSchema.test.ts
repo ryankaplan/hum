@@ -135,4 +135,17 @@ describe("parseSavedHumDocument", () => {
     const parsed = parseSavedHumDocument(saved);
     expect(parsed?.tracks.referenceWaveformTrackId).toBe("track-1");
   });
+
+  it("accepts only the current part-count values", () => {
+    const threePart = makeSavedHumDocument("lower two thirds");
+    threePart.arrangement.totalParts = 3;
+    const fourPart = makeSavedHumDocument("lower two thirds");
+    fourPart.arrangement.totalParts = 4;
+    const legacyTwoPart = makeSavedHumDocument("lower two thirds");
+    legacyTwoPart.arrangement.totalParts = 2;
+
+    expect(parseSavedHumDocument(threePart)?.arrangement.totalParts).toBe(3);
+    expect(parseSavedHumDocument(fourPart)?.arrangement.totalParts).toBe(4);
+    expect(parseSavedHumDocument(legacyTwoPart)).toBeNull();
+  });
 });

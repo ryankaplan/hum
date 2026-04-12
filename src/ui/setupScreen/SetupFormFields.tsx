@@ -115,12 +115,12 @@ export function SetupFormFields({
             <NativeSelect.Field
               value={String(totalParts)}
               onChange={(e) =>
-                onPartCountChange(e.target.value === "2" ? "2" : "4")
+                onPartCountChange(e.target.value === "3" ? "3" : "4")
               }
               {...controlStyles}
             >
+              <option value="3">3-part (2 harmony + melody)</option>
               <option value="4">4-part (3 harmony + melody)</option>
-              <option value="2">2-part (harmony + melody)</option>
             </NativeSelect.Field>
           </NativeSelect.Root>
         </Field.Root>

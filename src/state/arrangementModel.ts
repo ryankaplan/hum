@@ -15,7 +15,11 @@ import {
 } from "../music/arrangementTimeline";
 import { describeHarmonyNotesForChord } from "../music/harmony";
 import { progressionDurationSec } from "../music/playback";
-import { getHarmonyLineNote, noteNameToMidi } from "../music/types";
+import {
+  getHarmonyLineNote,
+  getHarmonyPartCount,
+  noteNameToMidi,
+} from "../music/types";
 import type {
   Chord,
   HarmonyLine,
@@ -31,7 +35,7 @@ import {
 
 export type { ArrangementMeasure, ArrangementMeasureSlice, ChordEvent } from "../music/arrangementTimeline";
 
-export type TotalPartCount = 2 | 4;
+export type TotalPartCount = 3 | 4;
 
 export type ArrangementDocState = {
   chordsInput: string;
@@ -95,7 +99,7 @@ export function createDefaultArrangementDocState(): ArrangementDocState {
 }
 
 export function parseTotalPartCount(raw: unknown): TotalPartCount {
-  return raw === 2 ? 2 : 4;
+  return raw === 3 ? 3 : 4;
 }
 
 export function parseArrangementDocState(raw: unknown): ArrangementDocState {
@@ -202,7 +206,7 @@ export function computeArrangementInfo(
     const low = noteNameToMidi(input.vocalRangeLow);
     const high = noteNameToMidi(input.vocalRangeHigh);
     if (high > low && parsedChords.length > 0) {
-      const harmonyPartCount = Math.max(1, input.totalParts - 1);
+      const harmonyPartCount = getHarmonyPartCount(input.totalParts);
       const harmonyInput = toHarmonyInput(parsedArrangement.chordEvents, input.meter[0]);
       const harmonyRange = resolveHarmonyRange(
         { low, high },
@@ -210,7 +214,7 @@ export function computeArrangementInfo(
       );
       const generated = generateHarmony(harmonyInput, {
         range: harmonyRange,
-        voices: harmonyPartCount === 1 ? 1 : 3,
+        voices: harmonyPartCount,
       });
       harmonyVoicing = {
         ...generated,

@@ -115,7 +115,7 @@ export type ParseResult =
 
 export type GenerateHarmonyOptions = {
   range: VocalRange;
-  voices: 1 | 3;
+  voices: 2 | 3;
 };
 
 export type GeneratedHarmonyVoice = {

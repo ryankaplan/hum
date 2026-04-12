@@ -6,6 +6,17 @@ import {
 } from "../src/state/tracksModel";
 
 describe("TracksDocumentModel referenceWaveformTrackId", () => {
+  it("assigns melody to the final track in 3-part mode", () => {
+    const tracks = createEmptyTracksDocument(3);
+    const orderedTracks = tracks.trackOrder.map((id) => tracks.tracksById[id]!);
+
+    expect(orderedTracks.map((track) => track.role)).toEqual([
+      "harmony",
+      "harmony",
+      "melody",
+    ]);
+  });
+
   it("captures the first recorded track and does not overwrite it later", () => {
     const tracks = new TracksDocumentModel({
       totalParts: 4,
@@ -73,7 +84,7 @@ describe("TracksDocumentModel referenceWaveformTrackId", () => {
     });
     expect(tracks.document.get().referenceWaveformTrackId).toBe(melodyTrackId);
 
-    tracks.resizeForPartCount(2);
+    tracks.resizeForPartCount(3);
     expect(tracks.document.get().referenceWaveformTrackId).toBeNull();
 
     tracks.stageCommittedRecording({
@@ -91,7 +102,7 @@ describe("TracksDocumentModel referenceWaveformTrackId", () => {
       tracks.document.get().trackOrder[0],
     );
 
-    tracks.reset(2);
+    tracks.reset(3);
     expect(tracks.document.get().referenceWaveformTrackId).toBeNull();
   });
 });

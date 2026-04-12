@@ -120,8 +120,8 @@ export function SetupScreen() {
     }
   }
 
-  function handlePartCountChange(value: "2" | "4") {
-    model.setArrangementInput({ totalParts: value === "2" ? 2 : 4 });
+  function handlePartCountChange(value: "3" | "4") {
+    model.setArrangementInput({ totalParts: value === "3" ? 3 : 4 });
   }
 
   function handleCustomizeHarmony() {

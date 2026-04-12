@@ -114,4 +114,35 @@ describe("computeArrangementInfo", () => {
     expect(info.chordEvents.map((event) => event.startBeat)).toEqual([0, 2]);
     expect(info.editorSpans.map((span) => span.startTick)).toEqual([0, 8]);
   });
+
+  it("generates two harmony voices for 3-part mode", () => {
+    const info = computeArrangementInfo(
+      makeArrangementDocState("A9 D E", {
+        totalParts: 3,
+      }),
+    );
+
+    expect(info.harmonyVoicing?.harmonyPartCount).toBe(2);
+    expect(info.harmonyVoicing?.lines).toHaveLength(2);
+    expect(info.effectiveCustomArrangement?.voices).toHaveLength(2);
+  });
+
+  it("rejects 3-part custom arrangements with the wrong voice count", () => {
+    const info = computeArrangementInfo(
+      makeArrangementDocState("A", {
+        totalParts: 3,
+        customArrangement: {
+          voices: [
+            {
+              id: "voice-0",
+              events: [{ id: "a", startTick: 0, durationTicks: 16, midi: 45 }],
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(info.hasCustomHarmony).toBe(false);
+    expect(info.effectiveCustomArrangement?.voices).toHaveLength(2);
+  });
 });

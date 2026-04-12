@@ -33,7 +33,7 @@ export type SetupFormFieldsProps = {
   onMeterLabelChange: (label: string) => void;
   onRangePresetChange: (value: string) => void;
   onHarmonyCoverageChange: (value: HarmonyRangeCoverage) => void;
-  onPartCountChange: (value: "2" | "4") => void;
+  onPartCountChange: (value: "3" | "4") => void;
 };
 
 export type VoicingComparisonSectionProps = {
@@ -70,7 +70,7 @@ export type SetupCardProps = {
   onMeterLabelChange: (label: string) => void;
   onRangePresetChange: (value: string) => void;
   onHarmonyCoverageChange: (value: HarmonyRangeCoverage) => void;
-  onPartCountChange: (value: "2" | "4") => void;
+  onPartCountChange: (value: "3" | "4") => void;
   onPreviewSelected: () => void;
   onPreviewCustom: () => void;
   onStopPreview: () => void;

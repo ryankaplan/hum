@@ -19,6 +19,7 @@
     "lucide-react": "^1.7.0",
     "mediabunny": "^1.40.1",
     "nanoid": "^5.1.7",
+    "pitchy": "^4.1.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "vitest": "^4.1.2"

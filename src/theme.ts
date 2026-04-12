@@ -263,6 +263,29 @@ const config = defineConfig({
         "0 0 0 1px color-mix(in srgb, var(--app-accent) 35%, transparent), 0 0 12px color-mix(in srgb, var(--app-accent) 32%, transparent)",
       zIndex: "4",
     },
+    ".record-note-pitch-svg": {
+      width: "100%",
+      height: "100%",
+      overflow: "visible",
+    },
+    ".record-note-live-pitch": {
+      fill: "none",
+      stroke: "color-mix(in srgb, var(--app-accent) 88%, white)",
+      strokeWidth: "2.25",
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+      vectorEffect: "non-scaling-stroke",
+      filter:
+        "drop-shadow(0 0 3px color-mix(in srgb, var(--app-accent) 32%, transparent))",
+      opacity: "0.92",
+    },
+    ".record-note-review-score": {
+      background: "rgba(245, 214, 75, 0.58)",
+      border: "1px solid rgba(168, 124, 14, 0.34)",
+      boxShadow:
+        "0 2px 8px rgba(130, 99, 14, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.28)",
+      backdropFilter: "blur(2px)",
+    },
 
     ".mix-slider:disabled, .timeline-slider:disabled": {
       opacity: "0.35",

@@ -24,6 +24,11 @@ import {
   buildReferenceWaveform,
   type ReferenceWaveform,
 } from "./waveformRendering";
+import {
+  gradeHarmonyTake,
+  type HarmonyTakeScores,
+  type ScoringAudioSegment,
+} from "../recording/takeScoring";
 
 export type RecordPhase =
   | "pre-roll"
@@ -38,6 +43,7 @@ export type RecordingTransportSnapshot = {
   countInBeat: number;
   currentAbsoluteBeat: number;
   reviewUrl: string | null;
+  reviewScores: HarmonyTakeScores | null;
   guideToneEnabled: boolean;
   mutedParts: boolean[];
   referenceWaveform: ReferenceWaveform | null;
@@ -94,6 +100,8 @@ type EncodedMonitorLane = {
   segments: EncodedMonitorSegment[];
 };
 
+type ScoredMonitorSegment = ScoringAudioSegment;
+
 type PendingTake = {
   blob: Blob;
   alignmentOffsetSec: number;
@@ -105,10 +113,19 @@ const INITIAL_SNAPSHOT: RecordingTransportSnapshot = {
   countInBeat: 0,
   currentAbsoluteBeat: -1,
   reviewUrl: null,
+  reviewScores: null,
   guideToneEnabled: true,
   mutedParts: [],
   referenceWaveform: null,
 };
+
+async function decodeBlobAudio(
+  ctx: AudioContext,
+  blob: Blob,
+): Promise<AudioBuffer> {
+  const raw = await blob.arrayBuffer();
+  return await ctx.decodeAudioData(raw);
+}
 
 export class RecordingTransportController {
   private snapshot: RecordingTransportSnapshot = INITIAL_SNAPSHOT;
@@ -124,6 +141,7 @@ export class RecordingTransportController {
   private pendingTake: PendingTake | null = null;
   private listenTimeoutId: number | null = null;
   private monitorBuildVersion = 0;
+  private reviewScoreVersion = 0;
   private disposed = false;
 
   getSnapshot = () => this.snapshot;
@@ -220,6 +238,8 @@ export class RecordingTransportController {
     this.setPhase("pre-roll");
     this.clearReviewUrl();
     this.pendingTake = null;
+    this.reviewScoreVersion += 1;
+    this.updateSnapshot({ reviewScores: null });
   }
 
   listen(): void {
@@ -298,6 +318,7 @@ export class RecordingTransportController {
       activeChordIndex: 0,
       countInBeat: 0,
       currentAbsoluteBeat: -1,
+      reviewScores: null,
     });
 
     let session: RecordingSession | null = null;
@@ -342,11 +363,19 @@ export class RecordingTransportController {
         alignmentOffsetSec: result.alignmentOffsetSec,
       };
 
+      const scoreVersion = this.reviewScoreVersion + 1;
+      this.reviewScoreVersion = scoreVersion;
       this.clearReviewUrl();
       this.updateSnapshot({
         reviewUrl: result.url,
+        reviewScores: null,
       });
       this.setPhase("review");
+      void this.resolveReviewScores({
+        blob: result.blob,
+        alignmentOffsetSec: result.alignmentOffsetSec,
+        scoreVersion,
+      });
     } catch (error) {
       if (isRecordingCancelledError(error)) {
         this.setPhase("pre-roll");
@@ -354,6 +383,7 @@ export class RecordingTransportController {
           activeChordIndex: 0,
           countInBeat: 0,
           currentAbsoluteBeat: -1,
+          reviewScores: null,
         });
         return;
       }
@@ -377,6 +407,7 @@ export class RecordingTransportController {
       activeChordIndex: 0,
       countInBeat: 0,
       currentAbsoluteBeat: -1,
+      reviewScores: null,
     });
   };
 
@@ -660,6 +691,7 @@ export class RecordingTransportController {
       activeChordIndex: 0,
       countInBeat: 0,
       currentAbsoluteBeat: -1,
+      reviewScores: null,
     });
   }
 
@@ -668,6 +700,79 @@ export class RecordingTransportController {
     if (reviewUrl == null) return;
     URL.revokeObjectURL(reviewUrl);
     this.updateSnapshot({ reviewUrl: null });
+  }
+
+  private async resolveReviewScores(input: {
+    blob: Blob;
+    alignmentOffsetSec: number;
+    scoreVersion: number;
+  }): Promise<void> {
+    const inputs = this.inputs;
+    if (
+      inputs == null ||
+      inputs.ctx == null ||
+      (inputs.harmonyLine == null && inputs.arrangementVoice == null)
+    ) {
+      return;
+    }
+
+    let takeBuffer: AudioBuffer | null = null;
+    try {
+      takeBuffer = await decodeBlobAudio(inputs.ctx, input.blob);
+    } catch {
+      return;
+    }
+    if (
+      this.disposed ||
+      this.reviewScoreVersion !== input.scoreVersion ||
+      this.inputs !== inputs
+    ) {
+      return;
+    }
+
+    let referenceSegments: ScoredMonitorSegment[] = [];
+    const referenceTrackId = inputs.tracksRevision.referenceWaveformTrackId;
+    if (referenceTrackId != null) {
+      const encodedReferenceLane = this.buildEncodedMonitorLane(
+        referenceTrackId,
+        -1,
+      );
+      if (encodedReferenceLane != null) {
+        const [decodedLane] = await decodeMonitorLanes(inputs.ctx, [
+          encodedReferenceLane,
+        ]);
+        if (
+          this.disposed ||
+          this.reviewScoreVersion !== input.scoreVersion ||
+          this.inputs !== inputs
+        ) {
+          return;
+        }
+        referenceSegments = decodedLane?.segments ?? [];
+      }
+    }
+
+    const reviewScores = gradeHarmonyTake({
+      takeBuffer,
+      takeAlignmentOffsetSec: input.alignmentOffsetSec,
+      referenceSegments,
+      arrangementDurationSec: progressionDurationSec(inputs.chords, inputs.tempo),
+      tempo: inputs.tempo,
+      chords: inputs.chords,
+      harmonyLine: inputs.harmonyLine,
+      arrangementVoice: inputs.arrangementVoice,
+    });
+
+    if (
+      reviewScores == null ||
+      this.disposed ||
+      this.reviewScoreVersion !== input.scoreVersion ||
+      this.inputs !== inputs
+    ) {
+      return;
+    }
+
+    this.updateSnapshot({ reviewScores });
   }
 
   private stopTransportAudio(): void {

@@ -429,6 +429,7 @@ export function RecordingWizard() {
               chords={chords}
               lyricsByChord={lyricsByChord}
               harmonyLine={harmonyLine}
+              arrangementVoice={arrangementVoice}
               referenceWaveform={referenceWaveform}
               activeChordIndex={activeChordIndex}
               currentAbsoluteBeat={currentAbsoluteBeat}

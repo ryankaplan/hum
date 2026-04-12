@@ -10,17 +10,19 @@ import type { ArrangementPreviewPanelProps } from "./types";
 export function ArrangementPreviewPanel({
   measures,
   parsed,
+  patternName,
+  customBasePatternName,
   harmonyVoicing,
   effectiveHarmonyVoicing,
   hasCustomHarmony,
   previewingMode,
-  onPreviewSelected,
+  onPreviewPattern,
   onPreviewCustom,
   onStopPreview,
   onCustomizeHarmony,
   onResetCustomHarmony,
 }: ArrangementPreviewPanelProps) {
-  const previewingSelected = previewingMode === "generated";
+  const previewingPattern = previewingMode === "pattern";
   const previewingCustom = previewingMode === "custom";
 
   return (
@@ -28,7 +30,7 @@ export function ArrangementPreviewPanel({
       <Stack gap={4}>
         <Flex justify="space-between" align="center" gap={3} wrap="wrap">
           <Text color={dsColors.textMuted} fontSize="xs" fontWeight="semibold">
-            ARRANGEMENT
+            ARRANGEMENT · {patternName.toUpperCase()}
           </Text>
           <Flex gap={2} align="center" wrap="wrap" justify="flex-end">
             <Button
@@ -38,21 +40,21 @@ export function ArrangementPreviewPanel({
               px={2.5}
               borderRadius="full"
               borderColor="transparent"
-              color={previewingSelected ? dsColors.accent : dsColors.textMuted}
+              color={previewingPattern ? dsColors.accent : dsColors.textMuted}
               _hover={{
                 bg: dsColors.surfaceSubtle,
-                color: previewingSelected ? dsColors.accent : dsColors.text,
+                color: previewingPattern ? dsColors.accent : dsColors.text,
               }}
-              onClick={previewingSelected ? onStopPreview : onPreviewSelected}
+              onClick={previewingPattern ? onStopPreview : onPreviewPattern}
             >
               <Flex align="center" gap={1.5}>
-                {previewingSelected ? (
+                {previewingPattern ? (
                   <StopIcon size={14} strokeWidth={2.1} />
                 ) : (
                   <PlayIcon size={14} strokeWidth={2.1} />
                 )}
                 <Text fontSize="xs" fontWeight="semibold">
-                  Preview
+                  Preview Pattern
                 </Text>
               </Flex>
             </Button>
@@ -114,7 +116,11 @@ export function ArrangementPreviewPanel({
         />
         {hasCustomHarmony && effectiveHarmonyVoicing != null && (
           <VoicingComparisonSection
-            title="Edited"
+            title={
+              customBasePatternName == null
+                ? "Custom"
+                : `Custom from ${customBasePatternName}`
+            }
             parsed={parsed}
             voicing={effectiveHarmonyVoicing}
             measures={measures}

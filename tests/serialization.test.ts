@@ -17,6 +17,7 @@ function makeDraftSnapshot(
         vocalRangeHigh: "A4",
         harmonyRangeCoverage: "lower two thirds",
         totalParts: 4,
+        harmonyRhythmPatternId: "charleston",
         customArrangement: {
           voices: [
             {
@@ -71,6 +72,15 @@ describe("serializeHumDocument / deserializeHumDocument", () => {
 
     expect("recordingMonitorPreferences" in serialized).toBe(false);
     expect("exportPreferences" in serialized).toBe(false);
+  });
+
+  it("round-trips the selected harmony rhythm pattern", () => {
+    const serialized = serializeHumDocument(makeDraftSnapshot());
+    const restored = deserializeHumDocument(serialized);
+
+    expect(restored.document.arrangement.harmonyRhythmPatternId).toBe(
+      "charleston",
+    );
   });
 
   it("round-trips the reference waveform track id and defaults missing values to null", () => {

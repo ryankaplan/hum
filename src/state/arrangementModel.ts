@@ -1,7 +1,6 @@
 import {
-  createArrangementFromLines,
+  findActiveEventAtTick,
   parseCustomArrangement,
-  sampleLinesAtTicks,
   validateCustomArrangement,
   type CustomArrangement,
 } from "../music/arrangementScore";
@@ -14,6 +13,12 @@ import {
   type ChordEvent,
 } from "../music/arrangementTimeline";
 import { describeHarmonyNotesForChord } from "../music/harmony";
+import {
+  createArrangementFromPattern,
+  DEFAULT_HARMONY_RHYTHM_PATTERN_ID,
+  parseHarmonyRhythmPatternId,
+  type HarmonyRhythmPatternId,
+} from "../music/harmonyRhythmPatterns";
 import { progressionDurationSec } from "../music/playback";
 import {
   getHarmonyLineNote,
@@ -45,6 +50,7 @@ export type ArrangementDocState = {
   vocalRangeHigh: string;
   harmonyRangeCoverage: HarmonyRangeCoverage;
   totalParts: TotalPartCount;
+  harmonyRhythmPatternId: HarmonyRhythmPatternId;
   customArrangement: CustomArrangement | null;
 };
 
@@ -68,6 +74,7 @@ export type ArrangementInfo = {
   invalidChordIds: string[];
   parseIssues: string[];
   harmonyVoicing: HarmonyVoicing | null;
+  generatedArrangement: CustomArrangement | null;
   effectiveHarmonyVoicing: HarmonyVoicing | null;
   effectiveCustomArrangement: CustomArrangement | null;
   hasCustomHarmony: boolean;
@@ -94,6 +101,7 @@ export function createDefaultArrangementDocState(): ArrangementDocState {
     vocalRangeHigh: "A4",
     harmonyRangeCoverage: "lower two thirds",
     totalParts: 4,
+    harmonyRhythmPatternId: DEFAULT_HARMONY_RHYTHM_PATTERN_ID,
     customArrangement: null,
   };
 }
@@ -130,6 +138,9 @@ export function parseArrangementDocState(raw: unknown): ArrangementDocState {
       value?.harmonyRangeCoverage,
     ),
     totalParts: parseTotalPartCount(value?.totalParts),
+    harmonyRhythmPatternId: parseHarmonyRhythmPatternId(
+      value?.harmonyRhythmPatternId,
+    ),
     customArrangement: parseCustomArrangementOverride(value?.customArrangement),
   };
 }
@@ -199,6 +210,7 @@ export function computeArrangementInfo(
     : [];
 
   let harmonyVoicing: HarmonyVoicing | null = null;
+  let generatedArrangement: CustomArrangement | null = null;
   let effectiveHarmonyVoicing: HarmonyVoicing | null = null;
   let effectiveCustomArrangement: CustomArrangement | null = null;
   let hasCustomHarmony = false;
@@ -221,9 +233,11 @@ export function computeArrangementInfo(
         harmonyPartCount,
       };
 
-      const generatedArrangement = createArrangementFromLines(
+      generatedArrangement = createArrangementFromPattern(
         harmonyVoicing.lines,
-        parsedChords,
+        parsedArrangement.chordEvents,
+        input.meter,
+        input.harmonyRhythmPatternId,
       );
       const totalTicks = durationBeatsToTicks(
         totalChordEventBeats(parsedArrangement.chordEvents),
@@ -237,9 +251,9 @@ export function computeArrangementInfo(
       hasCustomHarmony = customArrangement != null;
 
       if (effectiveCustomArrangement != null && editorSpans.length > 0) {
-        const sampledLines = sampleLinesAtTicks(
+        const sampledLines = sampleLinesWithinSpans(
           effectiveCustomArrangement,
-          editorSpans.map((span) => span.startTick),
+          editorSpans,
         );
         const customHarmonyTop = getHighestMidi(sampledLines);
         const customAnnotations = harmonyVoicing.annotations.map(
@@ -268,6 +282,7 @@ export function computeArrangementInfo(
     }
   } catch {
     harmonyVoicing = null;
+    generatedArrangement = null;
     effectiveHarmonyVoicing = null;
     effectiveCustomArrangement = null;
     hasCustomHarmony = false;
@@ -285,6 +300,7 @@ export function computeArrangementInfo(
     invalidChordIds: parsedArrangement.invalidChordIds,
     parseIssues: parsedArrangement.parseIssues,
     harmonyVoicing,
+    generatedArrangement,
     effectiveHarmonyVoicing,
     effectiveCustomArrangement,
     hasCustomHarmony,
@@ -331,6 +347,31 @@ function getHighestMidi(lines: HarmonyLine[]): number {
     }
   }
   return top;
+}
+
+function sampleLinesWithinSpans(
+  arrangement: Pick<CustomArrangement, "voices"> | null | undefined,
+  spans: readonly Pick<ArrangementEditorSpan, "startTick" | "durationTicks">[],
+): HarmonyLine[] {
+  const voices = arrangement?.voices ?? [];
+  return voices.map((voice) =>
+    spans.map((span) => getFirstMidiWithinSpan(voice, span.startTick, span.durationTicks)),
+  );
+}
+
+function getFirstMidiWithinSpan(
+  voice: NonNullable<CustomArrangement["voices"]>[number],
+  startTick: number,
+  durationTicks: number,
+): number | null {
+  const endTick = startTick + durationTicks;
+  for (const event of voice.events) {
+    if (event.startTick >= endTick) break;
+    const overlaps = event.startTick + event.durationTicks > startTick;
+    if (!overlaps || event.midi == null) continue;
+    return event.midi;
+  }
+  return findActiveEventAtTick(voice, startTick)?.midi ?? null;
 }
 
 function buildEditorSpans(

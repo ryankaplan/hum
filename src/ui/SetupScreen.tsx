@@ -6,6 +6,12 @@ import { useEffect, useRef, useState } from "react";
 import { useObservable } from "../observable";
 import { acquirePermissionsAndStart } from "../recording/permissions";
 import type { CustomArrangement } from "../music/arrangementScore";
+import {
+  DEFAULT_HARMONY_RHYTHM_PATTERN_ID,
+  getAvailableHarmonyRhythmPatterns,
+  getHarmonyRhythmPattern,
+  type HarmonyRhythmPatternId,
+} from "../music/harmonyRhythmPatterns";
 import type { HarmonyRangeCoverage } from "../music/types";
 import {
   playHarmonyPreview,
@@ -55,6 +61,22 @@ export function SetupScreen() {
   }, [arrangement.hasCustomHarmony, previewingMode]);
 
   useEffect(() => {
+    const availablePatterns = getAvailableHarmonyRhythmPatterns(
+      arrangement.input.meter,
+    );
+    if (
+      availablePatterns.some(
+        (pattern) => pattern.id === arrangement.input.harmonyRhythmPatternId,
+      )
+    ) {
+      return;
+    }
+    model.setArrangementInput({
+      harmonyRhythmPatternId: DEFAULT_HARMONY_RHYTHM_PATTERN_ID,
+    });
+  }, [arrangement.input.harmonyRhythmPatternId, arrangement.input.meter]);
+
+  useEffect(() => {
     if (appScreen === "setup") return;
     stopAllPlayback();
     previewSessionRef.current?.stop();
@@ -72,13 +94,15 @@ export function SetupScreen() {
 
   async function handlePreview(mode: Exclude<PreviewMode, null>) {
     const parsed = arrangement.parsedChords;
-    const voicing =
+    const arrangementVoices =
       mode === "custom"
-        ? arrangement.effectiveHarmonyVoicing
-        : arrangement.harmonyVoicing;
+        ? arrangement.effectiveCustomArrangement?.voices
+        : arrangement.generatedArrangement?.voices;
     const tempo = arrangement.input.tempo;
 
-    if (voicing == null || parsed.length === 0) return;
+    if (parsed.length === 0 || arrangementVoices == null) {
+      return;
+    }
 
     const ctx = await model.ensureAudioContext();
     if (ctx == null) return;
@@ -91,9 +115,7 @@ export function SetupScreen() {
       parsed,
       arrangement.input.meter[0],
       tempo,
-      mode === "custom" && arrangement.effectiveCustomArrangement != null
-        ? { arrangementVoices: arrangement.effectiveCustomArrangement.voices }
-        : { harmonyLines: voicing.lines },
+      { arrangementVoices },
     );
     previewSessionRef.current = session;
 
@@ -122,6 +144,26 @@ export function SetupScreen() {
 
   function handlePartCountChange(value: "3" | "4") {
     model.setArrangementInput({ totalParts: value === "3" ? 3 : 4 });
+  }
+
+  function handleHarmonyRhythmPatternChange(value: HarmonyRhythmPatternId) {
+    if (value === arrangement.input.harmonyRhythmPatternId) return;
+
+    if (arrangement.hasCustomHarmony) {
+      const nextPattern = getHarmonyRhythmPattern(value);
+      const confirmed = window.confirm(
+        `Switch to ${nextPattern.name}? This will replace your custom harmony rhythm edits.`,
+      );
+      if (!confirmed) return;
+      handleStopPreview();
+      model.setArrangementInput({
+        harmonyRhythmPatternId: value,
+        customArrangement: null,
+      });
+      return;
+    }
+
+    model.setArrangementInput({ harmonyRhythmPatternId: value });
   }
 
   function handleCustomizeHarmony() {
@@ -220,7 +262,8 @@ export function SetupScreen() {
       });
     },
     onPartCountChange: handlePartCountChange,
-    onPreviewSelected: () => handlePreview("generated"),
+    onHarmonyRhythmPatternChange: handleHarmonyRhythmPatternChange,
+    onPreviewPattern: () => handlePreview("pattern"),
     onPreviewCustom: () => handlePreview("custom"),
     onStopPreview: handleStopPreview,
     onCustomizeHarmony: handleCustomizeHarmony,

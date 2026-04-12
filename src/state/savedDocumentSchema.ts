@@ -75,6 +75,16 @@ export type SavedArrangementDocument = {
   vocalRangeHigh: string;
   harmonyRangeCoverage: "lower two thirds" | "whole-range";
   totalParts: 3 | 4;
+  harmonyRhythmPatternId?:
+    | "sustain_pad"
+    | "strong_beats"
+    | "beat_pulse"
+    | "charleston"
+    | "offbeat_comp"
+    | "praise_lift"
+    | "three_plus_three_plus_two"
+    | "waltz_block"
+    | "compound_swell";
   customArrangement: {
     voices: Array<{
       id: string;
@@ -214,6 +224,16 @@ function parseSavedArrangementDocument(
     (raw.harmonyRangeCoverage !== undefined &&
       raw.harmonyRangeCoverage !== "lower two thirds" &&
       raw.harmonyRangeCoverage !== "whole-range") ||
+    (raw.harmonyRhythmPatternId !== undefined &&
+      raw.harmonyRhythmPatternId !== "sustain_pad" &&
+      raw.harmonyRhythmPatternId !== "strong_beats" &&
+      raw.harmonyRhythmPatternId !== "beat_pulse" &&
+      raw.harmonyRhythmPatternId !== "charleston" &&
+      raw.harmonyRhythmPatternId !== "offbeat_comp" &&
+      raw.harmonyRhythmPatternId !== "praise_lift" &&
+      raw.harmonyRhythmPatternId !== "three_plus_three_plus_two" &&
+      raw.harmonyRhythmPatternId !== "waltz_block" &&
+      raw.harmonyRhythmPatternId !== "compound_swell") ||
     (raw.totalParts !== 3 && raw.totalParts !== 4) ||
     (raw.customArrangement != null && customArrangement == null)
   ) {
@@ -229,6 +249,9 @@ function parseSavedArrangementDocument(
     harmonyRangeCoverage: (raw.harmonyRangeCoverage ??
       "lower two thirds") as SavedArrangementDocument["harmonyRangeCoverage"],
     totalParts: raw.totalParts,
+    harmonyRhythmPatternId:
+      (raw.harmonyRhythmPatternId ??
+        "sustain_pad") as SavedArrangementDocument["harmonyRhythmPatternId"],
     customArrangement,
   };
 }

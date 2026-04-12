@@ -71,7 +71,7 @@ function makeDocument(
       vocalRangeLow: "C3",
       vocalRangeHigh: "A4",
       harmonyRangeCoverage: "lower two thirds",
-      selectedHarmonyGenerator: "dynamic",
+      harmonyRhythmPatternId: "sustain_pad",
       totalParts: 3,
       customArrangement: null,
     },

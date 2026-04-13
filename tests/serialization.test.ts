@@ -16,6 +16,7 @@ function makeDraftSnapshot(
         vocalRangeLow: "C3",
         vocalRangeHigh: "A4",
         harmonyRangeCoverage: "lower two thirds",
+        harmonyPriority: "chordIntent",
         totalParts: 4,
         customArrangement: {
           voices: [
@@ -60,6 +61,7 @@ describe("serializeHumDocument / deserializeHumDocument", () => {
     const serialized = serializeHumDocument(makeDraftSnapshot());
     const restored = deserializeHumDocument(serialized);
 
+    expect(restored.document.arrangement.harmonyPriority).toBe("chordIntent");
     expect(restored.document.arrangement.customArrangement?.voices[0]?.events).toEqual([
       { id: "a0", startTick: 0, durationTicks: 16, midi: 48 },
       { id: "a1", startTick: 16, durationTicks: 16, midi: null },

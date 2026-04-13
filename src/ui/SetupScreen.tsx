@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { useObservable } from "../observable";
 import { acquirePermissionsAndStart } from "../recording/permissions";
 import type { CustomArrangement } from "../music/arrangementScore";
-import type { HarmonyRangeCoverage } from "../music/types";
+import type { HarmonyPriority, HarmonyRangeCoverage } from "../music/types";
 import {
   playHarmonyPreview,
   progressionDurationSec,
@@ -217,6 +217,11 @@ export function SetupScreen() {
     onHarmonyCoverageChange: (value: HarmonyRangeCoverage) => {
       model.setArrangementInput({
         harmonyRangeCoverage: value,
+      });
+    },
+    onHarmonyPriorityChange: (value: HarmonyPriority) => {
+      model.setArrangementInput({
+        harmonyPriority: value,
       });
     },
     onPartCountChange: handlePartCountChange,

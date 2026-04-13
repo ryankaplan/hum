@@ -72,6 +72,49 @@ describe("generateHarmony", () => {
     }
   });
 
+  it("keeps voice-leading mode as the default compatibility behavior", () => {
+    const defaultHarmony = generateHarmony(parse("A A F#m F#m"), {
+      range: { low: 48, high: 72 },
+      voices: 2,
+    });
+    const explicitHarmony = generateHarmony(parse("A A F#m F#m"), {
+      range: { low: 48, high: 72 },
+      voices: 2,
+      priority: "voiceLeading",
+    });
+
+    expect(explicitHarmony.lines).toEqual(defaultHarmony.lines);
+  });
+
+  it("prefers clearer chord identity on chord changes in chord-intent mode", () => {
+    const harmony = generateHarmony(parse("A A F#m F#m"), {
+      range: { low: 48, high: 72 },
+      voices: 2,
+      priority: "chordIntent",
+    });
+
+    const thirdChordNotes = harmony.lines
+      .map((line) => line[2] ?? null)
+      .filter((note): note is number => note != null);
+    const secondChordNotes = harmony.lines
+      .map((line) => line[1] ?? null)
+      .filter((note): note is number => note != null);
+
+    expect(thirdChordNotes.some((note) => note % 12 === 6)).toBe(true);
+    expect(thirdChordNotes).not.toEqual(secondChordNotes);
+  });
+
+  it("does not penalize repeated chords in chord-intent mode", () => {
+    const harmony = generateHarmony(parse("A A"), {
+      range: { low: 48, high: 72 },
+      voices: 2,
+      priority: "chordIntent",
+    });
+
+    expect(harmony.lines[0]?.[1]).toBe(harmony.lines[0]?.[0]);
+    expect(harmony.lines[1]?.[1]).toBe(harmony.lines[1]?.[0]);
+  });
+
   it("throws when the vocal range is invalid", () => {
     expect(() =>
       generateHarmony(parse("A"), {

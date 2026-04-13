@@ -4,6 +4,7 @@ import type {
   GeneratedHarmony,
   HarmonyAnnotation,
   HarmonyLine as PackageHarmonyLine,
+  HarmonyPriority as PackageHarmonyPriority,
   MidiNote,
   NoteName,
   VocalRange,
@@ -12,6 +13,7 @@ import { NOTE_NAMES } from "@hum/harmony";
 
 export type { MidiNote, NoteName, VocalRange };
 export type ChordQuality = PackageChordQuality;
+export type HarmonyPriority = PackageHarmonyPriority;
 
 export type Chord = ChordSymbol & {
   // How many beats this chord lasts (e.g. "A x2" in 4/4 = 8 beats)

@@ -51,7 +51,7 @@ import { parseCustomArrangement } from "../music/arrangementScore";
  * - On parse failure or schema version mismatch, callers should clear the draft
  *   instead of trying to partially recover it.
  */
-export const SAVED_HUM_DOCUMENT_SCHEMA_VERSION = "14";
+export const SAVED_HUM_DOCUMENT_SCHEMA_VERSION = "15";
 
 export const SAVED_HUM_DOCUMENT_ID = "current";
 
@@ -74,6 +74,7 @@ export type SavedArrangementDocument = {
   vocalRangeLow: string;
   vocalRangeHigh: string;
   harmonyRangeCoverage: "lower two thirds" | "whole-range";
+  harmonyPriority: "voiceLeading" | "chordIntent";
   totalParts: 3 | 4;
   customArrangement: {
     voices: Array<{
@@ -214,6 +215,9 @@ function parseSavedArrangementDocument(
     (raw.harmonyRangeCoverage !== undefined &&
       raw.harmonyRangeCoverage !== "lower two thirds" &&
       raw.harmonyRangeCoverage !== "whole-range") ||
+    (raw.harmonyPriority !== undefined &&
+      raw.harmonyPriority !== "voiceLeading" &&
+      raw.harmonyPriority !== "chordIntent") ||
     (raw.totalParts !== 3 && raw.totalParts !== 4) ||
     (raw.customArrangement != null && customArrangement == null)
   ) {
@@ -228,6 +232,8 @@ function parseSavedArrangementDocument(
     vocalRangeHigh: raw.vocalRangeHigh,
     harmonyRangeCoverage: (raw.harmonyRangeCoverage ??
       "lower two thirds") as SavedArrangementDocument["harmonyRangeCoverage"],
+    harmonyPriority: (raw.harmonyPriority ??
+      "voiceLeading") as SavedArrangementDocument["harmonyPriority"],
     totalParts: raw.totalParts,
     customArrangement,
   };

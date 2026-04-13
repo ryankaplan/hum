@@ -10,6 +10,7 @@ import {
   generateDyadCandidates,
   type HarmonyDyadCandidate,
 } from "./dyadCandidates";
+import { HARMONY_PRIORITY_PROFILES } from "./profiles";
 import { describeHarmonyNotesForChord } from "./annotation";
 import type {
   ChordSymbol,
@@ -32,7 +33,7 @@ export function generateHarmony(
   },
   options: GenerateHarmonyOptions,
 ): GeneratedHarmony {
-  const { range, voices } = options;
+  const { range, voices, priority = "voiceLeading" } = options;
   if (voices !== 2 && voices !== 3) {
     throw new RangeError("Harmony voices must be 2 or 3.");
   }
@@ -41,7 +42,7 @@ export function generateHarmony(
   }
 
   return voices === 2
-    ? generateTwoVoiceHarmony(input, range)
+    ? generateTwoVoiceHarmony(input, range, priority)
     : generateThreeVoiceHarmony(input, range);
 }
 
@@ -54,7 +55,9 @@ function generateTwoVoiceHarmony(
     }>;
   },
   range: GenerateHarmonyOptions["range"],
+  priority: NonNullable<GenerateHarmonyOptions["priority"]>,
 ): GeneratedHarmony {
+  const profile = HARMONY_PRIORITY_PROFILES[priority];
   const chords = input.events.map((event) => event.symbol);
   if (chords.length === 0) {
     return createEmptyHarmonyResult(input, 2, range.low);
@@ -62,7 +65,7 @@ function generateTwoVoiceHarmony(
 
   const candidateSets = chords.map((chord) =>
     {
-      const candidates = generateDyadCandidates(chord, range).slice(
+      const candidates = generateDyadCandidates(chord, range, profile).slice(
         0,
         MAX_CANDIDATES_PER_CHORD,
       );
@@ -72,7 +75,7 @@ function generateTwoVoiceHarmony(
       ] satisfies HarmonyDyadCandidate[];
     },
   );
-  const bestPath = chooseBestDyadPath(chords, candidateSets, range);
+  const bestPath = chooseBestDyadPath(chords, candidateSets, range, profile);
   const lines = createHarmonyLines(2);
   const annotations: HarmonyAnnotation[] = [];
 

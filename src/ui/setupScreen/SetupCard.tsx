@@ -18,6 +18,7 @@ export function SetupCard({
   onMeterLabelChange,
   onRangePresetChange,
   onHarmonyCoverageChange,
+  onHarmonyPriorityChange,
   onPartCountChange,
   onPreviewSelected,
   onPreviewCustom,
@@ -42,6 +43,7 @@ export function SetupCard({
     vocalRangeLow: rangeLow,
     vocalRangeHigh: rangeHigh,
     harmonyRangeCoverage,
+    harmonyPriority,
     totalParts,
   } = input;
   const selectedRangeValue =
@@ -70,12 +72,14 @@ export function SetupCard({
           tempoInputValue={tempoInputValue}
           selectedRangeValue={selectedRangeValue}
           harmonyRangeCoverage={harmonyRangeCoverage}
+          harmonyPriority={harmonyPriority}
           totalParts={totalParts}
           onTempoInputChange={onTempoInputChange}
           onTempoInputBlur={onTempoInputBlur}
           onMeterLabelChange={onMeterLabelChange}
           onRangePresetChange={onRangePresetChange}
           onHarmonyCoverageChange={onHarmonyCoverageChange}
+          onHarmonyPriorityChange={onHarmonyPriorityChange}
           onPartCountChange={onPartCountChange}
         />
 

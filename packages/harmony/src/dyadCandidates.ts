@@ -1,4 +1,5 @@
 import { fullChordSemitones, rootSemitone } from "./parse";
+import type { HarmonyPriorityProfile } from "./profiles";
 import type { ChordQuality, ChordSymbol, MidiNote, VocalRange } from "./types";
 
 export type HarmonyDyadCandidate = {
@@ -12,6 +13,7 @@ const DYAD_HARD_MAX_SPAN = 19;
 export function generateDyadCandidates(
   chord: ChordSymbol,
   range: VocalRange,
+  profile: HarmonyPriorityProfile,
 ): HarmonyDyadCandidate[] {
   const generated =
     chord.bass != null
@@ -19,7 +21,7 @@ export function generateDyadCandidates(
       : generateNonSlashDyadCandidates(chord, range);
 
   return generated.sort((left, right) =>
-    compareDyadSearchCandidates(left, right, chord, range),
+    compareDyadSearchCandidates(left, right, chord, range, profile),
   );
 }
 
@@ -63,7 +65,10 @@ export function scoreDyadCandidate(
   previousCandidate: HarmonyDyadCandidate | null,
   range: VocalRange,
   chord?: ChordSymbol,
+  previousChord?: ChordSymbol | null,
+  profile?: HarmonyPriorityProfile,
 ): number {
+  const scoring = profile?.candidate;
   const [low, high] = candidate.notes;
   const span = high - low;
   let score = 0;
@@ -95,14 +100,18 @@ export function scoreDyadCandidate(
     if (chord != null && chord.bass == null) {
       const preferredBass = normalizePitchClassFromNoteName(chord.root);
       if (normalizePitchClass(low) !== preferredBass) {
-        score += 1.2;
+        score += scoring?.initialRootMismatchPenalty ?? 1.2;
       } else {
-        score -= 1;
+        score -= scoring?.initialRootMatchReward ?? 1;
       }
     }
 
-    score += Math.abs(average - center) * 1.15;
-    score += Math.abs(high - targetTop) * 0.6;
+    score +=
+      Math.abs(average - center) *
+      (scoring?.initialAverageFromCenterWeight ?? 1.15);
+    score +=
+      Math.abs(high - targetTop) *
+      (scoring?.initialHighFromTargetWeight ?? 0.6);
     return score;
   }
 
@@ -110,37 +119,51 @@ export function scoreDyadCandidate(
   const lowDelta = Math.abs(low - previousLow);
   const highDelta = Math.abs(high - previousHigh);
 
-  score += lowDelta * 0.85;
-  score += highDelta;
+  score += lowDelta * (scoring?.lowMotionWeight ?? 0.85);
+  score += highDelta * (scoring?.highMotionWeight ?? 1);
   score += lowMotionPenalty(lowDelta);
   score += highMotionPenalty(highDelta);
 
   if (normalizePitchClass(low) === normalizePitchClass(previousLow)) {
-    score -= 1.5;
+    score -= scoring?.lowCommonToneReward ?? 1.5;
   }
   if (normalizePitchClass(high) === normalizePitchClass(previousHigh)) {
-    score -= 2;
+    score -= scoring?.highCommonToneReward ?? 2;
   }
 
   const lowDirection = direction(low - previousLow);
   const highDirection = direction(high - previousHigh);
   if (lowDirection !== 0 && highDirection !== 0 && lowDirection === highDirection) {
     if (Math.max(lowDelta, highDelta) >= 3) {
-      score += 2.2;
+      score += scoring?.sameDirectionLargePenalty ?? 2.2;
     }
     if (lowDelta >= 3 && highDelta >= 3) {
-      score += 1.4;
+      score += scoring?.sameDirectionPenalty ?? 1.4;
     }
   }
 
-  score +=
-    Math.abs((low + high) / 2 - (previousLow + previousHigh) / 2) * 0.75;
+  score += Math.abs((low + high) / 2 - (previousLow + previousHigh) / 2) *
+    (scoring?.averageShiftWeight ?? 0.75);
 
   if (chord != null && chord.bass == null) {
     const preferredBass = normalizePitchClassFromNoteName(chord.root);
     if (normalizePitchClass(low) !== preferredBass) {
-      score += 0.4;
+      score += scoring?.rootMismatchPenalty ?? 0.4;
     }
+  }
+
+  if (
+    chord != null &&
+    previousChord != null &&
+    sameChordSymbol(chord, previousChord) === false
+  ) {
+    score += chordIntentOverlayScore(
+      candidate,
+      previousCandidate,
+      chord,
+      previousChord,
+      profile,
+    );
   }
 
   return score;
@@ -151,9 +174,18 @@ export function scoreDyadSearchCandidate(
   previousCandidate: HarmonyDyadCandidate | null,
   range: VocalRange,
   chord?: ChordSymbol,
+  previousChord?: ChordSymbol | null,
+  profile?: HarmonyPriorityProfile,
 ): number {
   return (
-    scoreDyadCandidate(candidate, previousCandidate, range, chord) +
+    scoreDyadCandidate(
+      candidate,
+      previousCandidate,
+      range,
+      chord,
+      previousChord,
+      profile,
+    ) +
     (candidate.recipePriority ?? 0) * DYAD_RECIPE_PRIORITY_PENALTY
   );
 }
@@ -336,11 +368,179 @@ function compareDyadSearchCandidates(
   right: HarmonyDyadCandidate,
   chord: ChordSymbol,
   range: VocalRange,
+  profile: HarmonyPriorityProfile,
 ): number {
-  const leftScore = scoreDyadSearchCandidate(left, null, range, chord);
-  const rightScore = scoreDyadSearchCandidate(right, null, range, chord);
+  const leftScore = scoreDyadSearchCandidate(left, null, range, chord, null, profile);
+  const rightScore = scoreDyadSearchCandidate(
+    right,
+    null,
+    range,
+    chord,
+    null,
+    profile,
+  );
   if (leftScore !== rightScore) return leftScore - rightScore;
   return compareDyadCandidates(left, right);
+}
+
+function chordIntentOverlayScore(
+  candidate: HarmonyDyadCandidate,
+  previousCandidate: HarmonyDyadCandidate,
+  chord: ChordSymbol,
+  previousChord: ChordSymbol,
+  profile?: HarmonyPriorityProfile,
+): number {
+  const scoring = profile?.candidate;
+  if (scoring == null) return 0;
+
+  const intervals = candidateIntervals(candidate, chord);
+  const { definingIntervals, colorIntervals } = chordIntentIntervals(chord.quality);
+  let score = 0;
+
+  if (intervals.includes(0) === false) {
+    score += scoring.missingRootOnChangePenalty;
+  }
+  if (hasRootInLow(candidate, chord)) {
+    score -= scoring.rootInLowOnChangeReward;
+  }
+  if (hasAnyInterval(intervals, definingIntervals)) {
+    score -= scoring.definingToneOnChangeReward;
+  }
+  if (colorIntervals.length > 0 && hasAnyInterval(intervals, colorIntervals)) {
+    score -= scoring.colorToneOnChangeReward;
+  }
+
+  if (isAmbiguousCarryover(candidate, previousCandidate, chord, previousChord)) {
+    score += scoring.ambiguousCarryoverPenalty;
+  }
+
+  return score;
+}
+
+function isAmbiguousCarryover(
+  candidate: HarmonyDyadCandidate,
+  previousCandidate: HarmonyDyadCandidate,
+  chord: ChordSymbol,
+  previousChord: ChordSymbol,
+): boolean {
+  const currentFit = chordIntentFit(candidate, chord);
+  const previousFit = chordIntentFit(candidate, previousChord);
+  return (
+    samePitchClasses(candidate, previousCandidate) ||
+    previousFit > currentFit
+  );
+}
+
+function chordIntentFit(
+  candidate: HarmonyDyadCandidate,
+  chord: ChordSymbol,
+): number {
+  const intervals = candidateIntervals(candidate, chord);
+  const { definingIntervals, colorIntervals } = chordIntentIntervals(chord.quality);
+  let fit = 0;
+  if (intervals.includes(0)) fit += 1;
+  if (hasRootInLow(candidate, chord)) fit += 1.25;
+  if (hasAnyInterval(intervals, definingIntervals)) fit += 1.5;
+  if (colorIntervals.length > 0 && hasAnyInterval(intervals, colorIntervals)) {
+    fit += 1.2;
+  }
+  if (chord.bass != null && hasBassInLow(candidate, chord.bass)) {
+    fit += 1;
+  }
+  return fit;
+}
+
+function candidateIntervals(
+  candidate: HarmonyDyadCandidate,
+  chord: ChordSymbol,
+): number[] {
+  const rootPitchClass = normalizePitchClassFromNoteName(chord.root);
+  return uniquePitchClasses(
+    candidate.notes.map((note) => normalizePitchClass(note - rootPitchClass)),
+  );
+}
+
+function hasRootInLow(
+  candidate: HarmonyDyadCandidate,
+  chord: ChordSymbol,
+): boolean {
+  return normalizePitchClass(candidate.notes[0]) === normalizePitchClassFromNoteName(chord.root);
+}
+
+function hasBassInLow(
+  candidate: HarmonyDyadCandidate,
+  bass: ChordSymbol["root"],
+): boolean {
+  return normalizePitchClass(candidate.notes[0]) === normalizePitchClassFromNoteName(bass);
+}
+
+function hasAnyInterval(
+  candidateIntervals: number[],
+  expectedIntervals: readonly number[],
+): boolean {
+  return expectedIntervals.some((interval) =>
+    candidateIntervals.includes(normalizePitchClass(interval)),
+  );
+}
+
+function samePitchClasses(
+  left: HarmonyDyadCandidate,
+  right: HarmonyDyadCandidate,
+): boolean {
+  return (
+    normalizePitchClass(left.notes[0]) === normalizePitchClass(right.notes[0]) &&
+    normalizePitchClass(left.notes[1]) === normalizePitchClass(right.notes[1])
+  );
+}
+
+function sameChordSymbol(left: ChordSymbol, right: ChordSymbol): boolean {
+  return (
+    left.root === right.root &&
+    left.quality === right.quality &&
+    left.bass === right.bass
+  );
+}
+
+function chordIntentIntervals(quality: ChordQuality): {
+  definingIntervals: readonly number[];
+  colorIntervals: readonly number[];
+} {
+  switch (quality) {
+    case "major":
+      return { definingIntervals: [4], colorIntervals: [] };
+    case "minor":
+      return { definingIntervals: [3], colorIntervals: [] };
+    case "add9":
+      return { definingIntervals: [4], colorIntervals: [2] };
+    case "diminished":
+      return { definingIntervals: [3, 6], colorIntervals: [] };
+    case "major6":
+      return { definingIntervals: [4], colorIntervals: [9] };
+    case "minor6":
+      return { definingIntervals: [3], colorIntervals: [9] };
+    case "dominant7":
+      return { definingIntervals: [4, 10], colorIntervals: [] };
+    case "minor7":
+      return { definingIntervals: [3, 10], colorIntervals: [] };
+    case "major7":
+      return { definingIntervals: [4, 11], colorIntervals: [] };
+    case "dominant9":
+      return { definingIntervals: [4, 10], colorIntervals: [2] };
+    case "minor9":
+      return { definingIntervals: [3, 10], colorIntervals: [2] };
+    case "dominant7Flat9":
+      return { definingIntervals: [4, 10], colorIntervals: [1] };
+    case "minor7Flat9":
+      return { definingIntervals: [3, 10], colorIntervals: [1] };
+    case "sus2":
+      return { definingIntervals: [2], colorIntervals: [] };
+    case "sus4":
+      return { definingIntervals: [5], colorIntervals: [] };
+    case "dominant9Sus2":
+      return { definingIntervals: [2, 10], colorIntervals: [] };
+    case "dominant9Sus4":
+      return { definingIntervals: [5, 10], colorIntervals: [] };
+  }
 }
 
 function compareDyadCandidates(

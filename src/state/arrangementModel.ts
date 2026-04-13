@@ -23,6 +23,7 @@ import {
 import type {
   Chord,
   HarmonyLine,
+  HarmonyPriority,
   HarmonyRangeCoverage,
   HarmonyVoicing,
   Meter,
@@ -44,6 +45,7 @@ export type ArrangementDocState = {
   vocalRangeLow: string;
   vocalRangeHigh: string;
   harmonyRangeCoverage: HarmonyRangeCoverage;
+  harmonyPriority: HarmonyPriority;
   totalParts: TotalPartCount;
   customArrangement: CustomArrangement | null;
 };
@@ -93,6 +95,7 @@ export function createDefaultArrangementDocState(): ArrangementDocState {
     vocalRangeLow: "C3",
     vocalRangeHigh: "A4",
     harmonyRangeCoverage: "lower two thirds",
+    harmonyPriority: "voiceLeading",
     totalParts: 4,
     customArrangement: null,
   };
@@ -129,6 +132,7 @@ export function parseArrangementDocState(raw: unknown): ArrangementDocState {
     harmonyRangeCoverage: parseHarmonyRangeCoverage(
       value?.harmonyRangeCoverage,
     ),
+    harmonyPriority: parseHarmonyPriority(value?.harmonyPriority),
     totalParts: parseTotalPartCount(value?.totalParts),
     customArrangement: parseCustomArrangementOverride(value?.customArrangement),
   };
@@ -138,6 +142,10 @@ function parseHarmonyRangeCoverage(raw: unknown): HarmonyRangeCoverage {
   return raw === "lower two thirds" || raw === "whole-range"
     ? raw
     : "lower two thirds";
+}
+
+function parseHarmonyPriority(raw: unknown): HarmonyPriority {
+  return raw === "chordIntent" ? "chordIntent" : "voiceLeading";
 }
 
 function parseCustomArrangementOverride(raw: unknown): CustomArrangement | null {
@@ -215,6 +223,7 @@ export function computeArrangementInfo(
       const generated = generateHarmony(harmonyInput, {
         range: harmonyRange,
         voices: harmonyPartCount,
+        priority: input.harmonyPriority,
       });
       harmonyVoicing = {
         ...generated,

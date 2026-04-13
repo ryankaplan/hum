@@ -54,6 +54,7 @@ function serializeArrangementDocument(
     vocalRangeLow: arrangement.vocalRangeLow,
     vocalRangeHigh: arrangement.vocalRangeHigh,
     harmonyRangeCoverage: arrangement.harmonyRangeCoverage,
+    harmonyPriority: arrangement.harmonyPriority,
     totalParts: arrangement.totalParts,
     customArrangement:
       arrangement.customArrangement == null
@@ -82,6 +83,7 @@ function deserializeArrangementDocument(
     vocalRangeLow: saved.vocalRangeLow,
     vocalRangeHigh: saved.vocalRangeHigh,
     harmonyRangeCoverage: saved.harmonyRangeCoverage,
+    harmonyPriority: saved.harmonyPriority,
     totalParts: saved.totalParts,
     customArrangement:
       saved.customArrangement == null

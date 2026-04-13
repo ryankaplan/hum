@@ -116,7 +116,10 @@ export type ParseResult =
 export type GenerateHarmonyOptions = {
   range: VocalRange;
   voices: 2 | 3;
+  priority?: HarmonyPriority;
 };
+
+export type HarmonyPriority = "voiceLeading" | "chordIntent";
 
 export type GeneratedHarmonyVoice = {
   events: Array<{

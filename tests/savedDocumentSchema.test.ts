@@ -6,6 +6,7 @@ import {
 
 function makeSavedHumDocument(
   harmonyRangeCoverage: string,
+  harmonyPriority: "voiceLeading" | "chordIntent" = "voiceLeading",
 ) {
   return {
     schemaVersion: SAVED_HUM_DOCUMENT_SCHEMA_VERSION,
@@ -17,6 +18,7 @@ function makeSavedHumDocument(
       vocalRangeLow: "C3",
       vocalRangeHigh: "A4",
       harmonyRangeCoverage,
+      harmonyPriority,
       totalParts: 4,
       customArrangement: null,
     },
@@ -48,6 +50,19 @@ describe("parseSavedHumDocument", () => {
       const parsed = parseSavedHumDocument(makeSavedHumDocument(coverage));
       expect(parsed?.arrangement.harmonyRangeCoverage).toBe(coverage);
     }
+  });
+
+  it("accepts the current harmony priority values", () => {
+    expect(
+      parseSavedHumDocument(
+        makeSavedHumDocument("lower two thirds", "voiceLeading"),
+      )?.arrangement.harmonyPriority,
+    ).toBe("voiceLeading");
+    expect(
+      parseSavedHumDocument(
+        makeSavedHumDocument("lower two thirds", "chordIntent"),
+      )?.arrangement.harmonyPriority,
+    ).toBe("chordIntent");
   });
 
   it("rejects retired harmony coverage values", () => {

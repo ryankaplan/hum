@@ -145,6 +145,7 @@ export type {
   GeneratedHarmony,
   GenerateHarmonyOptions,
   HarmonyAnnotation,
+  HarmonyPriority,
   HarmonyInput,
   HarmonyInputEvent,
   HarmonyLine,

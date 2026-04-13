@@ -8,6 +8,7 @@ import {
 import type { HarmonyRangeCoverage } from "../../music/types";
 import { dsColors, dsFocusRing, dsInputControl } from "../designSystem";
 import {
+  HARMONY_PRIORITY_OPTIONS,
   HARMONY_COVERAGE_OPTIONS,
   METER_OPTIONS,
   RANGE_OPTIONS,
@@ -27,12 +28,14 @@ export function SetupFormFields({
   tempoInputValue,
   selectedRangeValue,
   harmonyRangeCoverage,
+  harmonyPriority,
   totalParts,
   onTempoInputChange,
   onTempoInputBlur,
   onMeterLabelChange,
   onRangePresetChange,
   onHarmonyCoverageChange,
+  onHarmonyPriorityChange,
   onPartCountChange,
 }: SetupFormFieldsProps) {
   return (
@@ -89,7 +92,7 @@ export function SetupFormFields({
         </Field.Root>
       </Grid>
 
-      <Grid templateColumns={{ base: "1fr", md: "1fr 1fr" }} gap={4}>
+      <Grid templateColumns={{ base: "1fr", md: "1fr 1fr 1fr" }} gap={4}>
         <Field.Root>
           <Field.Label color={dsColors.text}>Harmony Placement</Field.Label>
           <NativeSelect.Root>
@@ -101,6 +104,29 @@ export function SetupFormFields({
               {...controlStyles}
             >
               {HARMONY_COVERAGE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </NativeSelect.Field>
+          </NativeSelect.Root>
+        </Field.Root>
+
+        <Field.Root>
+          <Field.Label color={dsColors.text}>Harmony Priority</Field.Label>
+          <NativeSelect.Root>
+            <NativeSelect.Field
+              value={harmonyPriority}
+              onChange={(e) =>
+                onHarmonyPriorityChange(
+                  e.target.value === "chordIntent"
+                    ? "chordIntent"
+                    : "voiceLeading",
+                )
+              }
+              {...controlStyles}
+            >
+              {HARMONY_PRIORITY_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>

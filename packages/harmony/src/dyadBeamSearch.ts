@@ -2,6 +2,7 @@ import {
   scoreDyadSearchCandidate,
   type HarmonyDyadCandidate,
 } from "./dyadCandidates";
+import type { HarmonyPriorityProfile } from "./profiles";
 import type { ChordSymbol, MidiNote, VocalRange } from "./types";
 
 type Direction = -1 | 0 | 1;
@@ -27,34 +28,25 @@ type BeamState = {
 
 const BEAM_WIDTH = 24;
 
-const HIGH_SPAN_SOFT_LIMIT = 9;
-const HIGH_REVERSAL_AFTER_NONSTEP_PENALTY = 2.2;
-const HIGH_REPEATED_REVERSAL_PENALTY = 1.4;
-const HIGH_UNRECOVERED_LEAP_PENALTY = 3.4;
-const HIGH_SPAN_EXCESS_PENALTY = 0.8;
-const HIGH_COMMON_TONE_REWARD = 0.45;
-
-const LOW_SPAN_SOFT_LIMIT = 12;
-const LOW_REVERSAL_AFTER_NONSTEP_PENALTY = 0.9;
-const LOW_REPEATED_REVERSAL_PENALTY = 0.55;
-const LOW_UNRECOVERED_LEAP_PENALTY = 1.6;
-const LOW_SPAN_EXCESS_PENALTY = 0.25;
-const LOW_COMMON_TONE_REWARD = 0.2;
-
-const SAME_DIRECTION_LARGE_MOTION_PENALTY = 1.2;
-const SAME_DIRECTION_BOTH_ACTIVE_PENALTY = 0.75;
-
 export function chooseBestDyadPath(
   chords: ChordSymbol[],
   candidateSets: HarmonyDyadCandidate[][],
   range: VocalRange,
+  profile: HarmonyPriorityProfile,
 ): HarmonyDyadCandidate[] {
   let beam: BeamState[] = candidateSets[0]!
     .map((candidate, index) => {
       const [low, high] = candidate.notes;
       return {
         path: [candidate],
-        totalScore: scoreDyadSearchCandidate(candidate, null, range, chords[0]),
+        totalScore: scoreDyadSearchCandidate(
+          candidate,
+          null,
+          range,
+          chords[0],
+          null,
+          profile,
+        ),
         previousCandidate: candidate,
         previousHighInterval: null,
         previousHighDirection: 0,
@@ -90,8 +82,10 @@ export function chooseBestDyadPath(
               state.previousCandidate,
               range,
               chord,
+              chords[chordIndex - 1] ?? null,
+              profile,
             ) +
-            scoreContourTransition(state, candidate),
+            scoreContourTransition(state, candidate, profile),
           previousCandidate: candidate,
           previousHighInterval:
             candidate.notes[1] - state.previousCandidate.notes[1],
@@ -137,7 +131,9 @@ export function chooseBestDyadPath(
 function scoreContourTransition(
   state: BeamState,
   candidate: HarmonyDyadCandidate,
+  profile: HarmonyPriorityProfile,
 ): number {
+  const contour = profile.contour;
   const previousLow = state.previousCandidate.notes[0];
   const previousHigh = state.previousCandidate.notes[1];
   const currentLow = candidate.notes[0];
@@ -161,12 +157,12 @@ function scoreContourTransition(
     currentNote: currentHigh,
     previousNote: previousHigh,
     reversalStreak: state.highReversalStreak,
-    spanSoftLimit: HIGH_SPAN_SOFT_LIMIT,
-    reversalAfterNonStepPenalty: HIGH_REVERSAL_AFTER_NONSTEP_PENALTY,
-    repeatedReversalPenalty: HIGH_REPEATED_REVERSAL_PENALTY,
-    unrecoveredLeapPenalty: HIGH_UNRECOVERED_LEAP_PENALTY,
-    spanExcessPenalty: HIGH_SPAN_EXCESS_PENALTY,
-    commonToneReward: HIGH_COMMON_TONE_REWARD,
+    spanSoftLimit: contour.highSpanSoftLimit,
+    reversalAfterNonStepPenalty: contour.highReversalAfterNonStepPenalty,
+    repeatedReversalPenalty: contour.highRepeatedReversalPenalty,
+    unrecoveredLeapPenalty: contour.highUnrecoveredLeapPenalty,
+    spanExcessPenalty: contour.highSpanExcessPenalty,
+    commonToneReward: contour.highCommonToneReward,
   });
   score += scoreVoiceContourTransition({
     previousInterval: state.previousLowInterval,
@@ -179,20 +175,20 @@ function scoreContourTransition(
     currentNote: currentLow,
     previousNote: previousLow,
     reversalStreak: state.lowReversalStreak,
-    spanSoftLimit: LOW_SPAN_SOFT_LIMIT,
-    reversalAfterNonStepPenalty: LOW_REVERSAL_AFTER_NONSTEP_PENALTY,
-    repeatedReversalPenalty: LOW_REPEATED_REVERSAL_PENALTY,
-    unrecoveredLeapPenalty: LOW_UNRECOVERED_LEAP_PENALTY,
-    spanExcessPenalty: LOW_SPAN_EXCESS_PENALTY,
-    commonToneReward: LOW_COMMON_TONE_REWARD,
+    spanSoftLimit: contour.lowSpanSoftLimit,
+    reversalAfterNonStepPenalty: contour.lowReversalAfterNonStepPenalty,
+    repeatedReversalPenalty: contour.lowRepeatedReversalPenalty,
+    unrecoveredLeapPenalty: contour.lowUnrecoveredLeapPenalty,
+    spanExcessPenalty: contour.lowSpanExcessPenalty,
+    commonToneReward: contour.lowCommonToneReward,
   });
 
   if (lowDirection !== 0 && highDirection !== 0 && lowDirection === highDirection) {
     if (Math.max(lowMotion, highMotion) >= 3) {
-      score += SAME_DIRECTION_LARGE_MOTION_PENALTY;
+      score += contour.sameDirectionLargeMotionPenalty;
     }
     if (lowMotion > 0 && highMotion > 0) {
-      score += SAME_DIRECTION_BOTH_ACTIVE_PENALTY;
+      score += contour.sameDirectionBothActivePenalty;
     }
   }
 

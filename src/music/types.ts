@@ -8,8 +8,8 @@ import type {
   MidiNote,
   NoteName,
   VocalRange,
-} from "@hum/harmony";
-import { NOTE_NAMES } from "@hum/harmony";
+} from "arranger";
+import { NOTE_NAMES } from "arranger";
 
 export type { MidiNote, NoteName, VocalRange };
 export type ChordQuality = PackageChordQuality;

@@ -1,5 +1,5 @@
 import { Box, Flex, Stack, Text, Tooltip } from "@chakra-ui/react";
-import { chordToneFormula } from "../../music/harmony";
+import { chordToneFormula } from "arranger";
 import { chordPitchClassNames, formatChordSymbol } from "../../music/parse";
 import { midiToNoteName } from "../../music/types";
 import { dsColors } from "../designSystem";

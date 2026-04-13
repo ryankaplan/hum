@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   describeHarmonyNotesForChord,
   labelHarmonyNoteForChord,
-} from "../src/music/harmony";
+} from "arranger";
 import { parseChordText } from "../src/music/parse";
 
 function parse(token: string) {

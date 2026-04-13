@@ -13,7 +13,7 @@ import {
   type ArrangementMeasure,
   type ChordEvent,
 } from "../music/arrangementTimeline";
-import { describeHarmonyNotesForChord } from "../music/harmony";
+import { describeHarmonyNotesForChord } from "arranger";
 import { progressionDurationSec } from "../music/playback";
 import {
   getHarmonyLineNote,
@@ -32,7 +32,7 @@ import {
   generateHarmony,
   parseHarmonyInput,
   type HarmonyInput,
-} from "@hum/harmony";
+} from "arranger";
 
 export type { ArrangementMeasure, ArrangementMeasureSlice, ChordEvent } from "../music/arrangementTimeline";
 

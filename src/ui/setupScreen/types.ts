@@ -27,8 +27,8 @@ export const HARMONY_COVERAGE_OPTIONS = [
 ] as const;
 
 export const HARMONY_PRIORITY_OPTIONS = [
-  { label: "Prioritize voice leading", value: "voiceLeading" },
-  { label: "Prioritize chord intent", value: "chordIntent" },
+  { label: "Voice leading", value: "voiceLeading" },
+  { label: "Chord intent", value: "chordIntent" },
 ] as const;
 
 export type SetupFormFieldsProps = {

@@ -12,7 +12,7 @@ importers:
         specifier: 3.34.0
         version: 3.34.0(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.4))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       arranger:
-        specifier: git+ssh://git@github.com/ryankaplan/arranger.git#main
+        specifier: git+ssh://git@github.com/ryankaplan/arranger.git#9f4fff54d4e2caa4807af505218a4e633ef83dd8
         version: git+https://git@github.com:ryankaplan/arranger.git#9f4fff54d4e2caa4807af505218a4e633ef83dd8
       lucide-react:
         specifier: ^1.7.0

@@ -48,4 +48,22 @@ describe("resolveRecordingHarmonyGuidance", () => {
     expect(guidance.harmonyLine).toBeNull();
     expect(guidance.arrangementVoice).toBeNull();
   });
+
+  it("uses the first active rhythmic event for the count-in cue", () => {
+    const info = computeArrangementInfo({
+      ...createDefaultArrangementDocState(),
+      chordsInput: "A9",
+      harmonyRhythmPatternId: "offbeat_comp",
+    });
+
+    const guidance = resolveRecordingHarmonyGuidance(
+      info.harmonyVoicing,
+      info.effectiveCustomArrangement?.voices ?? [],
+      0,
+      4,
+    );
+
+    expect(guidance.arrangementVoice?.events[0]?.midi).toBeNull();
+    expect(guidance.countInCueMidi).toBe(49);
+  });
 });

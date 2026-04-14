@@ -56,6 +56,7 @@ function serializeArrangementDocument(
     harmonyRangeCoverage: arrangement.harmonyRangeCoverage,
     harmonyPriority: arrangement.harmonyPriority,
     totalParts: arrangement.totalParts,
+    harmonyRhythmPatternId: arrangement.harmonyRhythmPatternId,
     customArrangement:
       arrangement.customArrangement == null
         ? null
@@ -85,6 +86,7 @@ function deserializeArrangementDocument(
     harmonyRangeCoverage: saved.harmonyRangeCoverage,
     harmonyPriority: saved.harmonyPriority,
     totalParts: saved.totalParts,
+    harmonyRhythmPatternId: saved.harmonyRhythmPatternId ?? "sustain_pad",
     customArrangement:
       saved.customArrangement == null
         ? null

@@ -1,5 +1,6 @@
 import { Box, Text } from "@chakra-ui/react";
 import { useEffect, useRef, useState } from "react";
+import { arrangementTicksToBeats, type ArrangementVoice } from "../music/arrangementScore";
 import { getHarmonyLineNote, midiToNoteName } from "../music/types";
 import type { Chord, HarmonyLine, MidiNote } from "../music/types";
 import { playNotePreview } from "../music/playback";
@@ -16,6 +17,7 @@ type Props = {
   chords: Chord[];
   lyricsByChord: string[];
   harmonyLine: HarmonyLine | null; // null for melody part
+  arrangementVoice?: ArrangementVoice | null;
   referenceWaveform?: ReferenceWaveform | null;
   stream: MediaStream | null;
   activeChordIndex: number;
@@ -83,6 +85,7 @@ export function NoteDisplay({
   chords,
   lyricsByChord,
   harmonyLine,
+  arrangementVoice = null,
   referenceWaveform = null,
   stream,
   activeChordIndex,
@@ -100,7 +103,7 @@ export function NoteDisplay({
   }));
   const hasLyrics = lyricSegments.some((segment) => segment.lyric.trim().length > 0);
 
-  if (harmonyLine == null) {
+  if (harmonyLine == null && arrangementVoice == null) {
     return (
       <Box w="100%" p={4} {...dsPanel}>
         <Text color={dsColors.textMuted} fontSize="xs" mb={hasLyrics ? 3 : 0}>
@@ -133,20 +136,39 @@ export function NoteDisplay({
 
   const segments: NoteSegment[] = [];
   let totalBeats = 0;
-  for (let i = 0; i < chords.length; i++) {
-    const chord = chords[i];
-    const beats = chord?.beats ?? 0;
-    const midi = getHarmonyLineNote(harmonyLine, i);
-    if (chord != null && midi != null) {
+  if (arrangementVoice != null) {
+    const chordStartBeats: number[] = [];
+    for (const chord of chords) {
+      chordStartBeats.push(totalBeats);
+      totalBeats += chord.beats;
+    }
+    for (const event of arrangementVoice.events) {
+      if (event.midi == null) continue;
+      const startBeat = arrangementTicksToBeats(event.startTick);
       segments.push({
-        chordIndex: i,
-        startBeat: totalBeats,
-        beats,
-        midi,
-        noteLabel: midiToNoteName(midi),
+        chordIndex: findChordIndexForBeat(chordStartBeats, startBeat),
+        startBeat,
+        beats: arrangementTicksToBeats(event.durationTicks),
+        midi: event.midi,
+        noteLabel: midiToNoteName(event.midi),
       });
     }
-    totalBeats += beats;
+  } else {
+    for (let i = 0; i < chords.length; i++) {
+      const chord = chords[i];
+      const beats = chord?.beats ?? 0;
+      const midi = getHarmonyLineNote(harmonyLine, i);
+      if (chord != null && midi != null) {
+        segments.push({
+          chordIndex: i,
+          startBeat: totalBeats,
+          beats,
+          midi,
+          noteLabel: midiToNoteName(midi),
+        });
+      }
+      totalBeats += beats;
+    }
   }
 
   if (segments.length === 0 || totalBeats <= 0) {
@@ -365,7 +387,7 @@ export function NoteDisplay({
 
             return (
               <Box
-                key={`segment-${segment.chordIndex}`}
+                key={`segment-${segment.chordIndex}-${segment.startBeat}`}
                 className={`record-note-block${isActive ? " is-active" : ""}`}
                 position="absolute"
                 top={`${y}px`}
@@ -412,6 +434,18 @@ export function NoteDisplay({
       </Box>
     </Box>
   );
+}
+
+function findChordIndexForBeat(
+  chordStartBeats: number[],
+  beat: number,
+): number {
+  for (let index = chordStartBeats.length - 1; index >= 0; index--) {
+    if (beat >= (chordStartBeats[index] ?? 0)) {
+      return index;
+    }
+  }
+  return 0;
 }
 
 type LyricSegment = {

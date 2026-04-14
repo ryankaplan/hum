@@ -1,11 +1,15 @@
 import type {
+  HarmonyRhythmPatternDefinition,
+  HarmonyRhythmPatternId,
+} from "../../music/harmonyRhythmPatterns";
+import type {
   HarmonyPriority,
   HarmonyRangeCoverage,
   Meter,
 } from "../../music/types";
 import type { ArrangementInfo } from "../../state/model";
 
-export type PreviewMode = "generated" | "custom" | null;
+export type PreviewMode = "pattern" | "custom" | null;
 
 export const METER_OPTIONS: { label: string; value: Meter }[] = [
   { label: "4/4", value: [4, 4] },
@@ -47,6 +51,26 @@ export type SetupFormFieldsProps = {
   onPartCountChange: (value: "3" | "4") => void;
 };
 
+export type HarmonyRhythmPatternPickerProps = {
+  meter: Meter;
+  selectedPatternId: HarmonyRhythmPatternId;
+  customBasePatternId: HarmonyRhythmPatternId | null;
+  onPatternChange: (value: HarmonyRhythmPatternId) => void;
+  previewingPatternId: HarmonyRhythmPatternId | null;
+  previewingPatternStepIndex: number | null;
+  onPatternPreviewToggle: (value: HarmonyRhythmPatternId) => void;
+};
+
+export type HarmonyRhythmPatternCardProps = {
+  pattern: HarmonyRhythmPatternDefinition;
+  meter: Meter;
+  activePreviewStepIndex: number | null;
+  previewing: boolean;
+  selected: boolean;
+  onClick: () => void;
+  onPreviewToggle: () => void;
+};
+
 export type VoicingComparisonSectionProps = {
   title?: string;
   parsed: ArrangementInfo["parsedChords"];
@@ -57,11 +81,13 @@ export type VoicingComparisonSectionProps = {
 export type ArrangementPreviewPanelProps = {
   measures: ArrangementInfo["measures"];
   parsed: ArrangementInfo["parsedChords"];
+  patternName: string;
+  customBasePatternName: string | null;
   harmonyVoicing: NonNullable<ArrangementInfo["harmonyVoicing"]>;
   effectiveHarmonyVoicing: ArrangementInfo["effectiveHarmonyVoicing"];
   hasCustomHarmony: boolean;
   previewingMode: PreviewMode;
-  onPreviewSelected: () => void;
+  onPreviewPattern: () => void;
   onPreviewCustom: () => void;
   onStopPreview: () => void;
   onCustomizeHarmony: () => void;
@@ -83,7 +109,11 @@ export type SetupCardProps = {
   onHarmonyCoverageChange: (value: HarmonyRangeCoverage) => void;
   onHarmonyPriorityChange: (value: HarmonyPriority) => void;
   onPartCountChange: (value: "3" | "4") => void;
-  onPreviewSelected: () => void;
+  onHarmonyRhythmPatternChange: (value: HarmonyRhythmPatternId) => void;
+  previewingPatternId: HarmonyRhythmPatternId | null;
+  previewingPatternStepIndex: number | null;
+  onPatternPreviewToggle: (value: HarmonyRhythmPatternId) => void;
+  onPreviewPattern: () => void;
   onPreviewCustom: () => void;
   onStopPreview: () => void;
   onCustomizeHarmony: () => void;

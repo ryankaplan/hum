@@ -1,7 +1,9 @@
 import { Box, Button, Heading, Stack, Text } from "@chakra-ui/react";
+import { getHarmonyRhythmPattern } from "../../music/harmonyRhythmPatterns";
 import { dsColors, dsPanel, dsPrimaryButton } from "../designSystem";
 import { ArrangementPreviewPanel } from "./ArrangementPreviewPanel";
 import { ChordInputField } from "./ChordInputField";
+import { HarmonyRhythmPatternPicker } from "./HarmonyRhythmPatternPicker";
 import { SetupFormFields } from "./SetupFormFields";
 import { RANGE_OPTIONS, type SetupCardProps } from "./types";
 
@@ -20,7 +22,11 @@ export function SetupCard({
   onHarmonyCoverageChange,
   onHarmonyPriorityChange,
   onPartCountChange,
-  onPreviewSelected,
+  onHarmonyRhythmPatternChange,
+  previewingPatternId,
+  previewingPatternStepIndex,
+  onPatternPreviewToggle,
+  onPreviewPattern,
   onPreviewCustom,
   onStopPreview,
   onCustomizeHarmony,
@@ -45,11 +51,13 @@ export function SetupCard({
     harmonyRangeCoverage,
     harmonyPriority,
     totalParts,
+    harmonyRhythmPatternId,
   } = input;
   const selectedRangeValue =
     RANGE_OPTIONS.find(
       (option) => option.low === rangeLow && option.high === rangeHigh,
     )?.label ?? "";
+  const selectedPattern = getHarmonyRhythmPattern(harmonyRhythmPatternId);
 
   return (
     <Box w="100%" p={{ base: 6, md: 8 }} overflow="hidden" {...dsPanel}>
@@ -83,6 +91,16 @@ export function SetupCard({
           onPartCountChange={onPartCountChange}
         />
 
+        <HarmonyRhythmPatternPicker
+          meter={input.meter}
+          selectedPatternId={harmonyRhythmPatternId}
+          customBasePatternId={hasCustomHarmony ? harmonyRhythmPatternId : null}
+          onPatternChange={onHarmonyRhythmPatternChange}
+          previewingPatternId={previewingPatternId}
+          previewingPatternStepIndex={previewingPatternStepIndex}
+          onPatternPreviewToggle={onPatternPreviewToggle}
+        />
+
         {parsed.length > 0 && harmonyVoicing != null && (
           <>
             <ChordInputField
@@ -92,11 +110,15 @@ export function SetupCard({
             <ArrangementPreviewPanel
               measures={measures}
               parsed={parsed}
+              patternName={selectedPattern.name}
+              customBasePatternName={
+                hasCustomHarmony ? selectedPattern.name : null
+              }
               harmonyVoicing={harmonyVoicing}
               effectiveHarmonyVoicing={effectiveHarmonyVoicing}
               hasCustomHarmony={hasCustomHarmony}
               previewingMode={previewingMode}
-              onPreviewSelected={onPreviewSelected}
+              onPreviewPattern={onPreviewPattern}
               onPreviewCustom={onPreviewCustom}
               onStopPreview={onStopPreview}
               onCustomizeHarmony={onCustomizeHarmony}

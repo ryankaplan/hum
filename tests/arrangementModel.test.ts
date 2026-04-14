@@ -18,6 +18,7 @@ function makeArrangementDocState(
     harmonyRangeCoverage: "lower two thirds",
     harmonyPriority: "voiceLeading",
     totalParts: 4,
+    harmonyRhythmPatternId: "sustain_pad",
     customArrangement: null,
     ...overrides,
   };
@@ -126,6 +127,31 @@ describe("computeArrangementInfo", () => {
     expect(info.harmonyVoicing?.harmonyPartCount).toBe(2);
     expect(info.harmonyVoicing?.lines).toHaveLength(2);
     expect(info.effectiveCustomArrangement?.voices).toHaveLength(2);
+  });
+
+  it("builds a generated rhythmic arrangement from the selected preset", () => {
+    const info = computeArrangementInfo(
+      makeArrangementDocState("A", {
+        harmonyRhythmPatternId: "beat_pulse",
+      }),
+    );
+
+    expect(info.generatedArrangement?.voices[0]?.events.slice(0, 4)).toEqual([
+      expect.objectContaining({ startTick: 0, durationTicks: 3, midi: 52 }),
+      expect.objectContaining({ startTick: 3, durationTicks: 1, midi: null }),
+      expect.objectContaining({ startTick: 4, durationTicks: 3, midi: 52 }),
+      expect.objectContaining({ startTick: 7, durationTicks: 1, midi: null }),
+    ]);
+  });
+
+  it("samples the first active note inside a chord span for rhythmic presets", () => {
+    const info = computeArrangementInfo(
+      makeArrangementDocState("A", {
+        harmonyRhythmPatternId: "offbeat_comp",
+      }),
+    );
+
+    expect(info.effectiveHarmonyVoicing?.lines[0]?.[0]).toBe(52);
   });
 
   it("defaults to voice-leading priority and can switch to chord intent", () => {

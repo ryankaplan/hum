@@ -20,6 +20,7 @@ function makeSavedHumDocument(
       harmonyRangeCoverage,
       harmonyPriority,
       totalParts: 4,
+      harmonyRhythmPatternId: "sustain_pad",
       customArrangement: null,
     },
     tracks: {
@@ -162,5 +163,21 @@ describe("parseSavedHumDocument", () => {
     expect(parseSavedHumDocument(threePart)?.arrangement.totalParts).toBe(3);
     expect(parseSavedHumDocument(fourPart)?.arrangement.totalParts).toBe(4);
     expect(parseSavedHumDocument(legacyTwoPart)).toBeNull();
+  });
+
+  it("defaults missing harmony rhythm ids for older drafts", () => {
+    const saved = makeSavedHumDocument("lower two thirds");
+    delete saved.arrangement.harmonyRhythmPatternId;
+
+    expect(parseSavedHumDocument(saved)?.arrangement.harmonyRhythmPatternId).toBe(
+      "sustain_pad",
+    );
+  });
+
+  it("rejects invalid harmony rhythm ids", () => {
+    const saved = makeSavedHumDocument("lower two thirds");
+    saved.arrangement.harmonyRhythmPatternId = "invalid-pattern";
+
+    expect(parseSavedHumDocument(saved)).toBeNull();
   });
 });

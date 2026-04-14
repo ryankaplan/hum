@@ -8,6 +8,7 @@ import {
 import type { HarmonyRangeCoverage } from "../../music/types";
 import { dsColors, dsFocusRing, dsInputControl } from "../designSystem";
 import {
+  HARMONY_PRIORITY_OPTIONS,
   HARMONY_COVERAGE_OPTIONS,
   METER_OPTIONS,
   RANGE_OPTIONS,
@@ -27,12 +28,14 @@ export function SetupFormFields({
   tempoInputValue,
   selectedRangeValue,
   harmonyRangeCoverage,
+  harmonyPriority,
   totalParts,
   onTempoInputChange,
   onTempoInputBlur,
   onMeterLabelChange,
   onRangePresetChange,
   onHarmonyCoverageChange,
+  onHarmonyPriorityChange,
   onPartCountChange,
 }: SetupFormFieldsProps) {
   return (
@@ -89,7 +92,7 @@ export function SetupFormFields({
         </Field.Root>
       </Grid>
 
-      <Grid templateColumns={{ base: "1fr", md: "1fr 1fr" }} gap={4}>
+      <Grid templateColumns={{ base: "1fr", md: "1fr 1fr 1fr" }} gap={4}>
         <Field.Root>
           <Field.Label color={dsColors.text}>Harmony Placement</Field.Label>
           <NativeSelect.Root>
@@ -110,17 +113,40 @@ export function SetupFormFields({
         </Field.Root>
 
         <Field.Root>
+          <Field.Label color={dsColors.text}>Harmony Priority</Field.Label>
+          <NativeSelect.Root>
+            <NativeSelect.Field
+              value={harmonyPriority}
+              onChange={(e) =>
+                onHarmonyPriorityChange(
+                  e.target.value === "chordIntent"
+                    ? "chordIntent"
+                    : "voiceLeading",
+                )
+              }
+              {...controlStyles}
+            >
+              {HARMONY_PRIORITY_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </NativeSelect.Field>
+          </NativeSelect.Root>
+        </Field.Root>
+
+        <Field.Root>
           <Field.Label color={dsColors.text}>Voices</Field.Label>
           <NativeSelect.Root>
             <NativeSelect.Field
               value={String(totalParts)}
               onChange={(e) =>
-                onPartCountChange(e.target.value === "2" ? "2" : "4")
+                onPartCountChange(e.target.value === "3" ? "3" : "4")
               }
               {...controlStyles}
             >
+              <option value="3">3-part (2 harmony + melody)</option>
               <option value="4">4-part (3 harmony + melody)</option>
-              <option value="2">2-part (harmony + melody)</option>
             </NativeSelect.Field>
           </NativeSelect.Root>
         </Field.Root>

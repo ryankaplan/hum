@@ -1,12 +1,14 @@
 To fix asap:
 
-- [ ] Move stuff like volume out of document
-- [ ] Controller change for final review
 - [ ] Make it possible to re-record part of a take
-- [ ] Music and/or DAW data model?
-- [ ] Fix playing when shouldn't and vice versa
 - [ ] Export arrangement to sheet music
 - [ ] Saving + project management
+- [x] Music and/or DAW data model?
+- [x] Fix playing when shouldn't and vice versa
+- [x] Lines must add up, ugh
+- [x] Add 9 support
+- [x] Move stuff like volume out of document
+- [x] Controller change for final review
 - [x] Make latency per session
 - [x] Way to record melody first as template / waveform for timing
 - [x] Sound sometimes bad / garbled??

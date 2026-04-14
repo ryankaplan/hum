@@ -71,8 +71,8 @@ function makeDocument(
       vocalRangeLow: "C3",
       vocalRangeHigh: "A4",
       harmonyRangeCoverage: "lower two thirds",
-      selectedHarmonyGenerator: "dynamic",
-      totalParts: 2,
+      harmonyPriority: "voiceLeading",
+      totalParts: 3,
       customArrangement: null,
     },
     tracks: {

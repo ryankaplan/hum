@@ -1,5 +1,9 @@
 import { Box, Button, Flex, Text } from "@chakra-ui/react";
 import {
+  describeHarmonyNotesForChord,
+  labelHarmonyNoteForChord,
+} from "arranger";
+import {
   type ChangeEvent as ReactChangeEvent,
   useEffect,
   useLayoutEffect,
@@ -18,10 +22,6 @@ import {
   type CustomArrangement,
 } from "../music/arrangementScore";
 import {
-  describeHarmonyNotesForChord,
-  labelHarmonyNoteForChord,
-} from "../music/harmonyShared";
-import {
   playHarmonyPreview,
   playNotePreview,
   progressionDurationSec,
@@ -37,7 +37,7 @@ import {
   type HarmonyLine,
   type MidiNote,
 } from "../music/types";
-import type { ArrangementInfo, HarmonySpan } from "../state/model";
+import type { ArrangementEditorSpan, ArrangementInfo } from "../state/model";
 import {
   canMergeWithNext,
   cloneArrangement,
@@ -166,7 +166,7 @@ export function CustomHarmonyEditor({
     }
   }, [arrangement.input.vocalRangeHigh, arrangement.input.vocalRangeLow]);
 
-  const chordTicks = arrangement.harmonySpans.map((span) => span.startTick);
+  const chordTicks = arrangement.editorSpans.map((span) => span.startTick);
   const sampledLines = useMemo(
     () =>
       localArrangement == null
@@ -187,7 +187,7 @@ export function CustomHarmonyEditor({
   const selectedSpan =
     selectedEvent == null
       ? null
-      : findSpanForTick(arrangement.harmonySpans, selectedEvent.startTick);
+      : findSpanForTick(arrangement.editorSpans, selectedEvent.startTick);
   const selectedMidi = selectedEvent?.midi ?? null;
   const selectedCandidates = new Set(
     getEditableMidis(selectedMidi, range.low, range.high),
@@ -245,7 +245,7 @@ export function CustomHarmonyEditor({
     selectedSpan == null
       ? "Pitch labels appear over the selected event."
       : getChordSummaryText(
-          chordSummaries[arrangement.harmonySpans.indexOf(selectedSpan)] ?? null,
+          chordSummaries[arrangement.editorSpans.indexOf(selectedSpan)] ?? null,
         );
   const selectedEventLabel =
     selection == null || selectedEvent == null
@@ -722,7 +722,7 @@ export function CustomHarmonyEditor({
 
                 <Box flex="1" className="record-note-timeline">
                   <Box position="relative" w={`${gridWidthPx}px`} h={`${totalHeightPx}px`}>
-                    {arrangement.harmonySpans.map((span, chordIndex) => {
+                    {arrangement.editorSpans.map((span, chordIndex) => {
                       const x =
                         NOTE_GRID_PAD_X_PX +
                         arrangementTicksToBeats(span.startTick) * beatWidthPx;
@@ -871,7 +871,7 @@ export function CustomHarmonyEditor({
                       zIndex: 2,
                     })}
 
-                    {arrangement.harmonySpans.map((span) => {
+                    {arrangement.editorSpans.map((span) => {
                       const x =
                         NOTE_GRID_PAD_X_PX +
                         arrangementTicksToBeats(span.startTick) * beatWidthPx;
@@ -1228,9 +1228,9 @@ function renderArrangementEvents({
 }
 
 function findSpanForTick(
-  spans: HarmonySpan[],
+  spans: ArrangementEditorSpan[],
   tick: number,
-): HarmonySpan | null {
+): ArrangementEditorSpan | null {
   for (const span of spans) {
     if (tick >= span.startTick && tick < span.startTick + span.durationTicks) {
       return span;

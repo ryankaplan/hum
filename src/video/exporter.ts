@@ -1,18 +1,40 @@
-// Records the composed canvas plus mixed audio into a downloadable video file.
-// Rendering cadence is controlled by the caller so export can run on a stable,
-// deterministic clock instead of mirroring the live preview loop.
-
-import type { Mixer } from "../audio/mixer";
+import {
+  MP4,
+  QTFF,
+  WEBM,
+  AudioBufferSource,
+  BlobSource,
+  BufferTarget,
+  CanvasSink,
+  CanvasSource,
+  Input,
+  Mp4OutputFormat,
+  Output,
+  QUALITY_HIGH,
+  WebMOutputFormat,
+  canEncodeAudio,
+  canEncodeVideo,
+  type WrappedCanvas,
+} from "mediabunny";
+import {
+  COMPOSITOR_CANVAS_HEIGHT,
+  COMPOSITOR_CANVAS_WIDTH,
+  drawCompositeGridFrame,
+} from "./compositor";
+import { renderReviewAudioBuffer } from "../audio/offlineRenderer";
+import type { TrackClip } from "../state/model";
 
 export type ExportFormat = "mp4" | "webm";
 
 export type ExportOpts = {
-  canvas: HTMLCanvasElement;
-  audioContext: AudioContext;
-  mixer: Mixer;
+  timelines: TrackClip[][];
+  orderedTracks: Array<{ volume: number; muted: boolean }>;
+  reverbWet: number;
+  durationSec: number;
   preferredFormat?: ExportFormat | null;
-  videoBitsPerSecond?: number;
-  frameRate?: number;
+  loadRecordingBlob: (recordingId: string) => Blob | null;
+  loadRecordingAudioBuffer: (recordingId: string) => Promise<AudioBuffer>;
+  onProgress?: (ratio: number, timelineSec: number) => void;
 };
 
 export type ExportResult = {
@@ -21,183 +43,367 @@ export type ExportResult = {
   format: ExportFormat;
 };
 
-export type ExportSession = {
-  requestFrame: () => void;
-  finish: () => Promise<ExportResult>;
-  abort: () => void;
-};
-
-type ExportProfile = {
-  mimeType: string;
+type OfflineExportProfile = {
   format: ExportFormat;
+  mimeType: string;
+  videoCodec: "avc" | "vp9" | "vp8";
+  audioCodec: "aac" | "opus";
 };
 
-type CanvasCaptureTrack = MediaStreamTrack & {
-  requestFrame?: () => void;
+type RecordingVideoResource = {
+  input: Input;
+  sink: CanvasSink;
 };
 
-const EXPORT_MIME_CANDIDATES: ExportProfile[] = [
-  { mimeType: "video/mp4;codecs=avc1.42E01E,mp4a.40.2", format: "mp4" },
-  { mimeType: "video/mp4;codecs=avc1,mp4a", format: "mp4" },
-  { mimeType: "video/mp4", format: "mp4" },
-  { mimeType: "video/webm;codecs=vp9,opus", format: "webm" },
-  { mimeType: "video/webm;codecs=vp8,opus", format: "webm" },
-  { mimeType: "video/webm", format: "webm" },
+type LaneClipRenderer = {
+  startFrame: number;
+  endFrameExclusive: number;
+  segment: TrackClip;
+  sink: CanvasSink;
+  iterator: AsyncIterator<WrappedCanvas | null> | null;
+};
+
+type LaneRenderer = {
+  clips: LaneClipRenderer[];
+  currentClipIndex: number;
+};
+
+const EXPORT_FRAME_RATE = 30;
+const EXPORT_VIDEO_BITRATE = QUALITY_HIGH;
+const EXPORT_AUDIO_BITRATE = 192_000;
+const RECORDING_INPUT_FORMATS = [MP4, QTFF, WEBM];
+
+const OFFLINE_EXPORT_CANDIDATES: OfflineExportProfile[] = [
+  {
+    format: "mp4",
+    mimeType: "video/mp4",
+    videoCodec: "avc",
+    audioCodec: "aac",
+  },
+  {
+    format: "webm",
+    mimeType: "video/webm",
+    videoCodec: "vp9",
+    audioCodec: "opus",
+  },
+  {
+    format: "webm",
+    mimeType: "video/webm",
+    videoCodec: "vp8",
+    audioCodec: "opus",
+  },
 ];
-
-const FALLBACK_EXPORT_PROFILE: ExportProfile = {
-  mimeType: "video/webm",
-  format: "webm",
-};
-
-const DEFAULT_EXPORT_FRAME_RATE = 30;
-const DEFAULT_VIDEO_BITS_PER_SECOND = 4_000_000;
-
-export function getPreferredExportProfile(
-  preferredFormat?: ExportFormat | null,
-): ExportProfile {
-  if (
-    typeof MediaRecorder === "undefined" ||
-    typeof MediaRecorder.isTypeSupported !== "function"
-  ) {
-    return FALLBACK_EXPORT_PROFILE;
-  }
-  const candidates =
-    preferredFormat == null
-      ? EXPORT_MIME_CANDIDATES
-      : [
-          ...EXPORT_MIME_CANDIDATES.filter(
-            (candidate) => candidate.format === preferredFormat,
-          ),
-          ...EXPORT_MIME_CANDIDATES.filter(
-            (candidate) => candidate.format !== preferredFormat,
-          ),
-        ];
-  for (const candidate of candidates) {
-    if (MediaRecorder.isTypeSupported(candidate.mimeType)) {
-      return candidate;
-    }
-  }
-  return FALLBACK_EXPORT_PROFILE;
-}
 
 export function getPreferredExportFormat(
   preferredFormat?: ExportFormat | null,
 ): ExportFormat {
-  return getPreferredExportProfile(preferredFormat).format;
+  if (preferredFormat != null) return preferredFormat;
+  if (
+    typeof VideoEncoder !== "undefined" &&
+    typeof AudioEncoder !== "undefined" &&
+    typeof OfflineAudioContext !== "undefined"
+  ) {
+    return "mp4";
+  }
+  return "webm";
 }
 
-export function startVideoExport(opts: ExportOpts): ExportSession {
-  const { canvas, audioContext, mixer } = opts;
-  const profile = getPreferredExportProfile(opts.preferredFormat);
-  const frameRate = Math.max(1, opts.frameRate ?? DEFAULT_EXPORT_FRAME_RATE);
-  const {
-    stream: canvasStream,
-    videoTrack,
-  } = createCanvasCaptureStream(canvas, frameRate);
-  const dest = audioContext.createMediaStreamDestination();
+export async function exportVideo(opts: ExportOpts): Promise<ExportResult> {
+  const renderCanvas = createExportCanvas();
+  const videoResources = new Map<string, RecordingVideoResource>();
 
-  mixer.connectForExport(dest);
+  try {
+    opts.onProgress?.(0.02, 0);
 
-  if (videoTrack == null) {
-    mixer.disconnectExport(dest);
-    dest.disconnect();
-    throw new Error("Canvas produced no video track");
-  }
+    const renderedAudio = await renderReviewAudioBuffer({
+      timelines: opts.timelines,
+      orderedTracks: opts.orderedTracks,
+      reverbWet: opts.reverbWet,
+      durationSec: opts.durationSec,
+      getBuffer: opts.loadRecordingAudioBuffer,
+    });
 
-  const audioTrack = dest.stream.getAudioTracks()[0];
-  const tracks: MediaStreamTrack[] = [videoTrack];
-  if (audioTrack != null) {
-    tracks.push(audioTrack);
-  }
-
-  const combinedStream = new MediaStream(tracks);
-  const recorder = new MediaRecorder(combinedStream, {
-    mimeType: profile.mimeType,
-    videoBitsPerSecond:
-      opts.videoBitsPerSecond ?? DEFAULT_VIDEO_BITS_PER_SECOND,
-  });
-
-  const chunks: Blob[] = [];
-  let cleanedUp = false;
-
-  recorder.ondataavailable = (event) => {
-    if (event.data.size > 0) {
-      chunks.push(event.data);
+    const profile = await selectOfflineExportProfile(
+      opts.preferredFormat,
+      renderedAudio.sampleRate,
+      renderedAudio.numberOfChannels,
+    );
+    if (profile == null) {
+      throw new Error("This browser cannot encode the exported video format.");
     }
-  };
 
-  const result = new Promise<ExportResult>((resolve, reject) => {
-    recorder.onstop = () => {
-      cleanup();
-      resolve({
-        blob: new Blob(chunks, { type: profile.mimeType }),
-        mimeType: profile.mimeType,
-        format: profile.format,
+    const laneRenderers = await createLaneRenderers({
+      timelines: opts.timelines,
+      frameRate: EXPORT_FRAME_RATE,
+      durationSec: opts.durationSec,
+      loadRecordingBlob: opts.loadRecordingBlob,
+      videoResources,
+    });
+
+    const target = new BufferTarget();
+    const output = new Output({
+      format:
+        profile.format === "mp4"
+          ? new Mp4OutputFormat()
+          : new WebMOutputFormat(),
+      target,
+    });
+
+    const videoSource = new CanvasSource(renderCanvas, {
+      codec: profile.videoCodec,
+      bitrate: EXPORT_VIDEO_BITRATE,
+      latencyMode: "quality",
+    });
+    const audioSource = new AudioBufferSource({
+      codec: profile.audioCodec,
+      bitrate: EXPORT_AUDIO_BITRATE,
+    });
+
+    output.addVideoTrack(videoSource, { frameRate: EXPORT_FRAME_RATE });
+    output.addAudioTrack(audioSource);
+    await output.start();
+
+    const audioPromise = audioSource.add(renderedAudio);
+    const frameCount = Math.max(1, Math.ceil(opts.durationSec * EXPORT_FRAME_RATE));
+    const renderCtx = getCanvas2dContext(renderCanvas);
+
+    for (let frameIndex = 0; frameIndex < frameCount; frameIndex++) {
+      const timelineSec = frameIndex / EXPORT_FRAME_RATE;
+      const frameDurationSec = Math.min(
+        1 / EXPORT_FRAME_RATE,
+        Math.max(0, opts.durationSec - timelineSec),
+      );
+      const sources = await Promise.all(
+        laneRenderers.map((renderer) =>
+          getLaneFrameSource(renderer, frameIndex),
+        ),
+      );
+
+      drawCompositeGridFrame({
+        ctx: renderCtx,
+        sources,
+        isSourceActive: (index) => sources[index] != null,
       });
+      await videoSource.add(timelineSec, frameDurationSec);
+      opts.onProgress?.((frameIndex + 1) / frameCount, Math.min(
+        opts.durationSec,
+        timelineSec + frameDurationSec,
+      ));
+    }
+
+    await audioPromise;
+    await output.finalize();
+
+    const buffer = target.buffer;
+    if (buffer == null) {
+      throw new Error("Export output buffer was not created.");
+    }
+
+    return {
+      blob: new Blob([buffer], { type: profile.mimeType }),
+      mimeType: profile.mimeType,
+      format: profile.format,
     };
-    recorder.onerror = () => {
-      cleanup();
-      reject(new Error("MediaRecorder export failed"));
-    };
-  });
-
-  recorder.start(Math.max(100, Math.round(1000 / frameRate)));
-
-  return {
-    requestFrame() {
-      videoTrack.requestFrame?.();
-    },
-    async finish() {
-      if (recorder.state !== "inactive") {
-        recorder.stop();
-      }
-      return result;
-    },
-    abort() {
-      if (recorder.state !== "inactive") {
-        recorder.stop();
-      } else {
-        cleanup();
-      }
-    },
-  };
-
-  function cleanup(): void {
-    if (cleanedUp) return;
-    cleanedUp = true;
-    mixer.disconnectExport(dest);
-    dest.disconnect();
-    for (const track of combinedStream.getTracks()) {
-      track.stop();
+  } finally {
+    for (const resource of videoResources.values()) {
+      resource.input.dispose();
     }
   }
 }
 
-function createCanvasCaptureStream(
-  canvas: HTMLCanvasElement,
-  frameRate: number,
-): {
-  stream: MediaStream;
-  videoTrack: CanvasCaptureTrack | undefined;
-} {
-  const manualStream = canvas.captureStream(0);
-  const manualTrack = manualStream.getVideoTracks()[0] as CanvasCaptureTrack | undefined;
+async function selectOfflineExportProfile(
+  preferredFormat: ExportFormat | null | undefined,
+  sampleRate: number,
+  numberOfChannels: number,
+): Promise<OfflineExportProfile | null> {
+  const candidates =
+    preferredFormat == null
+      ? OFFLINE_EXPORT_CANDIDATES
+      : [
+          ...OFFLINE_EXPORT_CANDIDATES.filter(
+            (candidate) => candidate.format === preferredFormat,
+          ),
+          ...OFFLINE_EXPORT_CANDIDATES.filter(
+            (candidate) => candidate.format !== preferredFormat,
+          ),
+        ];
 
-  if (manualTrack?.requestFrame != null) {
-    return {
-      stream: manualStream,
-      videoTrack: manualTrack,
-    };
+  for (const candidate of candidates) {
+    const [videoSupported, audioSupported] = await Promise.all([
+      canEncodeVideo(candidate.videoCodec, {
+        width: COMPOSITOR_CANVAS_WIDTH,
+        height: COMPOSITOR_CANVAS_HEIGHT,
+        bitrate: EXPORT_VIDEO_BITRATE,
+      }),
+      canEncodeAudio(candidate.audioCodec, {
+        sampleRate,
+        numberOfChannels,
+        bitrate: EXPORT_AUDIO_BITRATE,
+      }),
+    ]);
+    if (videoSupported && audioSupported) {
+      return candidate;
+    }
   }
 
-  for (const track of manualStream.getTracks()) {
-    track.stop();
+  return null;
+}
+
+async function createLaneRenderers(input: {
+  timelines: TrackClip[][];
+  frameRate: number;
+  durationSec: number;
+  loadRecordingBlob: (recordingId: string) => Blob | null;
+  videoResources: Map<string, RecordingVideoResource>;
+}): Promise<LaneRenderer[]> {
+  const { timelines, frameRate, durationSec, loadRecordingBlob, videoResources } =
+    input;
+  const laneRenderers: LaneRenderer[] = [];
+  const frameCount = Math.max(1, Math.ceil(durationSec * frameRate));
+
+  for (const track of timelines) {
+    const clips: LaneClipRenderer[] = [];
+
+    for (const segment of track) {
+      const startFrame = Math.max(
+        0,
+        Math.ceil(segment.timelineStartSec * frameRate),
+      );
+      const endFrameExclusive = Math.min(
+        frameCount,
+        Math.ceil((segment.timelineStartSec + segment.durationSec) * frameRate),
+      );
+      if (endFrameExclusive <= startFrame) continue;
+
+      const resource = await getRecordingVideoResource(
+        segment.recordingId,
+        loadRecordingBlob,
+        videoResources,
+      );
+      clips.push({
+        startFrame,
+        endFrameExclusive,
+        segment,
+        sink: resource.sink,
+        iterator: null,
+      });
+    }
+
+    laneRenderers.push({
+      clips,
+      currentClipIndex: 0,
+    });
   }
 
-  const fallbackStream = canvas.captureStream(frameRate);
-  return {
-    stream: fallbackStream,
-    videoTrack: fallbackStream.getVideoTracks()[0] as CanvasCaptureTrack | undefined,
+  return laneRenderers;
+}
+
+async function getRecordingVideoResource(
+  recordingId: string,
+  loadRecordingBlob: (recordingId: string) => Blob | null,
+  cache: Map<string, RecordingVideoResource>,
+): Promise<RecordingVideoResource> {
+  const cached = cache.get(recordingId);
+  if (cached != null) return cached;
+
+  const blob = loadRecordingBlob(recordingId);
+  if (blob == null) {
+    throw new Error(`Missing video media for recording ${recordingId}.`);
+  }
+
+  const input = new Input({
+    source: new BlobSource(blob),
+    formats: RECORDING_INPUT_FORMATS,
+  });
+  const videoTrack = await input.getPrimaryVideoTrack();
+  if (videoTrack == null) {
+    input.dispose();
+    throw new Error(`Recording ${recordingId} has no decodable video track.`);
+  }
+  if (!(await videoTrack.canDecode())) {
+    input.dispose();
+    throw new Error(`Recording ${recordingId} cannot be decoded in this browser.`);
+  }
+
+  const resource = {
+    input,
+    sink: new CanvasSink(videoTrack),
   };
+  cache.set(recordingId, resource);
+  return resource;
+}
+
+function clipSourceTimes(
+  segment: TrackClip,
+  startFrame: number,
+  endFrameExclusive: number,
+  frameRate: number,
+): Iterable<number> {
+  return {
+    *[Symbol.iterator]() {
+      for (let frameIndex = startFrame; frameIndex < endFrameExclusive; frameIndex++) {
+        const timelineSec = frameIndex / frameRate;
+        yield segment.sourceStartSec + timelineSec - segment.timelineStartSec;
+      }
+    },
+  };
+}
+
+async function getLaneFrameSource(
+  renderer: LaneRenderer,
+  frameIndex: number,
+): Promise<CanvasImageSource | null> {
+  while (renderer.currentClipIndex < renderer.clips.length) {
+    const clip = renderer.clips[renderer.currentClipIndex];
+    if (clip == null) return null;
+    if (frameIndex >= clip.endFrameExclusive) {
+      renderer.currentClipIndex += 1;
+      continue;
+    }
+    if (frameIndex < clip.startFrame) {
+      return null;
+    }
+
+    if (clip.iterator == null) {
+      clip.iterator = clip.sink
+        .canvasesAtTimestamps(
+          clipSourceTimes(
+            clip.segment,
+            clip.startFrame,
+            clip.endFrameExclusive,
+            EXPORT_FRAME_RATE,
+          ),
+        )
+        [Symbol.asyncIterator]();
+    }
+
+    const next = await clip.iterator.next();
+    return next.value?.canvas ?? null;
+  }
+
+  return null;
+}
+
+function createExportCanvas(): HTMLCanvasElement | OffscreenCanvas {
+  if (typeof OffscreenCanvas !== "undefined") {
+    return new OffscreenCanvas(
+      COMPOSITOR_CANVAS_WIDTH,
+      COMPOSITOR_CANVAS_HEIGHT,
+    );
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = COMPOSITOR_CANVAS_WIDTH;
+  canvas.height = COMPOSITOR_CANVAS_HEIGHT;
+  return canvas;
+}
+
+function getCanvas2dContext(
+  canvas: HTMLCanvasElement | OffscreenCanvas,
+): CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D {
+  const ctx = canvas.getContext("2d", { alpha: false });
+  if (ctx == null) {
+    throw new Error("Could not create export canvas context.");
+  }
+  return ctx;
 }

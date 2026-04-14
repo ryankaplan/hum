@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   describeHarmonyNotesForChord,
   labelHarmonyNoteForChord,
-} from "../src/music/harmonyShared";
+} from "arranger";
 import { parseChordText } from "../src/music/parse";
 
 function parse(token: string) {
@@ -13,13 +13,17 @@ function parse(token: string) {
   return chord;
 }
 
-describe("harmony note labeling", () => {
+describe("harmony annotation", () => {
   it("labels D over Em as b7", () => {
     expect(labelHarmonyNoteForChord(parse("Em"), 62)).toBe("b7");
   });
 
   it("keeps sus2 extensions labeled as 2", () => {
     expect(labelHarmonyNoteForChord(parse("Asus2"), 59)).toBe("2");
+  });
+
+  it("labels add9 extensions as 9", () => {
+    expect(labelHarmonyNoteForChord(parse("Cadd9"), 62)).toBe("9");
   });
 
   it("labels the augmented fifth as #5", () => {

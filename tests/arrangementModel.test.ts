@@ -15,11 +15,11 @@ function makeArrangementDocState(
     meter: [4, 4],
     vocalRangeLow: "C3",
     vocalRangeHigh: "A4",
-        harmonyRangeCoverage: "lower two thirds",
-        selectedHarmonyGenerator: "dynamic",
-        totalParts: 4,
-        customArrangement: null,
-        ...overrides,
+    harmonyRangeCoverage: "lower two thirds",
+    harmonyPriority: "voiceLeading",
+    totalParts: 4,
+    customArrangement: null,
+    ...overrides,
   };
 }
 
@@ -36,30 +36,8 @@ describe("computeArrangementInfo", () => {
       }),
     );
 
-    expect(lowerTwoThirds.harmonyVoicingLegacy?.harmonyTop).toBe(62);
-    expect(wholeRange.harmonyVoicingLegacy?.harmonyTop).toBe(69);
-  });
-
-  it("defaults new arrangements to dynamic harmony selection", () => {
-    expect(createDefaultArrangementDocState().selectedHarmonyGenerator).toBe(
-      "dynamic",
-    );
-
-    const info = computeArrangementInfo(makeArrangementDocState("A9"));
-
-    expect(info.selectedHarmonyVoicing).toBe(info.harmonyVoicingDynamic);
-    expect(info.selectedHarmonyVoicing).not.toBe(info.harmonyVoicingLegacy);
-  });
-
-  it("can explicitly select the legacy harmony voicing", () => {
-    const info = computeArrangementInfo(
-      makeArrangementDocState("A9", {
-        selectedHarmonyGenerator: "legacy",
-      }),
-    );
-
-    expect(info.selectedHarmonyVoicing).toBe(info.harmonyVoicingLegacy);
-    expect(info.selectedHarmonyVoicing).not.toBe(info.harmonyVoicingDynamic);
+    expect(lowerTwoThirds.harmonyVoicing?.harmonyTop).toBe(62);
+    expect(wholeRange.harmonyVoicing?.harmonyTop).toBe(69);
   });
 
   it("recomputes chord annotations when custom harmony adds non-chord tones", () => {
@@ -84,7 +62,7 @@ describe("computeArrangementInfo", () => {
       }),
     );
 
-    expect(info.selectedHarmonyVoicing?.annotations[0]?.chordTones).toBe(
+    expect(info.harmonyVoicing?.annotations[0]?.chordTones).toBe(
       "R b3 5",
     );
     expect(info.hasCustomHarmony).toBe(true);
@@ -129,5 +107,63 @@ describe("computeArrangementInfo", () => {
     expect(info.effectiveHarmonyVoicing?.annotations[1]?.chordTones).toBe(
       "R 5",
     );
+  });
+
+  it("builds editor spans from beat-based chord events", () => {
+    const info = computeArrangementInfo(makeArrangementDocState("A. B"));
+
+    expect(info.chordEvents.map((event) => event.startBeat)).toEqual([0, 2]);
+    expect(info.editorSpans.map((span) => span.startTick)).toEqual([0, 8]);
+  });
+
+  it("generates two harmony voices for 3-part mode", () => {
+    const info = computeArrangementInfo(
+      makeArrangementDocState("A9 D E", {
+        totalParts: 3,
+      }),
+    );
+
+    expect(info.harmonyVoicing?.harmonyPartCount).toBe(2);
+    expect(info.harmonyVoicing?.lines).toHaveLength(2);
+    expect(info.effectiveCustomArrangement?.voices).toHaveLength(2);
+  });
+
+  it("defaults to voice-leading priority and can switch to chord intent", () => {
+    const defaultState = createDefaultArrangementDocState();
+    const chordIntent = computeArrangementInfo(
+      makeArrangementDocState("A A F#m F#m", {
+        totalParts: 3,
+        harmonyPriority: "chordIntent",
+      }),
+    );
+    const secondChordNotes = chordIntent.harmonyVoicing?.lines
+      .map((line) => line[1] ?? null)
+      .filter((note): note is number => note != null);
+    const thirdChordNotes = chordIntent.harmonyVoicing?.lines
+      .map((line) => line[2] ?? null)
+      .filter((note): note is number => note != null);
+
+    expect(defaultState.harmonyPriority).toBe("voiceLeading");
+    expect(thirdChordNotes?.some((note) => note % 12 === 6)).toBe(true);
+    expect(thirdChordNotes).not.toEqual(secondChordNotes);
+  });
+
+  it("rejects 3-part custom arrangements with the wrong voice count", () => {
+    const info = computeArrangementInfo(
+      makeArrangementDocState("A", {
+        totalParts: 3,
+        customArrangement: {
+          voices: [
+            {
+              id: "voice-0",
+              events: [{ id: "a", startTick: 0, durationTicks: 16, midi: 45 }],
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(info.hasCustomHarmony).toBe(false);
+    expect(info.effectiveCustomArrangement?.voices).toHaveLength(2);
   });
 });

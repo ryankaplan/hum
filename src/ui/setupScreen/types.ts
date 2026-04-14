@@ -1,7 +1,11 @@
-import type { HarmonyRangeCoverage, Meter, SelectedHarmonyGenerator } from "../../music/types";
+import type {
+  HarmonyPriority,
+  HarmonyRangeCoverage,
+  Meter,
+} from "../../music/types";
 import type { ArrangementInfo } from "../../state/model";
 
-export type PreviewMode = "legacy" | "dynamic" | "custom" | null;
+export type PreviewMode = "generated" | "custom" | null;
 
 export const METER_OPTIONS: { label: string; value: Meter }[] = [
   { label: "4/4", value: [4, 4] },
@@ -22,38 +26,41 @@ export const HARMONY_COVERAGE_OPTIONS = [
   { label: "Whole Range", value: "whole-range" },
 ] as const;
 
+export const HARMONY_PRIORITY_OPTIONS = [
+  { label: "Voice leading", value: "voiceLeading" },
+  { label: "Chord intent", value: "chordIntent" },
+] as const;
+
 export type SetupFormFieldsProps = {
   meterLabel: string;
   tempoInputValue: string;
   selectedRangeValue: string;
   harmonyRangeCoverage: HarmonyRangeCoverage;
+  harmonyPriority: HarmonyPriority;
   totalParts: number;
   onTempoInputChange: (value: string) => void;
   onTempoInputBlur: () => void;
   onMeterLabelChange: (label: string) => void;
   onRangePresetChange: (value: string) => void;
   onHarmonyCoverageChange: (value: HarmonyRangeCoverage) => void;
-  onPartCountChange: (value: "2" | "4") => void;
+  onHarmonyPriorityChange: (value: HarmonyPriority) => void;
+  onPartCountChange: (value: "3" | "4") => void;
 };
 
 export type VoicingComparisonSectionProps = {
   title?: string;
   parsed: ArrangementInfo["parsedChords"];
-  voicing: NonNullable<ArrangementInfo["harmonyVoicingLegacy"]>;
-  chordPreviewItems: ArrangementInfo["measures"][number]["chords"];
+  voicing: NonNullable<ArrangementInfo["harmonyVoicing"]>;
+  measures: ArrangementInfo["measures"];
 };
 
 export type ArrangementPreviewPanelProps = {
   measures: ArrangementInfo["measures"];
   parsed: ArrangementInfo["parsedChords"];
-  legacyVoicing: NonNullable<ArrangementInfo["harmonyVoicingLegacy"]>;
-  selectedHarmonyGenerator: SelectedHarmonyGenerator;
-  selectedHarmonyVoicing: ArrangementInfo["selectedHarmonyVoicing"];
+  harmonyVoicing: NonNullable<ArrangementInfo["harmonyVoicing"]>;
   effectiveHarmonyVoicing: ArrangementInfo["effectiveHarmonyVoicing"];
   hasCustomHarmony: boolean;
   previewingMode: PreviewMode;
-  chordPreviewItems: ArrangementInfo["measures"][number]["chords"];
-  onSelectedHarmonyGeneratorChange: (value: SelectedHarmonyGenerator) => void;
   onPreviewSelected: () => void;
   onPreviewCustom: () => void;
   onStopPreview: () => void;
@@ -74,8 +81,8 @@ export type SetupCardProps = {
   onMeterLabelChange: (label: string) => void;
   onRangePresetChange: (value: string) => void;
   onHarmonyCoverageChange: (value: HarmonyRangeCoverage) => void;
-  onSelectedHarmonyGeneratorChange: (value: SelectedHarmonyGenerator) => void;
-  onPartCountChange: (value: "2" | "4") => void;
+  onHarmonyPriorityChange: (value: HarmonyPriority) => void;
+  onPartCountChange: (value: "3" | "4") => void;
   onPreviewSelected: () => void;
   onPreviewCustom: () => void;
   onStopPreview: () => void;

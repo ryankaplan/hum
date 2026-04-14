@@ -6,7 +6,6 @@ import {
 } from "../src/state/serialization";
 
 function makeDraftSnapshot(
-  selectedHarmonyGenerator: "legacy" | "dynamic",
 ): DraftSnapshot {
   return {
     document: {
@@ -17,7 +16,7 @@ function makeDraftSnapshot(
         vocalRangeLow: "C3",
         vocalRangeHigh: "A4",
         harmonyRangeCoverage: "lower two thirds",
-        selectedHarmonyGenerator,
+        harmonyPriority: "chordIntent",
         totalParts: 4,
         customArrangement: {
           voices: [
@@ -58,30 +57,11 @@ function makeDraftSnapshot(
 }
 
 describe("serializeHumDocument / deserializeHumDocument", () => {
-  it("round-trips the selected harmony generator", () => {
-    const serialized = serializeHumDocument(makeDraftSnapshot("legacy"));
-    const restored = deserializeHumDocument(serialized);
-
-    expect(restored.document.arrangement.selectedHarmonyGenerator).toBe(
-      "legacy",
-    );
-  });
-
-  it("defaults missing selected harmony generator values to dynamic", () => {
-    const serialized = serializeHumDocument(makeDraftSnapshot("legacy"));
-    delete serialized.arrangement.selectedHarmonyGenerator;
-
-    const restored = deserializeHumDocument(serialized);
-
-    expect(restored.document.arrangement.selectedHarmonyGenerator).toBe(
-      "dynamic",
-    );
-  });
-
   it("round-trips nullable custom harmony slots", () => {
-    const serialized = serializeHumDocument(makeDraftSnapshot("dynamic"));
+    const serialized = serializeHumDocument(makeDraftSnapshot());
     const restored = deserializeHumDocument(serialized);
 
+    expect(restored.document.arrangement.harmonyPriority).toBe("chordIntent");
     expect(restored.document.arrangement.customArrangement?.voices[0]?.events).toEqual([
       { id: "a0", startTick: 0, durationTicks: 16, midi: 48 },
       { id: "a1", startTick: 16, durationTicks: 16, midi: null },
@@ -89,14 +69,14 @@ describe("serializeHumDocument / deserializeHumDocument", () => {
   });
 
   it("does not serialize UI preferences into saved drafts", () => {
-    const serialized = serializeHumDocument(makeDraftSnapshot("dynamic"));
+    const serialized = serializeHumDocument(makeDraftSnapshot());
 
     expect("recordingMonitorPreferences" in serialized).toBe(false);
     expect("exportPreferences" in serialized).toBe(false);
   });
 
   it("round-trips the reference waveform track id and defaults missing values to null", () => {
-    const serialized = serializeHumDocument(makeDraftSnapshot("dynamic"));
+    const serialized = serializeHumDocument(makeDraftSnapshot());
     serialized.tracks.trackOrder = ["track-1"];
     serialized.tracks.tracksById = {
       "track-1": {

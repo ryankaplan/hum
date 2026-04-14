@@ -6,7 +6,7 @@ import {
 
 function makeSavedHumDocument(
   harmonyRangeCoverage: string,
-  selectedHarmonyGenerator?: "legacy" | "dynamic",
+  harmonyPriority: "voiceLeading" | "chordIntent" = "voiceLeading",
 ) {
   return {
     schemaVersion: SAVED_HUM_DOCUMENT_SCHEMA_VERSION,
@@ -18,7 +18,7 @@ function makeSavedHumDocument(
       vocalRangeLow: "C3",
       vocalRangeHigh: "A4",
       harmonyRangeCoverage,
-      selectedHarmonyGenerator,
+      harmonyPriority,
       totalParts: 4,
       customArrangement: null,
     },
@@ -52,15 +52,17 @@ describe("parseSavedHumDocument", () => {
     }
   });
 
-  it("accepts supported selected harmony generators", () => {
-    const generators = ["legacy", "dynamic"] as const;
-
-    for (const generator of generators) {
-      const parsed = parseSavedHumDocument(
-        makeSavedHumDocument("lower two thirds", generator),
-      );
-      expect(parsed?.arrangement.selectedHarmonyGenerator).toBe(generator);
-    }
+  it("accepts the current harmony priority values", () => {
+    expect(
+      parseSavedHumDocument(
+        makeSavedHumDocument("lower two thirds", "voiceLeading"),
+      )?.arrangement.harmonyPriority,
+    ).toBe("voiceLeading");
+    expect(
+      parseSavedHumDocument(
+        makeSavedHumDocument("lower two thirds", "chordIntent"),
+      )?.arrangement.harmonyPriority,
+    ).toBe("chordIntent");
   });
 
   it("rejects retired harmony coverage values", () => {
@@ -147,5 +149,18 @@ describe("parseSavedHumDocument", () => {
 
     const parsed = parseSavedHumDocument(saved);
     expect(parsed?.tracks.referenceWaveformTrackId).toBe("track-1");
+  });
+
+  it("accepts only the current part-count values", () => {
+    const threePart = makeSavedHumDocument("lower two thirds");
+    threePart.arrangement.totalParts = 3;
+    const fourPart = makeSavedHumDocument("lower two thirds");
+    fourPart.arrangement.totalParts = 4;
+    const legacyTwoPart = makeSavedHumDocument("lower two thirds");
+    legacyTwoPart.arrangement.totalParts = 2;
+
+    expect(parseSavedHumDocument(threePart)?.arrangement.totalParts).toBe(3);
+    expect(parseSavedHumDocument(fourPart)?.arrangement.totalParts).toBe(4);
+    expect(parseSavedHumDocument(legacyTwoPart)).toBeNull();
   });
 });

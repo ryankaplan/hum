@@ -1,40 +1,26 @@
-import { Box, Button, Flex, NativeSelect, Stack, Text } from "@chakra-ui/react";
-import type { SelectedHarmonyGenerator } from "../../music/types";
+import { Box, Button, Flex, Stack, Text } from "@chakra-ui/react";
 import {
   dsColors,
-  dsFocusRing,
-  dsInputControl,
   dsOutlineButton,
 } from "../designSystem";
 import { EditIcon, PlayIcon, StopIcon } from "../icons";
 import { VoicingComparisonSection } from "./VoicingComparisonSection";
 import type { ArrangementPreviewPanelProps } from "./types";
 
-const controlStyles = {
-  ...dsInputControl,
-  _focus: {
-    borderColor: dsColors.focusRing,
-    boxShadow: dsFocusRing,
-  },
-};
-
 export function ArrangementPreviewPanel({
+  measures,
   parsed,
-  legacyVoicing,
-  selectedHarmonyGenerator,
-  selectedHarmonyVoicing,
+  harmonyVoicing,
   effectiveHarmonyVoicing,
   hasCustomHarmony,
   previewingMode,
-  chordPreviewItems,
-  onSelectedHarmonyGeneratorChange,
   onPreviewSelected,
   onPreviewCustom,
   onStopPreview,
   onCustomizeHarmony,
   onResetCustomHarmony,
 }: ArrangementPreviewPanelProps) {
-  const previewingSelected = previewingMode === selectedHarmonyGenerator;
+  const previewingSelected = previewingMode === "generated";
   const previewingCustom = previewingMode === "custom";
 
   return (
@@ -45,28 +31,6 @@ export function ArrangementPreviewPanel({
             ARRANGEMENT
           </Text>
           <Flex gap={2} align="center" wrap="wrap" justify="flex-end">
-            <NativeSelect.Root
-              size="sm"
-              width="auto"
-              minW="unset"
-              flex="0 0 auto"
-            >
-              <NativeSelect.Field
-                value={selectedHarmonyGenerator}
-                onChange={(e) =>
-                  onSelectedHarmonyGeneratorChange(
-                    e.target.value as SelectedHarmonyGenerator,
-                  )
-                }
-                width="auto"
-                minW="7rem"
-                pr={8}
-                {...controlStyles}
-              >
-                <option value="legacy">Basic</option>
-                <option value="dynamic">Beam Search</option>
-              </NativeSelect.Field>
-            </NativeSelect.Root>
             <Button
               {...dsOutlineButton}
               size="xs"
@@ -145,15 +109,15 @@ export function ArrangementPreviewPanel({
         <VoicingComparisonSection
           title={undefined}
           parsed={parsed}
-          voicing={selectedHarmonyVoicing ?? legacyVoicing}
-          chordPreviewItems={chordPreviewItems}
+          voicing={harmonyVoicing}
+          measures={measures}
         />
         {hasCustomHarmony && effectiveHarmonyVoicing != null && (
           <VoicingComparisonSection
             title="Edited"
             parsed={parsed}
             voicing={effectiveHarmonyVoicing}
-            chordPreviewItems={chordPreviewItems}
+            measures={measures}
           />
         )}
       </Stack>

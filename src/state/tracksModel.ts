@@ -1,5 +1,6 @@
 import { Observable } from "../observable";
 import type { Mixer } from "../audio/mixer";
+import { getHarmonyPartCount } from "../music/types";
 import {
   type ClipVolumeEnvelope,
   createDefaultClipVolumeEnvelope,
@@ -139,7 +140,7 @@ function createTrackRecord(
   displayIndex: number,
   totalParts: number,
 ): TrackRecord {
-  const harmonyPartCount = Math.max(1, totalParts - 1);
+  const harmonyPartCount = getHarmonyPartCount(totalParts);
   const role = displayIndex >= harmonyPartCount ? "melody" : "harmony";
   return {
     id,
@@ -805,9 +806,10 @@ export class TracksDocumentModel {
 
       for (let i = 0; i < nextTrackOrder.length; i++) {
         const trackId = nextTrackOrder[i]!;
+        const harmonyPartCount = getHarmonyPartCount(totalParts);
         nextTracksById[trackId] = {
           ...nextTracksById[trackId]!,
-          role: i >= Math.max(1, totalParts - 1) ? "melody" : "harmony",
+          role: i >= harmonyPartCount ? "melody" : "harmony",
         };
       }
 

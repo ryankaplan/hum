@@ -1,5 +1,10 @@
 import type { ArrangementVoice } from "../music/arrangementScore";
-import type { HarmonyLine, HarmonyVoicing, MidiNote } from "../music/types";
+import {
+  getHarmonyPartCount,
+  type HarmonyLine,
+  type HarmonyVoicing,
+  type MidiNote,
+} from "../music/types";
 import { getFirstActiveMidi } from "../music/arrangementScore";
 
 export type RecordingHarmonyGuidance = {
@@ -14,7 +19,7 @@ export function resolveRecordingHarmonyGuidance(
   partIndex: number,
   totalParts: number,
 ): RecordingHarmonyGuidance {
-  const harmonyPartCount = Math.max(1, totalParts - 1);
+  const harmonyPartCount = getHarmonyPartCount(totalParts);
   const harmonyLine =
     voicing != null && partIndex < harmonyPartCount
       ? (voicing.lines[partIndex] ?? null)

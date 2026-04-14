@@ -805,6 +805,9 @@ function PreviewOverlay(input: {
 }
 
 function getPreviewPartLabel(index: number, totalParts: number): string {
+  if (totalParts === 3) {
+    return ["Low", "High", "Melody"][index] ?? `Part ${index + 1}`;
+  }
   if (totalParts === 4) {
     return ["Low", "Mid", "High", "Melody"][index] ?? `Part ${index + 1}`;
   }

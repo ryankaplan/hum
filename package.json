@@ -16,12 +16,12 @@
   "dependencies": {
     "arranger": "git+ssh://git@github.com/ryankaplan/arranger.git#v0.1.0",
     "@chakra-ui/react": "3.34.0",
-    "lucide-react": "^1.7.0",
-    "mediabunny": "^1.40.1",
-    "nanoid": "^5.1.7",
-    "pitchy": "^4.1.0",
+    "lucide-react": "1.7.0",
+    "mediabunny": "1.40.1",
+    "nanoid": "5.1.7",
+    "pitchy": "4.1.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "vitest": "^4.1.2"
+    "vitest": "4.1.2"
   }
 }

@@ -1,26 +1,14 @@
+import { parseChordText as parseChordTextFromArranger } from "arranger";
 import type { Chord, ChordQuality, NoteName } from "./types";
 import { NOTE_NAMES } from "./types";
 
 export function parseChordText(token: string, beats: number): Chord | null {
-  const match = token.match(
-    /^([A-G][#b]?)(maj7|M7|add9|m7b9|-7b9|7b9|\(b9\)|m9|-9|9sus2|9sus4|9|sus2|sus4|m7|-7|m6|-6|6|dim|o|m|-|7)?(?:\/([A-G][#b]?))?$/,
-  );
-  if (match == null) return null;
-
-  const root = normalizeRoot(match[1]!);
-  if (root == null) return null;
-
-  const suffix = match[2] ?? "";
-  const quality = parseChordQualitySuffix(suffix);
-  if (quality == null) return null;
-
-  const bass = match[3] != null ? normalizeRoot(match[3]) : null;
-  if (match[3] != null && bass == null) return null;
-  if (bass != null && !chordContainsPitchClass(root, quality, rootSemitone(bass))) {
-    return null;
-  }
-
-  return { root, quality, bass, beats };
+  const parsed = parseChordTextFromArranger(token);
+  if (!parsed.ok) return null;
+  return {
+    ...parsed.value.symbol,
+    beats,
+  };
 }
 
 function parseChordQualitySuffix(raw: string): ChordQuality | null {
@@ -112,15 +100,20 @@ export function rootSemitone(root: NoteName): number {
   const semitones: Record<NoteName, number> = {
     C: 0,
     "C#": 1,
+    Db: 1,
     D: 2,
     "D#": 3,
+    Eb: 3,
     E: 4,
     F: 5,
     "F#": 6,
+    Gb: 6,
     G: 7,
     "G#": 8,
+    Ab: 8,
     A: 9,
     "A#": 10,
+    Bb: 10,
     B: 11,
   };
   return semitones[root];
@@ -139,6 +132,8 @@ export function chordSemitones(
       return [r, r + 4, r + 7];
     case "minor":
       return [r, r + 3, r + 7];
+    case "augmented":
+      return [r, r + 4, r + 8];
     case "add9":
       return [r, r + 4, r + 14];
     case "diminished":
@@ -149,18 +144,26 @@ export function chordSemitones(
       return [r, r + 3, r + 9];
     case "dominant7":
       return [r, r + 4, r + 10];
+    case "dominant7Sus4":
+      return [r, r + 5, r + 10];
     case "minor7":
       return [r, r + 3, r + 10];
     case "major7":
       return [r, r + 4, r + 11];
+    case "major9":
+      return [r, r + 4, r + 14];
     case "dominant9":
       return [r, r + 4, r + 14];
+    case "dominant13":
+      return [r, r + 4, r + 21];
     case "minor9":
       return [r, r + 3, r + 14];
     case "dominant7Flat9":
       return [r, r + 4, r + 13];
     case "minor7Flat9":
       return [r, r + 3, r + 13];
+    case "halfDiminished":
+      return [r, r + 3, r + 10];
     case "sus2":
       return [r, r + 2, r + 7];
     case "sus4":
@@ -169,6 +172,8 @@ export function chordSemitones(
       return [r, r + 2, r + 14];
     case "dominant9Sus4":
       return [r, r + 5, r + 14];
+    default:
+      return assertNever(quality);
   }
 }
 
@@ -216,6 +221,8 @@ export function fullChordSemitones(
       return [r, r + 4, r + 7];
     case "minor":
       return [r, r + 3, r + 7];
+    case "augmented":
+      return [r, r + 4, r + 8];
     case "add9":
       return [r, r + 4, r + 7, r + 14];
     case "diminished":
@@ -226,18 +233,26 @@ export function fullChordSemitones(
       return [r, r + 3, r + 7, r + 9];
     case "dominant7":
       return [r, r + 4, r + 7, r + 10];
+    case "dominant7Sus4":
+      return [r, r + 5, r + 7, r + 10];
     case "minor7":
       return [r, r + 3, r + 7, r + 10];
     case "major7":
       return [r, r + 4, r + 7, r + 11];
+    case "major9":
+      return [r, r + 4, r + 7, r + 11, r + 14];
     case "dominant9":
       return [r, r + 4, r + 7, r + 10, r + 14];
+    case "dominant13":
+      return [r, r + 4, r + 7, r + 10, r + 14, r + 21];
     case "minor9":
       return [r, r + 3, r + 7, r + 10, r + 14];
     case "dominant7Flat9":
       return [r, r + 4, r + 7, r + 10, r + 13];
     case "minor7Flat9":
       return [r, r + 3, r + 7, r + 10, r + 13];
+    case "halfDiminished":
+      return [r, r + 3, r + 6, r + 10];
     case "sus2":
       return [r, r + 2, r + 7];
     case "sus4":
@@ -246,6 +261,8 @@ export function fullChordSemitones(
       return [r, r + 2, r + 7, r + 10, r + 14];
     case "dominant9Sus4":
       return [r, r + 5, r + 7, r + 10, r + 14];
+    default:
+      return assertNever(quality);
   }
 }
 
@@ -255,6 +272,8 @@ function chordQualitySuffix(quality: ChordQuality): string {
       return "";
     case "minor":
       return "m";
+    case "augmented":
+      return "+";
     case "add9":
       return "add9";
     case "diminished":
@@ -265,18 +284,26 @@ function chordQualitySuffix(quality: ChordQuality): string {
       return "m6";
     case "dominant7":
       return "7";
+    case "dominant7Sus4":
+      return "7sus4";
     case "minor7":
       return "m7";
     case "major7":
       return "maj7";
+    case "major9":
+      return "maj9";
     case "dominant9":
       return "9";
+    case "dominant13":
+      return "13";
     case "minor9":
       return "m9";
     case "dominant7Flat9":
       return "(b9)";
     case "minor7Flat9":
       return "m7b9";
+    case "halfDiminished":
+      return "m7b5";
     case "sus2":
       return "sus2";
     case "sus4":
@@ -285,5 +312,11 @@ function chordQualitySuffix(quality: ChordQuality): string {
       return "9sus2";
     case "dominant9Sus4":
       return "9sus4";
+    default:
+      return assertNever(quality);
   }
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Unhandled chord quality: ${String(value)}`);
 }

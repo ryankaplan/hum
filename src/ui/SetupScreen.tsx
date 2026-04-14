@@ -12,7 +12,7 @@ import {
   getHarmonyRhythmPattern,
   type HarmonyRhythmPatternId,
 } from "../music/harmonyRhythmPatterns";
-import type { HarmonyRangeCoverage } from "../music/types";
+import type { HarmonyPriority, HarmonyRangeCoverage } from "../music/types";
 import {
   playHarmonyPreview,
   progressionDurationSec,
@@ -259,6 +259,11 @@ export function SetupScreen() {
     onHarmonyCoverageChange: (value: HarmonyRangeCoverage) => {
       model.setArrangementInput({
         harmonyRangeCoverage: value,
+      });
+    },
+    onHarmonyPriorityChange: (value: HarmonyPriority) => {
+      model.setArrangementInput({
+        harmonyPriority: value,
       });
     },
     onPartCountChange: handlePartCountChange,

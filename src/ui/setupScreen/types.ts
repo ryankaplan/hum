@@ -1,8 +1,12 @@
-import type { HarmonyRangeCoverage, Meter } from "../../music/types";
 import type {
   HarmonyRhythmPatternDefinition,
   HarmonyRhythmPatternId,
 } from "../../music/harmonyRhythmPatterns";
+import type {
+  HarmonyPriority,
+  HarmonyRangeCoverage,
+  Meter,
+} from "../../music/types";
 import type { ArrangementInfo } from "../../state/model";
 
 export type PreviewMode = "pattern" | "custom" | null;
@@ -26,17 +30,24 @@ export const HARMONY_COVERAGE_OPTIONS = [
   { label: "Whole Range", value: "whole-range" },
 ] as const;
 
+export const HARMONY_PRIORITY_OPTIONS = [
+  { label: "Voice leading", value: "voiceLeading" },
+  { label: "Chord intent", value: "chordIntent" },
+] as const;
+
 export type SetupFormFieldsProps = {
   meterLabel: string;
   tempoInputValue: string;
   selectedRangeValue: string;
   harmonyRangeCoverage: HarmonyRangeCoverage;
+  harmonyPriority: HarmonyPriority;
   totalParts: number;
   onTempoInputChange: (value: string) => void;
   onTempoInputBlur: () => void;
   onMeterLabelChange: (label: string) => void;
   onRangePresetChange: (value: string) => void;
   onHarmonyCoverageChange: (value: HarmonyRangeCoverage) => void;
+  onHarmonyPriorityChange: (value: HarmonyPriority) => void;
   onPartCountChange: (value: "3" | "4") => void;
 };
 
@@ -90,6 +101,7 @@ export type SetupCardProps = {
   onMeterLabelChange: (label: string) => void;
   onRangePresetChange: (value: string) => void;
   onHarmonyCoverageChange: (value: HarmonyRangeCoverage) => void;
+  onHarmonyPriorityChange: (value: HarmonyPriority) => void;
   onPartCountChange: (value: "3" | "4") => void;
   onHarmonyRhythmPatternChange: (value: HarmonyRhythmPatternId) => void;
   onPreviewPattern: () => void;

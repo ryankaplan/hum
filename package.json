@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "build": "node build.mjs",
-    "check": "pnpm --filter @hum/harmony check && tsc --noEmit && vitest run",
+    "check": "tsc --noEmit && vitest run",
     "dev": "node build.mjs --watch"
   },
   "devDependencies": {
@@ -14,7 +14,7 @@
     "typescript": "6.0.2"
   },
   "dependencies": {
-    "@hum/harmony": "workspace:*",
+    "arranger": "git+ssh://git@github.com/ryankaplan/arranger.git#9f4fff54d4e2caa4807af505218a4e633ef83dd8",
     "@chakra-ui/react": "3.34.0",
     "lucide-react": "^1.7.0",
     "mediabunny": "^1.40.1",

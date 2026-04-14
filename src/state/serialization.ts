@@ -54,6 +54,7 @@ function serializeArrangementDocument(
     vocalRangeLow: arrangement.vocalRangeLow,
     vocalRangeHigh: arrangement.vocalRangeHigh,
     harmonyRangeCoverage: arrangement.harmonyRangeCoverage,
+    harmonyPriority: arrangement.harmonyPriority,
     totalParts: arrangement.totalParts,
     harmonyRhythmPatternId: arrangement.harmonyRhythmPatternId,
     customArrangement:
@@ -83,6 +84,7 @@ function deserializeArrangementDocument(
     vocalRangeLow: saved.vocalRangeLow,
     vocalRangeHigh: saved.vocalRangeHigh,
     harmonyRangeCoverage: saved.harmonyRangeCoverage,
+    harmonyPriority: saved.harmonyPriority,
     totalParts: saved.totalParts,
     harmonyRhythmPatternId: saved.harmonyRhythmPatternId ?? "sustain_pad",
     customArrangement:

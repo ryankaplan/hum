@@ -1,5 +1,9 @@
 import { Box, Button, Flex, Text } from "@chakra-ui/react";
 import {
+  describeHarmonyNotesForChord,
+  labelHarmonyNoteForChord,
+} from "arranger";
+import {
   type ChangeEvent as ReactChangeEvent,
   useEffect,
   useLayoutEffect,
@@ -17,10 +21,6 @@ import {
   sampleLinesAtTicks,
   type CustomArrangement,
 } from "../music/arrangementScore";
-import {
-  describeHarmonyNotesForChord,
-  labelHarmonyNoteForChord,
-} from "../music/harmony";
 import {
   playHarmonyPreview,
   playNotePreview,

@@ -16,6 +16,7 @@ function makeArrangementDocState(
     vocalRangeLow: "C3",
     vocalRangeHigh: "A4",
     harmonyRangeCoverage: "lower two thirds",
+    harmonyPriority: "voiceLeading",
     totalParts: 4,
     harmonyRhythmPatternId: "sustain_pad",
     customArrangement: null,
@@ -151,6 +152,26 @@ describe("computeArrangementInfo", () => {
     );
 
     expect(info.effectiveHarmonyVoicing?.lines[0]?.[0]).toBe(52);
+  });
+
+  it("defaults to voice-leading priority and can switch to chord intent", () => {
+    const defaultState = createDefaultArrangementDocState();
+    const chordIntent = computeArrangementInfo(
+      makeArrangementDocState("A A F#m F#m", {
+        totalParts: 3,
+        harmonyPriority: "chordIntent",
+      }),
+    );
+    const secondChordNotes = chordIntent.harmonyVoicing?.lines
+      .map((line) => line[1] ?? null)
+      .filter((note): note is number => note != null);
+    const thirdChordNotes = chordIntent.harmonyVoicing?.lines
+      .map((line) => line[2] ?? null)
+      .filter((note): note is number => note != null);
+
+    expect(defaultState.harmonyPriority).toBe("voiceLeading");
+    expect(thirdChordNotes?.some((note) => note % 12 === 6)).toBe(true);
+    expect(thirdChordNotes).not.toEqual(secondChordNotes);
   });
 
   it("rejects 3-part custom arrangements with the wrong voice count", () => {

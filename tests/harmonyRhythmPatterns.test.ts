@@ -44,12 +44,45 @@ function eventSummary(patternId: HarmonyRhythmPatternId, beatsPerChord: number[]
 describe("harmony rhythm patterns", () => {
   it("returns only the presets supported by the selected meter", () => {
     expect(
+      getAvailableHarmonyRhythmPatterns([4, 4]).map((pattern) => pattern.id),
+    ).toEqual([
+      "sustain_pad",
+      "strong_beats",
+      "beat_pulse",
+      "backbeat_hits",
+      "upbeat_drive",
+      "anthem_lift",
+      "eighth_drive",
+      "chorus_push",
+      "broadway_hits",
+      "finale_hits",
+      "charleston",
+      "offbeat_comp",
+      "praise_lift",
+      "three_plus_three_plus_two",
+    ]);
+
+    expect(
       getAvailableHarmonyRhythmPatterns([3, 4]).map((pattern) => pattern.id),
-    ).toEqual(["sustain_pad", "strong_beats", "beat_pulse", "waltz_block"]);
+    ).toEqual([
+      "sustain_pad",
+      "strong_beats",
+      "beat_pulse",
+      "show_waltz",
+      "waltz_lift",
+      "waltz_block",
+    ]);
 
     expect(
       getAvailableHarmonyRhythmPatterns([6, 8]).map((pattern) => pattern.id),
-    ).toEqual(["sustain_pad", "strong_beats", "beat_pulse", "compound_swell"]);
+    ).toEqual([
+      "sustain_pad",
+      "strong_beats",
+      "beat_pulse",
+      "sway_six",
+      "lift_six",
+      "compound_swell",
+    ]);
   });
 
   it("builds quarter-note pulses with rests between attacks", () => {

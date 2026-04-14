@@ -80,11 +80,22 @@ export type SavedArrangementDocument = {
     | "sustain_pad"
     | "strong_beats"
     | "beat_pulse"
+    | "backbeat_hits"
+    | "upbeat_drive"
+    | "anthem_lift"
+    | "eighth_drive"
+    | "chorus_push"
+    | "broadway_hits"
+    | "finale_hits"
     | "charleston"
     | "offbeat_comp"
     | "praise_lift"
     | "three_plus_three_plus_two"
+    | "show_waltz"
+    | "waltz_lift"
     | "waltz_block"
+    | "sway_six"
+    | "lift_six"
     | "compound_swell";
   customArrangement: {
     voices: Array<{
@@ -229,11 +240,22 @@ function parseSavedArrangementDocument(
       raw.harmonyRhythmPatternId !== "sustain_pad" &&
       raw.harmonyRhythmPatternId !== "strong_beats" &&
       raw.harmonyRhythmPatternId !== "beat_pulse" &&
+      raw.harmonyRhythmPatternId !== "backbeat_hits" &&
+      raw.harmonyRhythmPatternId !== "upbeat_drive" &&
+      raw.harmonyRhythmPatternId !== "anthem_lift" &&
+      raw.harmonyRhythmPatternId !== "eighth_drive" &&
+      raw.harmonyRhythmPatternId !== "chorus_push" &&
+      raw.harmonyRhythmPatternId !== "broadway_hits" &&
+      raw.harmonyRhythmPatternId !== "finale_hits" &&
       raw.harmonyRhythmPatternId !== "charleston" &&
       raw.harmonyRhythmPatternId !== "offbeat_comp" &&
       raw.harmonyRhythmPatternId !== "praise_lift" &&
       raw.harmonyRhythmPatternId !== "three_plus_three_plus_two" &&
+      raw.harmonyRhythmPatternId !== "show_waltz" &&
+      raw.harmonyRhythmPatternId !== "waltz_lift" &&
       raw.harmonyRhythmPatternId !== "waltz_block" &&
+      raw.harmonyRhythmPatternId !== "sway_six" &&
+      raw.harmonyRhythmPatternId !== "lift_six" &&
       raw.harmonyRhythmPatternId !== "compound_swell") ||
     (raw.harmonyPriority !== undefined &&
       raw.harmonyPriority !== "voiceLeading" &&

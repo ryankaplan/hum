@@ -56,13 +56,19 @@ export type HarmonyRhythmPatternPickerProps = {
   selectedPatternId: HarmonyRhythmPatternId;
   customBasePatternId: HarmonyRhythmPatternId | null;
   onPatternChange: (value: HarmonyRhythmPatternId) => void;
+  previewingPatternId: HarmonyRhythmPatternId | null;
+  previewingPatternStepIndex: number | null;
+  onPatternPreviewToggle: (value: HarmonyRhythmPatternId) => void;
 };
 
 export type HarmonyRhythmPatternCardProps = {
   pattern: HarmonyRhythmPatternDefinition;
   meter: Meter;
+  activePreviewStepIndex: number | null;
+  previewing: boolean;
   selected: boolean;
   onClick: () => void;
+  onPreviewToggle: () => void;
 };
 
 export type VoicingComparisonSectionProps = {
@@ -104,6 +110,9 @@ export type SetupCardProps = {
   onHarmonyPriorityChange: (value: HarmonyPriority) => void;
   onPartCountChange: (value: "3" | "4") => void;
   onHarmonyRhythmPatternChange: (value: HarmonyRhythmPatternId) => void;
+  previewingPatternId: HarmonyRhythmPatternId | null;
+  previewingPatternStepIndex: number | null;
+  onPatternPreviewToggle: (value: HarmonyRhythmPatternId) => void;
   onPreviewPattern: () => void;
   onPreviewCustom: () => void;
   onStopPreview: () => void;

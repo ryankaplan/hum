@@ -23,6 +23,9 @@ export function SetupCard({
   onHarmonyPriorityChange,
   onPartCountChange,
   onHarmonyRhythmPatternChange,
+  previewingPatternId,
+  previewingPatternStepIndex,
+  onPatternPreviewToggle,
   onPreviewPattern,
   onPreviewCustom,
   onStopPreview,
@@ -93,6 +96,9 @@ export function SetupCard({
           selectedPatternId={harmonyRhythmPatternId}
           customBasePatternId={hasCustomHarmony ? harmonyRhythmPatternId : null}
           onPatternChange={onHarmonyRhythmPatternChange}
+          previewingPatternId={previewingPatternId}
+          previewingPatternStepIndex={previewingPatternStepIndex}
+          onPatternPreviewToggle={onPatternPreviewToggle}
         />
 
         {parsed.length > 0 && harmonyVoicing != null && (

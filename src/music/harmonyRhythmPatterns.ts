@@ -11,11 +11,22 @@ export type HarmonyRhythmPatternId =
   | "sustain_pad"
   | "strong_beats"
   | "beat_pulse"
+  | "backbeat_hits"
+  | "upbeat_drive"
+  | "anthem_lift"
+  | "eighth_drive"
+  | "chorus_push"
+  | "broadway_hits"
+  | "finale_hits"
   | "charleston"
   | "offbeat_comp"
   | "praise_lift"
   | "three_plus_three_plus_two"
+  | "show_waltz"
+  | "waltz_lift"
   | "waltz_block"
+  | "sway_six"
+  | "lift_six"
   | "compound_swell";
 
 type HarmonyRhythmSlot = {
@@ -37,6 +48,11 @@ export type HarmonyRhythmPatternDefinition = {
   meters: Partial<Record<"4/4" | "3/4" | "6/8", HarmonyRhythmPatternVariant>>;
 };
 
+export type HarmonyRhythmPreviewHit = {
+  startBeat: number;
+  isDownbeat: boolean;
+};
+
 const FOUR_FOUR = "4/4";
 const THREE_FOUR = "3/4";
 const SIX_EIGHT = "6/8";
@@ -47,7 +63,7 @@ export const DEFAULT_HARMONY_RHYTHM_PATTERN_ID: HarmonyRhythmPatternId =
 export const HARMONY_RHYTHM_PATTERNS: readonly HarmonyRhythmPatternDefinition[] = [
   {
     id: "sustain_pad",
-    name: "Sustain Pad",
+    name: "Sustain",
     description: "Attack on the change and hold through the chord.",
     tags: ["pop", "choral"],
     meters: {
@@ -70,7 +86,7 @@ export const HARMONY_RHYTHM_PATTERNS: readonly HarmonyRhythmPatternDefinition[] 
   },
   {
     id: "strong_beats",
-    name: "Strong Beats",
+    name: "Downbeats",
     description: "Re-articulate the structural beats and let them ring.",
     tags: ["pop", "gospel"],
     meters: {
@@ -133,6 +149,132 @@ export const HARMONY_RHYTHM_PATTERNS: readonly HarmonyRhythmPatternDefinition[] 
           { startBeat: 5, durationBeats: 0.8 },
         ],
         previewStepBeats: 1,
+      },
+    },
+  },
+  {
+    id: "backbeat_hits",
+    name: "Backbeat Hits",
+    description: "Punch the backbeat with short hits on 2 and 4.",
+    tags: ["pop", "rnb"],
+    meters: {
+      [FOUR_FOUR]: {
+        alignment: "measure",
+        slots: [
+          { startBeat: 1, durationBeats: 0.85 },
+          { startBeat: 3, durationBeats: 0.85 },
+        ],
+        previewStepBeats: 0.5,
+      },
+    },
+  },
+  {
+    id: "upbeat_drive",
+    name: "Upbeat Drive",
+    description: "Push every offbeat with upbeat attacks.",
+    tags: ["pop", "gospel"],
+    meters: {
+      [FOUR_FOUR]: {
+        alignment: "measure",
+        slots: [
+          { startBeat: 0.5, durationBeats: 0.5 },
+          { startBeat: 1.5, durationBeats: 0.5 },
+          { startBeat: 2.5, durationBeats: 0.5 },
+          { startBeat: 3.5, durationBeats: 0.5 },
+        ],
+        previewStepBeats: 0.5,
+      },
+    },
+  },
+  {
+    id: "anthem_lift",
+    name: "Anthem Lift",
+    description: "Broad hits on 1 and 4 for a lifted pop feel.",
+    tags: ["pop", "worship"],
+    meters: {
+      [FOUR_FOUR]: {
+        alignment: "measure",
+        slots: [
+          { startBeat: 0, durationBeats: 1.75 },
+          { startBeat: 3, durationBeats: 1 },
+        ],
+        previewStepBeats: 0.5,
+      },
+    },
+  },
+  {
+    id: "eighth_drive",
+    name: "Eighths",
+    description: "Continuous eighth-note attacks for a driving pop feel.",
+    tags: ["pop", "theater"],
+    meters: {
+      [FOUR_FOUR]: {
+        alignment: "measure",
+        slots: [
+          { startBeat: 0, durationBeats: 0.3 },
+          { startBeat: 0.5, durationBeats: 0.3 },
+          { startBeat: 1, durationBeats: 0.3 },
+          { startBeat: 1.5, durationBeats: 0.3 },
+          { startBeat: 2, durationBeats: 0.3 },
+          { startBeat: 2.5, durationBeats: 0.3 },
+          { startBeat: 3, durationBeats: 0.3 },
+          { startBeat: 3.5, durationBeats: 0.3 },
+        ],
+        previewStepBeats: 0.5,
+      },
+    },
+  },
+  {
+    id: "chorus_push",
+    name: "Chorus",
+    description: "A lifted pop chorus pattern with syncopated pushes.",
+    tags: ["pop", "theater"],
+    meters: {
+      [FOUR_FOUR]: {
+        alignment: "measure",
+        slots: [
+          { startBeat: 0, durationBeats: 0.85 },
+          { startBeat: 1.5, durationBeats: 0.65 },
+          { startBeat: 2.5, durationBeats: 0.65 },
+          { startBeat: 3.5, durationBeats: 0.5 },
+        ],
+        previewStepBeats: 0.5,
+      },
+    },
+  },
+  {
+    id: "broadway_hits",
+    name: "Broadway",
+    description: "Bright stage-style punches that sit right in a show tune.",
+    tags: ["theater", "pop"],
+    meters: {
+      [FOUR_FOUR]: {
+        alignment: "measure",
+        slots: [
+          { startBeat: 0, durationBeats: 0.8 },
+          { startBeat: 1, durationBeats: 0.6 },
+          { startBeat: 2.5, durationBeats: 0.6 },
+          { startBeat: 3.5, durationBeats: 0.45 },
+        ],
+        previewStepBeats: 0.5,
+      },
+    },
+  },
+  {
+    id: "finale_hits",
+    name: "Finale",
+    description: "Big stage-ready accents for a climactic ending feel.",
+    tags: ["theater", "pop"],
+    meters: {
+      [FOUR_FOUR]: {
+        alignment: "measure",
+        slots: [
+          { startBeat: 0, durationBeats: 0.95 },
+          { startBeat: 1.5, durationBeats: 0.65 },
+          { startBeat: 2, durationBeats: 0.6 },
+          { startBeat: 3, durationBeats: 0.85 },
+        ],
+        previewStepBeats: 0.5,
       },
     },
   },
@@ -202,6 +344,39 @@ export const HARMONY_RHYTHM_PATTERNS: readonly HarmonyRhythmPatternDefinition[] 
     },
   },
   {
+    id: "show_waltz",
+    name: "Show Waltz",
+    description: "A lyrical waltz pulse common in musical theater.",
+    tags: ["theater", "waltz"],
+    meters: {
+      [THREE_FOUR]: {
+        alignment: "measure",
+        slots: [
+          { startBeat: 0, durationBeats: 0.8 },
+          { startBeat: 1.5, durationBeats: 0.55 },
+          { startBeat: 2.5, durationBeats: 0.45 },
+        ],
+        previewStepBeats: 0.5,
+      },
+    },
+  },
+  {
+    id: "waltz_lift",
+    name: "Waltz Lift",
+    description: "Open 3/4 accents that leave room for a singing line.",
+    tags: ["pop", "theater"],
+    meters: {
+      [THREE_FOUR]: {
+        alignment: "measure",
+        slots: [
+          { startBeat: 0, durationBeats: 1.25 },
+          { startBeat: 2, durationBeats: 0.8 },
+        ],
+        previewStepBeats: 0.5,
+      },
+    },
+  },
+  {
     id: "waltz_block",
     name: "Waltz Block",
     description: "Steady 3/4 re-attacks across the bar.",
@@ -215,6 +390,41 @@ export const HARMONY_RHYTHM_PATTERNS: readonly HarmonyRhythmPatternDefinition[] 
           { startBeat: 2, durationBeats: 0.75 },
         ],
         previewStepBeats: 0.5,
+      },
+    },
+  },
+  {
+    id: "sway_six",
+    name: "Sway 6/8",
+    description: "A lilting 6/8 sway often heard in pop ballads and theater.",
+    tags: ["pop", "theater"],
+    meters: {
+      [SIX_EIGHT]: {
+        alignment: "measure",
+        slots: [
+          { startBeat: 0, durationBeats: 0.85 },
+          { startBeat: 2, durationBeats: 0.65 },
+          { startBeat: 3, durationBeats: 0.85 },
+          { startBeat: 5, durationBeats: 0.55 },
+        ],
+        previewStepBeats: 1,
+      },
+    },
+  },
+  {
+    id: "lift_six",
+    name: "Lift 6/8",
+    description: "Broad 6/8 pushes that bloom toward the end of the bar.",
+    tags: ["pop", "theater"],
+    meters: {
+      [SIX_EIGHT]: {
+        alignment: "measure",
+        slots: [
+          { startBeat: 0, durationBeats: 1.8 },
+          { startBeat: 3, durationBeats: 1.4 },
+          { startBeat: 5, durationBeats: 0.5 },
+        ],
+        previewStepBeats: 1,
       },
     },
   },
@@ -277,18 +487,46 @@ export function getHarmonyRhythmPreviewSteps(
   });
 }
 
+export function getHarmonyRhythmPreviewHits(
+  patternId: HarmonyRhythmPatternId,
+  meter: Meter,
+  measureCount: number,
+): HarmonyRhythmPreviewHit[] {
+  const variant = getHarmonyRhythmPatternVariant(patternId, meter);
+  if (variant == null) return [];
+
+  const beatsPerBar = Math.max(1, meter[0]);
+  const hits: HarmonyRhythmPreviewHit[] = [];
+
+  for (let measureIndex = 0; measureIndex < Math.max(1, measureCount); measureIndex++) {
+    const measureStart = measureIndex * beatsPerBar;
+
+    if (variant.alignment === "chord") {
+      hits.push({
+        startBeat: measureStart,
+        isDownbeat: true,
+      });
+      continue;
+    }
+
+    for (const slot of variant.slots) {
+      hits.push({
+        startBeat: measureStart + slot.startBeat,
+        isDownbeat: Math.abs(slot.startBeat) < 0.001,
+      });
+    }
+  }
+
+  return hits;
+}
+
 export function createArrangementFromPattern(
   lines: HarmonyLine[],
   chordEvents: ChordEvent[],
   meter: Meter,
   patternId: HarmonyRhythmPatternId,
 ): CustomArrangement {
-  const pattern = getHarmonyRhythmPattern(patternId);
-  const variant =
-    pattern.meters[meterToKey(meter)] ??
-    getHarmonyRhythmPattern(DEFAULT_HARMONY_RHYTHM_PATTERN_ID).meters[
-      meterToKey(meter)
-    ];
+  const variant = getHarmonyRhythmPatternVariant(patternId, meter);
   const totalBeats = getTotalChordEventBeats(chordEvents);
 
   if (variant == null) {
@@ -301,6 +539,18 @@ export function createArrangementFromPattern(
       events: buildVoiceEvents(line, chordEvents, meter[0], variant, totalBeats, voiceIndex),
     })),
   };
+}
+
+function getHarmonyRhythmPatternVariant(
+  patternId: HarmonyRhythmPatternId,
+  meter: Meter,
+): HarmonyRhythmPatternVariant | null {
+  const meterKey = meterToKey(meter);
+  return (
+    getHarmonyRhythmPattern(patternId).meters[meterKey] ??
+    getHarmonyRhythmPattern(DEFAULT_HARMONY_RHYTHM_PATTERN_ID).meters[meterKey] ??
+    null
+  );
 }
 
 function buildVoiceEvents(

@@ -331,6 +331,7 @@ export function RecordingWizard() {
   const countInBeat = snapshot.countInBeat;
   const currentAbsoluteBeat = snapshot.currentAbsoluteBeat;
   const reviewUrl = snapshot.reviewUrl;
+  const reviewScores = snapshot.reviewScores;
   const guideToneEnabled = snapshot.guideToneEnabled;
   const mutedParts = snapshot.mutedParts;
   const referenceWaveform = snapshot.referenceWaveform;
@@ -423,7 +424,7 @@ export function RecordingWizard() {
           </Box>
 
           {/* Note display */}
-          {phase !== "review" && ctx != null && (
+          {ctx != null && (
             <NoteDisplay
               ctx={ctx}
               chords={chords}
@@ -431,11 +432,14 @@ export function RecordingWizard() {
               harmonyLine={harmonyLine}
               arrangementVoice={arrangementVoice}
               referenceWaveform={referenceWaveform}
+              stream={stream}
               activeChordIndex={activeChordIndex}
               currentAbsoluteBeat={currentAbsoluteBeat}
               beatsPerBar={beatsPerBar}
               tempo={arrangement.tempo}
               transportActive={transportActive}
+              recordingActive={phase === "recording"}
+              reviewScores={reviewScores}
             />
           )}
 

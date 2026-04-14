@@ -4,7 +4,9 @@ import { arrangementTicksToBeats, type ArrangementVoice } from "../music/arrange
 import { getHarmonyLineNote, midiToNoteName } from "../music/types";
 import type { Chord, HarmonyLine, MidiNote } from "../music/types";
 import { playNotePreview } from "../music/playback";
+import type { HarmonyTakeScores } from "../recording/takeScoring";
 import { dsColors, dsPanel } from "./designSystem";
+import { useLivePitchTrace, type LivePitchSample } from "./livePitchTrace";
 import {
   sampleReferenceWaveformBars,
   type ReferenceWaveform,
@@ -17,11 +19,14 @@ type Props = {
   harmonyLine: HarmonyLine | null; // null for melody part
   arrangementVoice?: ArrangementVoice | null;
   referenceWaveform?: ReferenceWaveform | null;
+  stream: MediaStream | null;
   activeChordIndex: number;
   currentAbsoluteBeat: number;
   beatsPerBar: number;
   tempo: number;
   transportActive: boolean;
+  recordingActive: boolean;
+  reviewScores: HarmonyTakeScores | null;
 };
 
 const NOTE_ROW_HEIGHT_PX = 22;
@@ -82,11 +87,14 @@ export function NoteDisplay({
   harmonyLine,
   arrangementVoice = null,
   referenceWaveform = null,
+  stream,
   activeChordIndex,
   currentAbsoluteBeat,
   beatsPerBar,
   tempo,
   transportActive,
+  recordingActive,
+  reviewScores,
 }: Props) {
   const lyricSegments = chords.map((chord, index) => ({
     chordIndex: index,
@@ -271,6 +279,12 @@ export function NoteDisplay({
   const playheadX = hasActiveBeat
     ? NOTE_TRACK_PAD_X_PX + Math.max(0, displayBeat) * notePxPerBeat
     : 0;
+  const livePitchSamples = useLivePitchTrace({
+    ctx,
+    stream,
+    enabled: recordingActive,
+    beat: Math.max(0, displayBeat),
+  });
 
   useEffect(() => {
     if (!transportActive || !hasActiveBeat) return;
@@ -310,6 +324,8 @@ export function NoteDisplay({
           w={`${trackWidthPx}px`}
           h={`${trackHeightPx}px`}
         >
+          <ReviewScoreOverlay scores={reviewScores} />
+
           {Array.from({ length: pitchRows }).map((_, row) => {
             const y = noteGridTopPx + NOTE_TRACK_PAD_TOP_PX + row * NOTE_ROW_HEIGHT_PX;
             return (
@@ -349,6 +365,15 @@ export function NoteDisplay({
               left={`${playheadX}px`}
             />
           )}
+
+          <LivePitchOverlay
+            samples={livePitchSamples}
+            contentWidthPx={contentWidthPx}
+            noteGridTopPx={noteGridTopPx}
+            notePxPerBeat={notePxPerBeat}
+            lowMidi={lowMidi}
+            highMidi={highMidi}
+          />
 
           {segments.map((segment) => {
             const rowFromTop = highMidi - segment.midi;
@@ -643,6 +668,113 @@ function ReferenceWaveformStrip(input: {
       </Box>
     </Box>
   );
+}
+
+function ReviewScoreOverlay({ scores }: { scores: HarmonyTakeScores | null }) {
+  if (scores == null) return null;
+
+  const metrics = [
+    scores.timing != null ? `Timing ${scores.timing.score100}` : null,
+    scores.pitch != null ? `Pitch ${scores.pitch.score100}` : null,
+  ].filter((metric): metric is string => metric != null);
+  if (metrics.length === 0) return null;
+
+  return (
+    <Box
+      position="absolute"
+      top="10px"
+      left="50%"
+      transform="translateX(-50%)"
+      px={3}
+      py={1.5}
+      borderRadius="full"
+      className="record-note-review-score"
+      zIndex={6}
+      pointerEvents="none"
+    >
+      <Text
+        color={dsColors.text}
+        fontSize="sm"
+        fontWeight="bold"
+        whiteSpace="nowrap"
+      >
+        {metrics.join("  •  ")}
+      </Text>
+    </Box>
+  );
+}
+
+function LivePitchOverlay(input: {
+  samples: LivePitchSample[];
+  contentWidthPx: number;
+  noteGridTopPx: number;
+  notePxPerBeat: number;
+  lowMidi: number;
+  highMidi: number;
+}) {
+  const { samples, contentWidthPx, noteGridTopPx, notePxPerBeat, lowMidi, highMidi } =
+    input;
+  if (samples.length === 0 || contentWidthPx <= 0) return null;
+
+  const path = buildLivePitchPath({
+    samples,
+    notePxPerBeat,
+    lowMidi,
+    highMidi,
+  });
+  if (path.length === 0) return null;
+
+  const heightPx =
+    NOTE_TRACK_PAD_TOP_PX +
+    NOTE_TRACK_PAD_BOTTOM_PX +
+    Math.max(1, highMidi - lowMidi + 1) * NOTE_ROW_HEIGHT_PX;
+
+  return (
+    <Box
+      position="absolute"
+      left={`${NOTE_TRACK_PAD_X_PX}px`}
+      top={`${noteGridTopPx}px`}
+      w={`${contentWidthPx}px`}
+      h={`${heightPx}px`}
+      pointerEvents="none"
+      zIndex={3}
+    >
+      <svg
+        className="record-note-pitch-svg"
+        viewBox={`0 0 ${contentWidthPx} ${heightPx}`}
+        preserveAspectRatio="none"
+      >
+        <path d={path} className="record-note-live-pitch" />
+      </svg>
+    </Box>
+  );
+}
+
+function buildLivePitchPath(input: {
+  samples: LivePitchSample[];
+  notePxPerBeat: number;
+  lowMidi: number;
+  highMidi: number;
+}): string {
+  const { samples, notePxPerBeat, lowMidi, highMidi } = input;
+  const commands: string[] = [];
+  let segmentOpen = false;
+
+  for (const sample of samples) {
+    if (sample.midi == null) {
+      segmentOpen = false;
+      continue;
+    }
+    const x = clamp(sample.beat * notePxPerBeat, 0, Number.POSITIVE_INFINITY);
+    const clampedMidi = clamp(sample.midi, lowMidi, highMidi);
+    const y =
+      NOTE_TRACK_PAD_TOP_PX +
+      (highMidi - clampedMidi + 0.5) * NOTE_ROW_HEIGHT_PX;
+    commands.push(`${segmentOpen ? "L" : "M"} ${x.toFixed(1)} ${y.toFixed(1)}`);
+    segmentOpen = true;
+  }
+
+  return commands.join(" ");
 }
 
 function clamp(value: number, min: number, max: number): number {

@@ -100,7 +100,7 @@ export function noteNameToMidi(name: string): MidiNote {
 
   // Normalize flats to sharps
   const normalized = flatToSharp(notePart);
-  const semitone = NOTE_NAMES.indexOf(normalized as NoteName);
+  const semitone = NOTE_NAMES.findIndex((candidate) => candidate === normalized);
   if (semitone === -1) {
     throw new Error(`Unknown note: ${notePart}`);
   }
